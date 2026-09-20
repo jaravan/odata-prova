@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="Common"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="SalesSrv" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityContainer Name="EntityContainer">
+        <EntitySet Name="Orders" EntityType="SalesSrv.Orders">
+          <NavigationPropertyBinding Path="Items" Target="Items"/>
+        </EntitySet>
+        <EntitySet Name="Items" EntityType="SalesSrv.Items">
+          <NavigationPropertyBinding Path="Order" Target="Orders"/>
+        </EntitySet>
+      </EntityContainer>
+      <EntityType Name="Orders">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="OrderNo" Type="Edm.String" MaxLength="10"/>
+        <Property Name="OrderDate" Type="Edm.Date"/>
+        <Property Name="DeliveryTime" Type="Edm.TimeOfDay"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7"/>
+        <Property Name="Total" Type="Edm.Decimal" Scale="2" Precision="15"/>
+        <Property Name="Qty" Type="Edm.Int32"/>
+        <Property Name="Closed" Type="Edm.Boolean"/>
+        <NavigationProperty Name="Items" Type="Collection(SalesSrv.Items)" Partner="Order">
+          <OnDelete Action="Cascade"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="Items">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="Order_ID" Type="Edm.Guid"/>
+        <Property Name="Product" Type="Edm.String" MaxLength="40"/>
+        <Property Name="Price" Type="Edm.Decimal" Scale="2" Precision="15"/>
+        <NavigationProperty Name="Order" Type="SalesSrv.Orders" Partner="Items">
+          <ReferentialConstraint Property="Order_ID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+      </EntityType>
+      <Annotations Target="SalesSrv.Orders/OrderNo">
+        <Annotation Term="Common.Label" String="Order number"/>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

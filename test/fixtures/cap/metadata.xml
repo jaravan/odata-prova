@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">
+    <edmx:Include Alias="Common" Namespace="com.sap.vocabularies.Common.v1"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Alias="Core" Namespace="Org.OData.Core.V1"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="PurchaseOrderSrv" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <Annotation Term="Core.Links">
+        <Collection>
+          <Record>
+            <PropertyValue Property="rel" String="author"/>
+            <PropertyValue Property="href" String="https://cap.cloud.sap"/>
+          </Record>
+        </Collection>
+      </Annotation>
+      <EntityContainer Name="EntityContainer">
+        <EntitySet Name="PurchaseOrderSet" EntityType="PurchaseOrderSrv.PurchaseOrderSet">
+          <NavigationPropertyBinding Path="Items" Target="PurchaseOrderItemSet"/>
+        </EntitySet>
+        <EntitySet Name="PurchaseOrderItemSet" EntityType="PurchaseOrderSrv.PurchaseOrderItemSet">
+          <NavigationPropertyBinding Path="PurchaseOrder" Target="PurchaseOrderSet"/>
+        </EntitySet>
+      </EntityContainer>
+      <EntityType Name="PurchaseOrderSet">
+        <Key>
+          <PropertyRef Name="PurchaseOrderId"/>
+        </Key>
+        <Property Name="PurchaseOrderId" Type="Edm.String" MaxLength="10" Nullable="false"/>
+        <Property Name="Supplier" Type="Edm.String" MaxLength="100" Nullable="false"/>
+        <Property Name="CompanyCode" Type="Edm.String" MaxLength="4" Nullable="false"/>
+        <Property Name="OrderDate" Type="Edm.Date" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String" MaxLength="20" Nullable="false"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="3" Nullable="false"/>
+        <Property Name="TotalAmount" Type="Edm.Decimal" Precision="15" Scale="2" Nullable="false"/>
+        <NavigationProperty Name="Items" Type="Collection(PurchaseOrderSrv.PurchaseOrderItemSet)">
+          <OnDelete Action="Cascade"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="PurchaseOrderItemSet">
+        <Key>
+          <PropertyRef Name="PurchaseOrderId"/>
+          <PropertyRef Name="ItemPosition"/>
+        </Key>
+        <Property Name="PurchaseOrderId" Type="Edm.String" MaxLength="10" Nullable="false"/>
+        <Property Name="ItemPosition" Type="Edm.String" MaxLength="5" Nullable="false"/>
+        <Property Name="Material" Type="Edm.String" MaxLength="40" Nullable="false"/>
+        <Property Name="Description" Type="Edm.String" MaxLength="100" Nullable="false"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Precision="13" Scale="3" Nullable="false"/>
+        <Property Name="Unit" Type="Edm.String" MaxLength="3" Nullable="false"/>
+        <Property Name="NetPrice" Type="Edm.Decimal" Precision="15" Scale="2" Nullable="false"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="3" Nullable="false"/>
+        <NavigationProperty Name="PurchaseOrder" Type="PurchaseOrderSrv.PurchaseOrderSet">
+          <ReferentialConstraint Property="PurchaseOrderId" ReferencedProperty="PurchaseOrderId"/>
+        </NavigationProperty>
+      </EntityType>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
