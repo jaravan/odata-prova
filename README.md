@@ -25,6 +25,19 @@ A model directory needs a `metadata.xml` (either V2 or V4 CSDL - whichever proto
 
 The image contains no model. Mount one under `/models`, for example `docker run -p 3000:3000 -v "$PWD/models:/models:ro" po-odata-server:1.0.0` from the repo root.
 
+## Supported types
+
+All primitive Edm types, plus:
+
+- **Complex types**, nested and in collections. In V2 a complex value carries its type in `__metadata`, as SAP Gateway sends it.
+- **Enum types** (V4). V2 has no enums, so there they are `Edm.String` holding the member name.
+- **Collection-valued properties** (V4). V2 has none, so they are left out of the V2 service, with a `not in V2: ...` line in the startup log.
+- **Inheritance** (`BaseType`). Each derived type gets its base's key, properties and navigations, so the generated `$metadata` needs no `BaseType`.
+
+In a CSV seed file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
+
+The tests load Northwind (V2 and V4) and TripPin unmodified, see [test/fixtures/real](test/fixtures/real/).
+
 ## Supported query options
 
 `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (including nested V4 options like `$expand=Items($select=Material;$top=2)`), `$count`/`$inlinecount`, `$search`, and `$batch` (with atomic changesets) all work, on both protocols.

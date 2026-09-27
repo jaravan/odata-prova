@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shaped like an SAP Gateway V2 service: sap: attributes, and a complex type for the
+     address, as Gateway services commonly have. Written for the tests, not taken from SAP. -->
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="GATEWAY_SRV" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <ComplexType Name="CT_Address">
+        <Property Name="Street" Type="Edm.String" MaxLength="60" sap:label="Street"/>
+        <Property Name="City" Type="Edm.String" MaxLength="40" sap:label="City"/>
+        <Property Name="PostalCode" Type="Edm.String" MaxLength="10" sap:label="Postal Code"/>
+        <Property Name="Country" Type="Edm.String" MaxLength="3" sap:label="Country"/>
+      </ComplexType>
+      <EntityType Name="BusinessPartner" sap:content-version="1">
+        <Key><PropertyRef Name="BusinessPartnerID"/></Key>
+        <Property Name="BusinessPartnerID" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Business Partner" sap:creatable="false" sap:updatable="false"/>
+        <Property Name="CompanyName" Type="Edm.String" MaxLength="80" sap:label="Company"/>
+        <Property Name="Address" Type="GATEWAY_SRV.CT_Address" Nullable="false"/>
+        <Property Name="CreatedAt" Type="Edm.DateTime" Precision="7" sap:label="Created At"/>
+      </EntityType>
+      <EntityContainer Name="GATEWAY_SRV_Entities" m:IsDefaultEntityContainer="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="BusinessPartnerSet" EntityType="GATEWAY_SRV.BusinessPartner" sap:content-version="1"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
