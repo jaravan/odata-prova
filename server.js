@@ -41,7 +41,19 @@ try {
 }
 
 // Express 5 passes listen errors (eg port in use) to callback instead of throwing
-app.listen(PORT, (err) => {
+const server = app.listen(PORT, (err) => {
   if (err) exitWithError(`cannot listen on port ${PORT}`, err);
-  console.log(`OData server listening on port ${PORT}`);
+  console.log(`OData server listening on port ${server.address().port}`);
 });
+
+// As PID 1 in a container, Node ignores SIGTERM unless handled, so Docker and Kubernetes
+// would wait out their grace period before killing it. Stop taking connections, let open
+// requests finish, then exit; give up after 10 seconds.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(() => process.exit(0));
+  server.closeIdleConnections();
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
