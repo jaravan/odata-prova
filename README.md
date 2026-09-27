@@ -63,6 +63,8 @@ One model, parsed once at startup, backs a V2 service and a V4 service sharing t
 
 - **Persistent storage** - swap the in-memory `Store` for a real database.
 - **Broader query option support** - `$apply`, `$compute`, and server-driven paging via `$skiptoken`/`$deltatoken` are currently rejected with 501.
+- **Draft handling** - no draft support, which most Fiori Elements V4 apps with edit flows depend on.
+- **Optimistic concurrency** - no ETags and no `If-Match` checks, so concurrent updates are last-write-wins.
 
 ## References
 
