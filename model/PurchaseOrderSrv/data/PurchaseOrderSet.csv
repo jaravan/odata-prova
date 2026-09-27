@@ -1,6 +1,0 @@
-PurchaseOrderId;Supplier;CompanyCode;OrderDate;Status;Currency;TotalAmount
-4500000001;Acme Components Ltd;1000;2025-01-20;Open;EUR;12500.00
-4500000002;Nordic Steel AB;1000;2025-02-01;Approved;EUR;45200.50
-4500000003;Pacific Electronics Inc;2000;2025-02-15;Completed;USD;8899.99
-4500000004;Global Packaging GmbH;1000;2025-03-01;Open;EUR;2100.00
-4500000005;Sunrise Logistics Co;3000;2025-03-15;Cancelled;USD;560.75

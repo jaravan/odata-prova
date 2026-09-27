@@ -23,13 +23,12 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json server.js ./
 COPY lib ./lib
-# Bundled model; override by mounting another one and setting MODEL_DIR
-COPY model ./model
 
 USER node
 
 ENV PORT=3000
 EXPOSE 3000
 
-# MODEL_DIR defaults to the single directory under /app/model
-CMD ["sh", "-c", "MODEL_DIR=\"${MODEL_DIR:-/app/model/$(ls /app/model)}\" exec node server.js"]
+# No model in the image: mount one under /models and point MODEL_DIR at it
+# (defaults to /models/PurchaseOrderSrv). Startup fails with a clear log if it is missing.
+CMD ["node", "server.js"]

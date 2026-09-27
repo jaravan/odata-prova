@@ -16,12 +16,14 @@ Everything is configured through environment variables, all optional:
 | Variable       | Default                    | Purpose                                     |
 | -------------- | -------------------------- | ------------------------------------------- |
 | `PORT`         | `3000`                     | HTTP port                                   |
-| `MODEL_DIR`    | `model/PurchaseOrderSrv`   | Path to the model to serve                  |
+| `MODEL_DIR`    | `../models/PurchaseOrderSrv` (`/models/PurchaseOrderSrv` in the image) | Path to the model to serve |
 | `SERVICE_NAME` | basename of `MODEL_DIR`    | Used to build the default service paths     |
 | `V2_PATH`      | `/odata/v2/<SERVICE_NAME>` | V2 service root - set to `""` to disable V2 |
 | `V4_PATH`      | `/odata/v4/<SERVICE_NAME>` | V4 service root - set to `""` to disable V4 |
 
-A model directory needs a `metadata.xml` (either V2 or V4 CSDL - whichever protocol didn't write it gets its metadata generated from the other) and a `data/` folder with one CSV or JSON file per entity set, named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). See `model/PurchaseOrderSrv` for a working example.
+A model directory needs a `metadata.xml` (either V2 or V4 CSDL - whichever protocol didn't write it gets its metadata generated from the other) and a `data/` folder with one CSV or JSON file per entity set, named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). See [models/PurchaseOrderSrv](../models/PurchaseOrderSrv/) for a working example.
+
+The image contains no model. Mount one under `/models`, for example `docker run -p 3000:3000 -v "$PWD/models:/models:ro" po-odata-server:1.0.0` from the repo root.
 
 ## Supported query options
 

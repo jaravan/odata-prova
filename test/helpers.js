@@ -1,7 +1,7 @@
 const path = require("path");
 const { createApp } = require("../lib/app");
 
-const PO_MODEL = path.join(__dirname, "..", "model", "PurchaseOrderSrv");
+const PO_MODEL = path.join(__dirname, "..", "..", "models", "PurchaseOrderSrv");
 const SALES_MODEL = path.join(__dirname, "fixtures", "SalesSrv");
 
 // Starts the app on an ephemeral port with both protocols mounted under /odata/v2/T and

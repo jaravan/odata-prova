@@ -4,8 +4,11 @@ const path = require("path");
 const { createApp } = require("./lib/app");
 
 const PORT = process.env.PORT || 3000;
+// Models live outside the server, in the repo's models/ folder. In the container that
+// default resolves to /models/PurchaseOrderSrv, where compose mounts ./models.
 const MODEL_DIR = path.resolve(
-  process.env.MODEL_DIR || path.join(__dirname, "model", "PurchaseOrderSrv"),
+  process.env.MODEL_DIR ||
+    path.join(__dirname, "..", "models", "PurchaseOrderSrv"),
 );
 const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
 
