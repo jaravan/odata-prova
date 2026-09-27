@@ -37,7 +37,8 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.equal(r.body.TotalAmount, "12500.00");
     assert.match(r.headers.get("content-type"), /IEEE754Compatible=true/);
     assert.equal(r.body["@odata.context"], "/odata/v4/T/$metadata#PurchaseOrderSet/$entity");
-    assert.equal(r.body.OrderDate, "2025-01-20T00:00:00.000Z");
+    // No Precision facet means no fractional seconds (UI5's V4 model rejects any)
+    assert.equal(r.body.OrderDate, "2025-01-20T00:00:00Z");
     assert.equal("Items" in r.body, false); // no deferred stubs in V4
   });
 
@@ -121,7 +122,7 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
     assert.equal(r.status, 200);
     assert.equal(r.body.OrderDate, "2025-03-01");
     assert.equal(r.body.DeliveryTime, "10:30:00");
-    assert.equal(r.body.CreatedAt, "2025-03-01T08:15:00.000Z");
+    assert.equal(r.body.CreatedAt, "2025-03-01T08:15:00.0000000Z"); // Precision="7"
     assert.equal(r.body.Total, 100.5);
     assert.equal(r.body.Qty, 3);
     assert.equal(r.body.Closed, false);
@@ -148,5 +149,23 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
     assert.equal((await get(`${v4}/Items/$count`)).body, "3");
     assert.equal((await send("DELETE", `${v2}/Orders(guid'22222222-2222-2222-2222-222222222222')`)).status, 204);
     assert.equal((await get(`${v4}/Items/$count`)).body, "2");
+  });
+});
+
+describe("V4 wire format: fractional seconds follow the Precision facet", () => {
+  const { toWire } = require("../lib/protocols/v4");
+  const dto = (precision) => ({ type: "Edm.DateTimeOffset", precision });
+  const tod = (precision) => ({ type: "Edm.TimeOfDay", precision });
+
+  it("drops the fraction when there is no Precision (defaults to 0)", () => {
+    assert.equal(toWire("2025-01-20T10:15:30.123Z", dto()), "2025-01-20T10:15:30Z");
+    assert.equal(toWire("2025-01-20T10:15:30.123Z", dto("0")), "2025-01-20T10:15:30Z");
+    assert.equal(toWire("10:30:00.5", tod()), "10:30:00");
+  });
+
+  it("cuts or pads the fraction to Precision digits", () => {
+    assert.equal(toWire("2025-01-20T10:15:30.123Z", dto("2")), "2025-01-20T10:15:30.12Z");
+    assert.equal(toWire("2025-01-20T10:15:30.123Z", dto("7")), "2025-01-20T10:15:30.1230000Z");
+    assert.equal(toWire("10:30:00", tod("3")), "10:30:00.000");
   });
 });
