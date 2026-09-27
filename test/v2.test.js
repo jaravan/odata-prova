@@ -111,4 +111,16 @@ describe("OData V2 protocol", () => {
     assert.match(bad.body.error.message.value, /Unknown property Nope/);
     assert.equal((await get(`${v2}/Nope`)).status, 404);
   });
+
+  it("HEAD is answered like GET, without a body (UI5 uses it for the CSRF token)", async () => {
+    const head = (url, headers) => fetch(url, { method: "HEAD", headers });
+    for (const root of [`${v2}/`, `${s.v4}/`]) {
+      const r = await head(root, { "x-csrf-token": "Fetch" });
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get("x-csrf-token"), "mock-csrf-token");
+      assert.equal(await r.text(), "");
+    }
+    assert.equal((await head(`${v2}/PurchaseOrderSet('4500000001')`)).status, 200);
+    assert.equal((await head(`${v2}/Nope`)).status, 404);
+  });
 });
