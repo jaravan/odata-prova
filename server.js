@@ -1,20 +1,15 @@
 // Metadata-driven OData server that serves V2 and V4 at the same time
 
 const path = require("path");
-const { createApp } = require("./lib/app");
+const { createApp, findModelDir } = require("./lib/app");
 
 const PORT = process.env.PORT || 3000;
 // Models live outside the server, in the repo's models/ folder. In the container that
 // default resolves to /models/PurchaseOrderSrv, where compose mounts ./models.
-const MODEL_DIR = path.resolve(
+let MODEL_DIR = path.resolve(
   process.env.MODEL_DIR ||
     path.join(__dirname, "..", "models", "PurchaseOrderSrv"),
 );
-const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
-
-// Set to an empty string to switch the specific protocol off
-const V2_PATH = process.env.V2_PATH ?? `/odata/v2/${SERVICE_NAME}`;
-const V4_PATH = process.env.V4_PATH ?? `/odata/v4/${SERVICE_NAME}`;
 
 function exitWithError(context, err) {
   console.error(`OData server failed to start: ${context}`);
@@ -22,6 +17,17 @@ function exitWithError(context, err) {
   console.error(err.code ? err.message : err.stack);
   process.exit(1);
 }
+
+try {
+  MODEL_DIR = findModelDir(MODEL_DIR);
+} catch (err) {
+  exitWithError("cannot find the model", err);
+}
+const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
+
+// Set to an empty string to switch the specific protocol off
+const V2_PATH = process.env.V2_PATH ?? `/odata/v2/${SERVICE_NAME}`;
+const V4_PATH = process.env.V4_PATH ?? `/odata/v4/${SERVICE_NAME}`;
 
 let app;
 try {

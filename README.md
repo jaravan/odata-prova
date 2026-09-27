@@ -16,7 +16,7 @@ Everything is configured through environment variables, all optional:
 | Variable       | Default                    | Purpose                                     |
 | -------------- | -------------------------- | ------------------------------------------- |
 | `PORT`         | `3000`                     | HTTP port                                   |
-| `MODEL_DIR`    | `../models/PurchaseOrderSrv` (`/models/PurchaseOrderSrv` in the image) | Path to the model to serve |
+| `MODEL_DIR`    | `../models/PurchaseOrderSrv` (`/models/PurchaseOrderSrv` in the image) | Path to the model to serve, or to a folder holding exactly one model |
 | `SERVICE_NAME` | basename of `MODEL_DIR`    | Used to build the default service paths     |
 | `V2_PATH`      | `/odata/v2/<SERVICE_NAME>` | V2 service root - set to `""` to disable V2 |
 | `V4_PATH`      | `/odata/v4/<SERVICE_NAME>` | V4 service root - set to `""` to disable V4 |
