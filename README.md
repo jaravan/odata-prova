@@ -59,6 +59,9 @@ flowchart LR
 
 One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.js` does the actual URL/key parsing, navigation, and CRUD, protocol-agnostically.
 
+> [!IMPORTANT]
+> Run a single replica. Each instance keeps its own in-memory copy of the data, so with more than one replica, writes land on one pod and reads may come from another. Restarting the server resets the data to the seed files.
+
 ## Possible future improvements
 
 - **Persistent storage** - swap the in-memory `Store` for a real database.
