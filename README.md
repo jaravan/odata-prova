@@ -31,6 +31,8 @@ The image contains no model. Mount one under `/models`, for example `docker run 
 
 Not supported - rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON.
 
+A navigation the server cannot join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
+
 ## Architecture
 
 ```mermaid
