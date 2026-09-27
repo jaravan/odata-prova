@@ -32,7 +32,7 @@ describe("both protocols share one store", () => {
     await send("MERGE", `${s.v2}/PurchaseOrderSet('D001')`, { Status: "Approved", OrderDate: "/Date(1767225600000)/" });
     const viaV4 = await get(`${s.v4}/PurchaseOrderSet('D001')?$select=Status,OrderDate`);
     assert.equal(viaV4.body.Status, "Approved");
-    assert.equal(viaV4.body.OrderDate, "2026-01-01T00:00:00Z");
+    assert.equal(viaV4.body.OrderDate, "2026-01-01");
 
     await send("DELETE", `${s.v4}/PurchaseOrderSet('D001')`);
     assert.equal((await get(`${s.v2}/PurchaseOrderSet('D001')`)).status, 404);

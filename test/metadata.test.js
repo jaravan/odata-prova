@@ -30,7 +30,7 @@ describe("parseMetadata (V2 document)", () => {
     assert.equal(model.sourceVersion, "2.0");
     const po = model.entityTypes["com.example.po.PurchaseOrder"];
     assert.deepEqual(po.keys, ["PurchaseOrderId"]);
-    assert.equal(po.properties.OrderDate.type, "Edm.DateTimeOffset");
+    assert.equal(po.properties.OrderDate.type, "Edm.Date"); // sap:display-format="Date"
     assert.equal(po.properties.OrderDate.v2Type, "Edm.DateTime");
     assert.equal(po.properties.TotalAmount.type, "Edm.Decimal");
   });
@@ -52,12 +52,10 @@ describe("parseMetadata (V2 document)", () => {
     assert.deepEqual(m.entityTypes["com.example.po.PurchaseOrder"].navigations.Items.join, [["PurchaseOrderId", "PurchaseOrderId"]]);
     assert.equal(m.entityTypes["com.example.po.PurchaseOrder"].navigations.Items.cascadeDelete, true);
   });
-  it("maps sap:display-format=\"Date\" to Edm.Date", () => {
-    const withDate = v2Xml
-      .replace('xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx"', 'xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:sap="http://www.sap.com/Protocols/SAPData"')
-      .replace('<Property Name="OrderDate" Type="Edm.DateTime" Nullable="false"/>', '<Property Name="OrderDate" Type="Edm.DateTime" Nullable="false" sap:display-format="Date" sap:label="Order date"/>');
-    const p = parseMetadata(withDate).entityTypes["com.example.po.PurchaseOrder"].properties.OrderDate;
-    assert.equal(p.type, "Edm.Date");
+  it("maps Edm.DateTime without sap:display-format=\"Date\" to Edm.DateTimeOffset", () => {
+    const withTime = v2Xml.replace(' sap:display-format="Date"', ' sap:label="Order date"');
+    const p = parseMetadata(withTime).entityTypes["com.example.po.PurchaseOrder"].properties.OrderDate;
+    assert.equal(p.type, "Edm.DateTimeOffset");
     assert.equal(p.v2Type, "Edm.DateTime");
     assert.equal(p.label, "Order date");
   });
@@ -98,7 +96,7 @@ describe("EDMX round trips", () => {
     const back = parseMetadata(emitV4(original));
     assert.equal(back.sourceVersion, "4.0");
     assert.deepEqual(shape(back, { withV2Type: false }), shape(original, { withV2Type: false }));
-    assert.equal(back.entityTypes["com.example.po.PurchaseOrder"].properties.OrderDate.v2Type, "Edm.DateTimeOffset");
+    assert.equal(back.entityTypes["com.example.po.PurchaseOrder"].properties.OrderDate.v2Type, "Edm.DateTime"); // from Edm.Date
   });
   it("V4 -> emitV2 -> parse gives the same model (V2 has no OnDelete, so cascade is not compared)", () => {
     const original = parseMetadata(v4Xml);

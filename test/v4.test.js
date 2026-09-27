@@ -37,8 +37,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.equal(r.body.TotalAmount, "12500.00");
     assert.match(r.headers.get("content-type"), /IEEE754Compatible=true/);
     assert.equal(r.body["@odata.context"], "/odata/v4/T/$metadata#PurchaseOrderSet/$entity");
-    // No Precision facet means no fractional seconds (UI5's V4 model rejects any)
-    assert.equal(r.body.OrderDate, "2025-01-20T00:00:00Z");
+    assert.equal(r.body.OrderDate, "2025-01-20"); // Edm.Date, from sap:display-format="Date"
     assert.equal("Items" in r.body, false); // no deferred stubs in V4
   });
 
