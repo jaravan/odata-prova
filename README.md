@@ -4,6 +4,8 @@
 [![npm](https://img.shields.io/npm/v/odata-prova)](https://www.npmjs.com/package/odata-prova)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+![npx odata-prova starts on a folder that holds only a metadata.xml, generates data for its two entity sets and serves them as V2 and V4; a V4 request returns a purchase order with its items, and a V2 request returns the same order](img/hero.gif)
+
 A mock OData V2 and V4 server generated from your service's `metadata.xml`. Point it at the file, and it serves the service as V2 and V4 at once, with mock data or your own CSV files. No project, no code and no SAP system needed.
 
 Not affiliated with or endorsed by SAP.
