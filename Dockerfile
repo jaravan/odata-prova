@@ -29,6 +29,8 @@ USER node
 ENV PORT=3000
 EXPOSE 3000
 
-# No model in the image: mount one under /models and point MODEL_DIR at it
-# (defaults to /models/PurchaseOrderSrv). Startup fails with a clear log if it is missing.
+# No model in the image: mount one as /models/<ServiceName> and the server finds it (the
+# folder name is the service name). With several models under /models, set MODEL_DIR to
+# one of them. Startup fails with a clear log if none is found.
+ENV MODEL_DIR=/models
 CMD ["node", "server.js"]

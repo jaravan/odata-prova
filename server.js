@@ -4,8 +4,8 @@ const path = require("path");
 const { createApp, findModelDir } = require("./lib/app");
 
 const PORT = process.env.PORT || 3000;
-// Models live outside the server, in the repo's models/ folder. In the container that
-// default resolves to /models/PurchaseOrderSrv, where compose mounts ./models.
+// Models live outside the server, in the repo's models/ folder. The image sets
+// MODEL_DIR=/models instead, and findModelDir picks the one model mounted there.
 let MODEL_DIR = path.resolve(
   process.env.MODEL_DIR ||
     path.join(__dirname, "..", "models", "PurchaseOrderSrv"),
