@@ -28,7 +28,7 @@ describe("MODEL_DIR lookup", () => {
   });
 
   it("refuses to guess between several models, and names them", () => {
-    assert.throws(() => findModelDir(MODELS), /holds 2 models \(Northwind, PurchaseOrderSrv\): point MODEL_DIR at one of them/);
+    assert.throws(() => findModelDir(MODELS), /holds 3 models \(Northwind, PurchaseOrderSrv, TripPin\): point MODEL_DIR at one of them/);
   });
 
   it("leaves a missing folder for the loader to report", () => {
