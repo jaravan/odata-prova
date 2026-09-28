@@ -21,7 +21,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY --from=builder /app/node_modules ./node_modules
-COPY package.json server.js ./
+COPY package.json server.js mock-data.js ./
 COPY lib ./lib
 
 USER node

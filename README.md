@@ -20,8 +20,11 @@ Everything is configured through environment variables, all optional:
 | `SERVICE_NAME` | basename of `MODEL_DIR`    | Used to build the default service paths     |
 | `V2_PATH`      | `/odata/v2/<SERVICE_NAME>` | V2 service root - set to `""` to disable V2 |
 | `V4_PATH`      | `/odata/v4/<SERVICE_NAME>` | V4 service root - set to `""` to disable V4 |
+| `MOCK_ROWS`    | `20`                       | Rows generated for each entity set without a seed file - `0` leaves it empty |
 
 A model directory needs a `metadata.xml` (either V2 or V4 CSDL - whichever protocol didn't write it gets its metadata generated from the other) and a `data/` folder with one CSV or JSON file per entity set, named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). See [models/PurchaseOrderSrv](../models/PurchaseOrderSrv/) for a working example.
+
+An entity set without a seed file gets `MOCK_ROWS` generated rows ([lib/generate.js](lib/generate.js)). They are deterministic (seeded from the entity set's name), fit each property's type and facets, take plausible values from property names, and hold real keys in their foreign keys, so navigation works; when a foreign key is part of the key (an order's items), the rest of the key counts up per parent. `node mock-data.js <modelDir> [rows]` (`make mock-data` from the repo root) writes them to the model's `data/` folder as seed files to edit, and never overwrites an existing one. A seed file with only a header row keeps its entity set empty.
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it; the folder name is the service name. For example, from the repo root:
 
@@ -61,7 +64,7 @@ flowchart LR
     subgraph Startup["Startup - runs once, at boot"]
         MX["metadata.xml"] --> PM["parseMetadata()"]
         PM --> MODEL[("model")]
-        SEED["data/*.csv, *.json"]
+        SEED["data/*.csv, *.json<br/>or generate.js"]
     end
 
     ST[("Store")]

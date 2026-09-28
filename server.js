@@ -29,12 +29,22 @@ const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
 const V2_PATH = process.env.V2_PATH ?? `/odata/v2/${SERVICE_NAME}`;
 const V4_PATH = process.env.V4_PATH ?? `/odata/v4/${SERVICE_NAME}`;
 
+// Rows generated for each entity set that has no seed file; 0 leaves those sets empty
+const MOCK_ROWS = Number(process.env.MOCK_ROWS ?? 20);
+if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
+  exitWithError(
+    "bad MOCK_ROWS",
+    // a code: a plain message, not a stack trace
+    Object.assign(new Error(`MOCK_ROWS must be a whole number, got '${process.env.MOCK_ROWS}'`), { code: "EMOCKROWS" }),
+  );
+
 let app;
 try {
   ({ app } = createApp({
     modelDir: MODEL_DIR,
     v2Path: V2_PATH,
     v4Path: V4_PATH,
+    mockRows: MOCK_ROWS,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);

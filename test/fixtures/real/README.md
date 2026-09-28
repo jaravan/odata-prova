@@ -1,7 +1,8 @@
 # Real-world metadata
 
 Unmodified `$metadata` documents of public sample services, used to check that the server
-loads services it was not written for (see `test/real-metadata.test.js`).
+loads services it was not written for (see `test/real-metadata.test.js`), and generates valid
+mock data for them (`test/generate.test.js`).
 
 | Folder        | Source                                                             |
 | ------------- | ------------------------------------------------------------------ |
