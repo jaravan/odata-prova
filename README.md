@@ -46,6 +46,8 @@ Not supported - rejected with `501 Not Implemented`: `$apply`, `$compute`, `$ski
 
 A navigation the server cannot join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
 
+Function imports (V2) and actions and functions (V4) are not supported. The service still starts when the `metadata.xml` declares them, but calls to them get a `404` (`Entity set <name> not found`).
+
 ## Architecture
 
 ```mermaid
@@ -81,6 +83,7 @@ One model, parsed once at startup, backs a V2 service and a V4 service sharing t
 
 ## Possible future improvements
 
+- **Function imports and actions** - V2 function imports and V4 actions and functions, which many real services use for operations like approve or release.
 - **Persistent storage** - swap the in-memory `Store` for a real database.
 - **Broader query option support** - `$apply`, `$compute`, and server-driven paging via `$skiptoken`/`$deltatoken` are currently rejected with 501.
 - **Draft handling** - no draft support, which most Fiori Elements V4 apps with edit flows depend on.
