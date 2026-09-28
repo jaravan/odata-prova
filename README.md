@@ -8,6 +8,8 @@
 
 A mock OData V2 and V4 server generated from your service's `metadata.xml`. Point it at the file, and it serves the service as V2 and V4 at once, with mock data or your own CSV files. No project, no code and no SAP system needed.
 
+> `prova (πρόβα)`: Greek for rehearsal
+
 Not affiliated with or endorsed by SAP.
 
 ## Quick start
