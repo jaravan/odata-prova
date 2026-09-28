@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shaped like an SAP Gateway V2 service with function imports: an action for one order
+     (sap:action-for, the key as parameter), functions returning entities, a string and a
+     complex value, and an action with no result. Written for the tests, not taken from SAP. -->
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="ZPO_SRV" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <ComplexType Name="Totals">
+        <Property Name="Count" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Amount" Type="Edm.Decimal" Precision="15" Scale="2" Nullable="false"/>
+      </ComplexType>
+      <EntityType Name="PurchaseOrder" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="PurchaseOrderId"/>
+        </Key>
+        <Property Name="PurchaseOrderId" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Purchase Order"/>
+        <Property Name="Status" Type="Edm.String" MaxLength="20" sap:label="Status"/>
+        <Property Name="Amount" Type="Edm.Decimal" Precision="15" Scale="2" sap:label="Amount"/>
+      </EntityType>
+      <EntityContainer Name="ZPO_SRV_Entities" m:IsDefaultEntityContainer="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="PurchaseOrderSet" EntityType="ZPO_SRV.PurchaseOrder" sap:content-version="1"/>
+        <FunctionImport Name="ApprovePurchaseOrder" ReturnType="ZPO_SRV.PurchaseOrder" EntitySet="PurchaseOrderSet" m:HttpMethod="POST" sap:action-for="ZPO_SRV.PurchaseOrder">
+          <Parameter Name="PurchaseOrderId" Type="Edm.String" Mode="In" MaxLength="10"/>
+        </FunctionImport>
+        <FunctionImport Name="GetOpenOrders" ReturnType="Collection(ZPO_SRV.PurchaseOrder)" EntitySet="PurchaseOrderSet" m:HttpMethod="GET"/>
+        <FunctionImport Name="GetStatusText" ReturnType="Edm.String" m:HttpMethod="GET">
+          <Parameter Name="Status" Type="Edm.String" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="GetTotals" ReturnType="ZPO_SRV.Totals" m:HttpMethod="GET"/>
+        <FunctionImport Name="GetOrderDates" ReturnType="Collection(Edm.DateTime)" m:HttpMethod="GET"/>
+        <FunctionImport Name="ReleaseAll" m:HttpMethod="POST"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

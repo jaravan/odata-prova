@@ -55,7 +55,23 @@ Not supported - rejected with `501 Not Implemented`: `$apply`, `$compute`, `$ski
 
 A navigation the server cannot join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
 
-Function imports (V2) and actions and functions (V4) are not supported. The service still starts when the `metadata.xml` declares them, but calls to them get a `404` (`Entity set <name> not found`).
+## Actions and functions
+
+V4 actions and functions, bound (`People('x')/NS.ShareTrip`) and imported (`GetNearestAirport(lat=1,lon=2)`), and V2 function imports (`ApprovePurchaseOrder?PurchaseOrderId='1'`) can be called, also inside `$batch`. A mock doesn't know what an operation does, so the server:
+
+- checks the method: `POST` for actions, `GET` for functions, `m:HttpMethod` for V2 function imports (`405` otherwise)
+- reads the parameters from the JSON body (V4 actions), the path (V4 functions) or the query string (V2), and logs the call with them: `action ShareTrip on /odata/v4/TripPin/People('x') {"userName":"bob","tripId":1}`
+- answers with what the return type allows, and changes no data:
+
+| Return type | Response |
+| --- | --- |
+| None | `204` |
+| The entity type it was called on | That entity, unchanged: an Approve on an order returns the order |
+| An entity type whose key the parameters carry | That entity (`404` if there is none), as for SAP Gateway's function imports for one entity |
+| Any other entity type, or a collection of one | Rows of that type's entity set, with the query options applied |
+| A primitive or complex type, or a collection of one | A neutral value: `""`, `0`, `false`, an object of those, `[]` |
+
+Operations are served on the protocol the metadata was written for; the other protocol's `$metadata` leaves them out, with a `not in V2: ...` or `not in V4: ...` line in the startup log. Parameter aliases (`@p`) and path segments after an operation are rejected with `501`. [models/TripPin](../models/TripPin/) is an example with both kinds of V4 operations.
 
 ## Architecture
 
@@ -92,7 +108,8 @@ One model, parsed once at startup, backs a V2 service and a V4 service sharing t
 
 ## Possible future improvements
 
-- **Function imports and actions** - V2 function imports and V4 actions and functions, which many real services use for operations like approve or release.
+- **Operation effects** - actions and functions answer without changing data; a per-model rule (e.g. Approve sets `Status` to `Approved`) would make them act.
+- **Operations on both protocols** - translating V2 function imports to V4 actions and functions and back, so the generated `$metadata` has them too.
 - **Persistent storage** - swap the in-memory `Store` for a real database.
 - **Broader query option support** - `$apply`, `$compute`, and server-driven paging via `$skiptoken`/`$deltatoken` are currently rejected with 501.
 - **Draft handling** - no draft support, which most Fiori Elements V4 apps with edit flows depend on.
