@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A full example with Fiori Elements apps
+    url: https://github.com/jaravan/fiori-devstack
+    about: odata-prova behind a V2 and a V4 Fiori Elements app, on Docker Compose or Kubernetes

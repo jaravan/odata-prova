@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work as described
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The request you sent, what you expected, and the response you got instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: run
+    attributes:
+      label: How you run it
+      options:
+        - npx odata-prova
+        - Docker image
+        - In my own code (createApp)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: odata-prova version or image tag, and your Node.js or Docker version.
+      placeholder: odata-prova 0.1.0, Node.js 22.23
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Startup log
+      description: The lines the server printed at startup, including any `navigation disabled` or `not in V2` lines.
+      render: text
