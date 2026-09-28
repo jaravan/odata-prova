@@ -1,9 +1,9 @@
-fiori-devstack
+odata-prova
 Copyright 2026 John Aravanis
 
 This product includes third-party material:
 
-- Northwind sample data (models/Northwind/data), Copyright (c) Microsoft Corporation,
+- Northwind sample data (examples/Northwind/data), Copyright (c) Microsoft Corporation,
   MIT License: https://github.com/microsoft/sql-server-samples
-- OData.org sample service metadata (models/Northwind/metadata.xml,
-  models/TripPin/metadata.xml and odata-server/test/fixtures/real): https://services.odata.org
+- OData.org sample service metadata (examples/Northwind/metadata.xml,
+  examples/TripPin/metadata.xml and test/fixtures/real): https://services.odata.org
