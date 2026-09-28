@@ -1,18 +1,18 @@
-// Metadata-driven OData server that serves V2 and V4 at the same time
+#!/usr/bin/env node
+// Mock OData server that serves a metadata.xml as V2 and V4 at the same time
+//
+//   odata-prova [modelDir]      (default: the current directory)
 
 const path = require("path");
 const { createApp, findModelDir } = require("./lib/app");
 
 const PORT = process.env.PORT || 3000;
-// Models live outside the server, in the repo's models/ folder. The image sets
-// MODEL_DIR=/models instead, and findModelDir picks the one model mounted there.
-let MODEL_DIR = path.resolve(
-  process.env.MODEL_DIR ||
-    path.join(__dirname, "..", "models", "PurchaseOrderSrv"),
-);
+// The model to serve: the first argument, else MODEL_DIR (the image sets /models), else the
+// current directory. findModelDir picks the one model in a folder that holds only one.
+let MODEL_DIR = path.resolve(process.argv[2] || process.env.MODEL_DIR || ".");
 
 function exitWithError(context, err) {
-  console.error(`OData server failed to start: ${context}`);
+  console.error(`odata-prova failed to start: ${context}`);
   // System errors (ENOENT, EADDRINUSE, ...) are self-explanatory, show stack for everything else
   console.error(err.code ? err.message : err.stack);
   process.exit(1);
@@ -53,7 +53,10 @@ try {
 // Express 5 passes listen errors (eg port in use) to callback instead of throwing
 const server = app.listen(PORT, (err) => {
   if (err) exitWithError(`cannot listen on port ${PORT}`, err);
-  console.log(`OData server listening on port ${server.address().port}`);
+  const { port } = server.address();
+  console.log(`odata-prova listening on port ${port}`);
+  if (V2_PATH) console.log(`  V2: http://localhost:${port}${V2_PATH}/`);
+  if (V4_PATH) console.log(`  V4: http://localhost:${port}${V4_PATH}/`);
 });
 
 // As PID 1 in a container, Node ignores SIGTERM unless handled, so Docker and Kubernetes

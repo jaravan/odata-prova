@@ -2,12 +2,13 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
 const { spawn } = require("child_process");
+const { PO_MODEL } = require("./helpers");
 
 // In a container the server is PID 1; without a SIGTERM handler Docker and Kubernetes wait out
 // their grace period (10s / 30s) before killing it. It must exit by itself, and cleanly.
 describe("shutdown", { skip: process.platform === "win32" && "Windows has no SIGTERM" }, () => {
   it("exits with 0 shortly after SIGTERM", async () => {
-    const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
+    const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js"), PO_MODEL], {
       env: { ...process.env, PORT: "0" },
     });
     let output = "";
