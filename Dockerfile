@@ -16,6 +16,10 @@ RUN yarn install --immutable && yarn workspaces focus --all --production
 # ---- runtime ----
 FROM ${NODE_IMAGE}
 
+LABEL org.opencontainers.image.title="odata-prova" \
+      org.opencontainers.image.description="Mock OData V2 and V4 server generated from a metadata.xml" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 WORKDIR /app
 
 ENV NODE_ENV=production

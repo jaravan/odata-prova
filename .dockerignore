@@ -1,0 +1,8 @@
+# The Dockerfile copies only what it needs; this keeps the build context small
+.git
+.github
+.yarn
+node_modules
+examples
+test
+*.tgz
