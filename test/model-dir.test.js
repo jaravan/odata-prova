@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { findModelDir } = require("../lib/app");
 
-const MODELS = path.join(__dirname, "..", "..", "models");
+const MODELS = path.join(__dirname, "..", "examples");
 
 // MODEL_DIR can name the model itself, or a folder holding exactly one model (how the
 // Kubernetes model image is mounted, so the image alone decides which model is served).

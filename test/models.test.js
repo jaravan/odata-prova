@@ -4,17 +4,17 @@ const fs = require("fs");
 const path = require("path");
 const { start, get } = require("./helpers");
 
-// The example models under models/ must keep working: each loads, answers on every entity
+// The example models under examples/ must keep working: each loads, answers on every entity
 // set in both versions, and has data, from seed files or generated as the server does by
 // default (MOCK_ROWS=20; TripPin has no seed files).
-const MODELS = path.join(__dirname, "..", "..", "models");
+const MODELS = path.join(__dirname, "..", "examples");
 const names = fs
   .readdirSync(MODELS, { withFileTypes: true })
   .filter((d) => d.isDirectory() && fs.existsSync(path.join(MODELS, d.name, "metadata.xml")))
   .map((d) => d.name);
 
 for (const name of names) {
-  describe(`models/${name}`, () => {
+  describe(`examples/${name}`, () => {
     let s;
     before(async () => { s = await start(path.join(MODELS, name), { mockRows: 20 }); });
     after(() => s.close());
@@ -34,7 +34,7 @@ for (const name of names) {
   });
 }
 
-describe("models/Northwind links products to categories and suppliers", () => {
+describe("examples/Northwind links products to categories and suppliers", () => {
   let s;
   before(async () => { s = await start(path.join(MODELS, "Northwind")); });
   after(() => s.close());
