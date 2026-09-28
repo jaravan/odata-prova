@@ -1,17 +1,18 @@
 name: release
 
 # Runs on a version tag: git tag v0.1.0 && git push origin v0.1.0
-# Checks that the tag matches package.json and that the tests pass. Publishing to npm and
-# pushing the image to GHCR are not added yet; they go after these checks.
+# Checks that the tag matches package.json and that the tests pass, then pushes the image
+# to GHCR for amd64 and arm64. Publishing to npm is not added yet.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  check:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,10 +33,28 @@ jobs:
 
       - run: yarn test
 
-      # Builds the image the way publishing will, without pushing it
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v0.1.0 -> ghcr.io/jaravan/odata-prova:0.1.0, :0.1 and :latest
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - uses: docker/build-push-action@v7
         with:
           context: .
-          push: false
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
