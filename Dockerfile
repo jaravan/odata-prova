@@ -29,8 +29,7 @@ USER node
 ENV PORT=3000
 EXPOSE 3000
 
-# No model in the image: mount one as /models/<ServiceName> and the server finds it (the
-# folder name is the service name). With several models under /models, set MODEL_DIR to
-# one of them. Startup fails with a clear log if none is found.
+# No model in the image. Mount one at /models/<ServiceName> (the folder name is the service
+# name); with several, set MODEL_DIR to one. Startup fails with a clear message if none is found.
 ENV MODEL_DIR=/models
 CMD ["node", "server.js"]

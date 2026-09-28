@@ -7,8 +7,8 @@ const TRIPPIN = path.join(__dirname, "fixtures", "real", "TripPin");
 const GATEWAY_OPS = path.join(__dirname, "fixtures", "OperationsV2");
 const NS = "Microsoft.OData.SampleService.Models.TripPin";
 
-// The mock doesn't know what an operation does: it routes the call, checks the method, reads
-// the parameters, logs it, and answers with what the return type allows.
+// The server routes the call, checks the method, reads and logs the parameters, and answers
+// per the return type; it doesn't know what the operation does.
 describe("V4 actions and functions (TripPin)", () => {
   let s, logs, user;
   before(async () => {
