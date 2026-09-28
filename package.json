@@ -1,12 +1,45 @@
 {
-  "name": "odata-server",
+  "name": "odata-prova",
+  "version": "0.1.0",
+  "description": "Mock OData V2 and V4 server generated from a service's metadata.xml",
+  "license": "Apache-2.0",
+  "author": "John Aravanis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaravan/odata-prova.git"
+  },
+  "homepage": "https://github.com/jaravan/odata-prova#readme",
+  "bugs": "https://github.com/jaravan/odata-prova/issues",
+  "keywords": [
+    "odata",
+    "odata-v2",
+    "odata-v4",
+    "mock",
+    "mockserver",
+    "metadata",
+    "csdl",
+    "sap",
+    "fiori",
+    "ui5"
+  ],
+  "bin": {
+    "odata-prova": "server.js",
+    "odata-prova-mock-data": "mock-data.js"
+  },
+  "main": "lib/app.js",
+  "files": [
+    "server.js",
+    "mock-data.js",
+    "lib/",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "packageManager": "yarn@4.12.0",
-  "version": "1.0.0",
-  "description": "Generic, metadata-driven OData server that serves one model as V2 and V4 at the same time",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "node server.js examples/PurchaseOrderSrv",
+    "dev": "nodemon server.js examples/PurchaseOrderSrv",
     "test": "node --test"
   },
   "dependencies": {
