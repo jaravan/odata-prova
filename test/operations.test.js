@@ -61,9 +61,28 @@ describe("V4 actions and functions (TripPin)", () => {
     assert.equal((await get(`${s.v4}/GetNearestAirport(lat=@a,lon=1)?@a=1`)).status, 501);
   });
 
-  it("operations are served on the protocol the metadata was written for only", async () => {
-    assert.equal((await get(`${s.v2}/GetNearestAirport`)).status, 404);
-    assert.doesNotMatch((await get(`${s.v2}/$metadata`)).body, /GetNearestAirport/);
+  it("on V2, as function imports: a bound operation takes the entity's key and names its type in sap:action-for", async () => {
+    const metadata = (await get(`${s.v2}/$metadata`)).body;
+    assert.match(metadata, /<FunctionImport Name="GetNearestAirport" ReturnType="[^"]+\.Airport" EntitySet="Airports" m:HttpMethod="GET">/);
+    assert.match(metadata, /<FunctionImport Name="ShareTrip" m:HttpMethod="POST" sap:action-for="[^"]+\.Person">\s*<Parameter Name="UserName"/);
+
+    const airport = await get(`${s.v2}/GetNearestAirport?lat=1&lon=2`);
+    assert.equal(airport.status, 200);
+    assert.ok(airport.body.d.IcaoCode);
+
+    const share = await send("POST", `${s.v2}/ShareTrip?UserName='${user}'&userName='bob'&tripId=1`);
+    assert.equal(share.status, 204);
+    assert.ok(logs.includes(`action ShareTrip on /odata/v2/T/People('${user}') {"UserName":"${user}","userName":"bob","tripId":1}`));
+    assert.equal((await send("POST", `${s.v2}/ShareTrip?UserName='nobody'`)).status, 404);
+
+    const airline = await get(`${s.v2}/GetFavoriteAirline?UserName='${user}'`);
+    assert.equal(airline.status, 200);
+    assert.ok(airline.body.d.AirlineCode);
+  });
+
+  it("on V2, an operation bound to a type without an entity set is left out, and logged", async () => {
+    assert.doesNotMatch((await get(`${s.v2}/$metadata`)).body, /GetInvolvedPeople/);
+    assert.ok(s.model.warnings.includes("not in V2: function GetInvolvedPeople: no entity set for Trip"));
   });
 
   it("works inside $batch", async () => {
@@ -89,7 +108,7 @@ describe("V2 function imports (SAP Gateway style)", () => {
     const r = await send("POST", `${s.v2}/ApprovePurchaseOrder?PurchaseOrderId='4500000002'`);
     assert.equal(r.status, 200);
     assert.equal(r.body.d.PurchaseOrderId, "4500000002");
-    assert.ok(logs.includes('action ApprovePurchaseOrder {"PurchaseOrderId":"4500000002"}'));
+    assert.ok(logs.includes(`action ApprovePurchaseOrder on /odata/v2/T/PurchaseOrderSet('4500000002') {"PurchaseOrderId":"4500000002"}`));
     assert.equal((await send("POST", `${s.v2}/ApprovePurchaseOrder?PurchaseOrderId='nope'`)).status, 404);
   });
 
@@ -111,5 +130,53 @@ describe("V2 function imports (SAP Gateway style)", () => {
     assert.equal((await send("POST", `${s.v2}/ReleaseAll`)).status, 204);
     assert.equal((await get(`${s.v2}/ReleaseAll`)).status, 405);
     assert.equal((await send("POST", `${s.v2}/GetOpenOrders`)).status, 405);
+  });
+
+  it("on V4: an import with sap:action-for and the key as parameters is an action bound to that type", async () => {
+    const metadata = (await get(`${s.v4}/$metadata`)).body;
+    // EntitySetPath: it returns the entity it was called on, so UI5 updates the page with it
+    assert.match(metadata, /<Action Name="ApprovePurchaseOrder" IsBound="true" EntitySetPath="_it">\s*<Parameter Name="_it" Type="ZPO_SRV.PurchaseOrder" Nullable="false"\/>\s*<ReturnType Type="ZPO_SRV.PurchaseOrder"\/>/);
+    const r = await send("POST", `${s.v4}/PurchaseOrderSet('4500000001')/ZPO_SRV.ApprovePurchaseOrder`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.PurchaseOrderId, "4500000001");
+  });
+
+  it("on V4: the other imports are action and function imports", async () => {
+    const metadata = (await get(`${s.v4}/$metadata`)).body;
+    assert.match(metadata, /<FunctionImport Name="GetOpenOrders" Function="ZPO_SRV.GetOpenOrders" EntitySet="PurchaseOrderSet"/);
+    assert.match(metadata, /<ActionImport Name="ReleaseAll" Action="ZPO_SRV.ReleaseAll"\/>/);
+    assert.equal((await get(`${s.v4}/GetOpenOrders()?$filter=Status eq 'Open'`)).body.value.length, 1);
+    assert.equal((await get(`${s.v4}/GetStatusText(Status='Open')`)).body.value, "");
+    assert.equal((await send("POST", `${s.v4}/ReleaseAll`)).status, 204);
+  });
+});
+
+describe("config.json rules: what an operation changes", () => {
+  const fs = require("fs");
+  const os = require("os");
+  // A copy of the V2 fixture with the given config.json
+  function modelWith(config) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ops-"));
+    fs.cpSync(GATEWAY_OPS, dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(config));
+    return dir;
+  }
+
+  it("sets the properties on the entity, seen on both protocols", async () => {
+    const s = await start(modelWith({ operations: { ApprovePurchaseOrder: { set: { Status: "Approved", Amount: 99.5 } } } }));
+    try {
+      const v2 = await send("POST", `${s.v2}/ApprovePurchaseOrder?PurchaseOrderId='4500000001'`);
+      assert.equal(v2.body.d.Status, "Approved");
+      assert.equal(v2.body.d.Amount, "99.5");
+      const v4 = await get(`${s.v4}/PurchaseOrderSet('4500000001')`);
+      assert.equal(v4.body.Status, "Approved");
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("a rule for an unknown operation or property is a startup error", async () => {
+    await assert.rejects(start(modelWith({ operations: { Approve: { set: { Status: "x" } } } })), /operations\.Approve: no operation of that name acts on an entity/);
+    await assert.rejects(start(modelWith({ operations: { ApprovePurchaseOrder: { set: { Colour: "x" } } } })), /operations\.ApprovePurchaseOrder\.set: PurchaseOrder has no property Colour/);
   });
 });
