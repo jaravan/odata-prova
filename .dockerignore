@@ -4,5 +4,6 @@
 .yarn
 node_modules
 examples
+img
 test
 *.tgz
