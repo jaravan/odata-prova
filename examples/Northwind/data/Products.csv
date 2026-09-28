@@ -1,0 +1,8 @@
+ProductID;ProductName;SupplierID;CategoryID;QuantityPerUnit;UnitPrice;UnitsInStock;UnitsOnOrder;ReorderLevel;Discontinued
+1;Chai;1;1;10 boxes x 20 bags;18.00;39;0;10;false
+2;Chang;1;1;24 - 12 oz bottles;19.00;17;40;25;false
+3;Aniseed Syrup;1;2;12 - 550 ml bottles;10.00;13;70;25;false
+4;Chef Anton's Cajun Seasoning;2;2;48 - 6 oz jars;22.00;53;0;0;false
+5;Chef Anton's Gumbo Mix;2;2;36 boxes;21.35;0;0;0;true
+6;Grandma's Boysenberry Spread;3;2;12 - 8 oz jars;25.00;120;0;25;false
+8;Northwoods Cranberry Sauce;3;2;12 - 12 oz jars;40.00;6;0;0;false

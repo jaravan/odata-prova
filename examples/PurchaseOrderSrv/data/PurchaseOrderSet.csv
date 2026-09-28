@@ -1,0 +1,31 @@
+PurchaseOrderId;Supplier;CompanyCode;OrderDate;Status;Currency;TotalAmount
+4500000001;Acme Components Ltd;1000;2025-01-20;Open;EUR;12000.00
+4500000002;Nordic Steel AB;1000;2025-02-01;Approved;EUR;45200.50
+4500000003;Pacific Electronics Inc;2000;2025-02-15;Completed;USD;8899.99
+4500000004;Global Packaging GmbH;1000;2025-03-01;Open;EUR;2100.00
+4500000005;Sunrise Logistics Co;3000;2025-03-15;Cancelled;USD;560.75
+4500000006;Pacific Electronics Inc;2000;2025-03-25;Completed;USD;15388.46
+4500000007;Keystone Industrial Supply;3000;2025-03-30;Completed;USD;9830.10
+4500000008;Iberia Plasticos SA;1000;2025-04-05;Completed;EUR;17790.90
+4500000009;Nordic Steel AB;1000;2025-04-13;Completed;EUR;48000.00
+4500000010;Acme Components Ltd;1000;2025-04-20;Completed;EUR;20325.00
+4500000011;Alpine Precision AG;1000;2025-04-29;Completed;EUR;16473.00
+4500000012;Cascade Office Supply;2000;2025-05-06;Completed;USD;2501.00
+4500000013;Iberia Plasticos SA;1000;2025-05-10;Completed;EUR;13203.00
+4500000014;Sunrise Logistics Co;3000;2025-05-15;Completed;USD;180.00
+4500000015;Rotterdam Chemicals BV;1000;2025-05-19;Completed;EUR;7232.00
+4500000016;Great Lakes Motors Inc;2000;2025-05-25;Completed;USD;5000.00
+4500000017;Sunrise Logistics Co;3000;2025-05-31;Cancelled;USD;560.75
+4500000018;Baltic Timber Oy;1000;2025-06-07;Approved;EUR;4115.00
+4500000019;Sunrise Logistics Co;3000;2025-06-16;Approved;USD;7610.75
+4500000020;Great Lakes Motors Inc;2000;2025-06-24;Approved;USD;8313.00
+4500000021;Global Packaging GmbH;1000;2025-06-30;Approved;EUR;2785.00
+4500000022;Baltic Timber Oy;1000;2025-07-07;Completed;EUR;7421.00
+4500000023;Bavaria Werkzeug GmbH;1000;2025-07-14;Completed;EUR;3168.00
+4500000024;Cascade Office Supply;2000;2025-07-19;Cancelled;USD;1890.00
+4500000025;Nordic Steel AB;1000;2025-07-24;Approved;EUR;36003.00
+4500000026;Acme Components Ltd;1000;2025-07-29;Open;EUR;4752.00
+4500000027;Bavaria Werkzeug GmbH;1000;2025-08-02;Open;EUR;2934.50
+4500000028;Rotterdam Chemicals BV;1000;2025-08-10;Approved;EUR;4462.00
+4500000029;Great Lakes Motors Inc;2000;2025-08-18;Approved;USD;4062.50
+4500000030;Alpine Precision AG;1000;2025-08-27;Approved;EUR;7650.00

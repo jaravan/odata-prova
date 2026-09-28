@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
+    <Schema Namespace="com.example.po" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="PurchaseOrder">
+        <Key>
+          <PropertyRef Name="PurchaseOrderId"/>
+        </Key>
+        <Property Name="PurchaseOrderId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="Supplier" Type="Edm.String" Nullable="false" MaxLength="100"/>
+        <Property Name="CompanyCode" Type="Edm.String" Nullable="false" MaxLength="4"/>
+        <Property Name="OrderDate" Type="Edm.DateTime" Nullable="false" sap:display-format="Date"/>
+        <Property Name="Status" Type="Edm.String" Nullable="false" MaxLength="20"/>
+        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="TotalAmount" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2"/>
+        <NavigationProperty Name="Items" Relationship="com.example.po.PurchaseOrder_Items" FromRole="PurchaseOrder" ToRole="Items"/>
+      </EntityType>
+      <EntityType Name="PurchaseOrderItem">
+        <Key>
+          <PropertyRef Name="PurchaseOrderId"/>
+          <PropertyRef Name="ItemPosition"/>
+        </Key>
+        <Property Name="PurchaseOrderId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="ItemPosition" Type="Edm.String" Nullable="false" MaxLength="5"/>
+        <Property Name="Material" Type="Edm.String" Nullable="false" MaxLength="40"/>
+        <Property Name="Description" Type="Edm.String" Nullable="false" MaxLength="100"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Nullable="false" Precision="13" Scale="3"/>
+        <Property Name="Unit" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="NetPrice" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2"/>
+        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <NavigationProperty Name="PurchaseOrder" Relationship="com.example.po.PurchaseOrder_Items" FromRole="Items" ToRole="PurchaseOrder"/>
+      </EntityType>
+      <Association Name="PurchaseOrder_Items">
+        <End Role="PurchaseOrder" Type="com.example.po.PurchaseOrder" Multiplicity="1"/>
+        <End Role="Items" Type="com.example.po.PurchaseOrderItem" Multiplicity="*"/>
+        <!-- Tells the mock (and any other consumer) how the two sides join. Without it the
+             mock falls back to matching same-named key properties, which happens to work
+             here too, but being explicit is what SAP Gateway does. -->
+        <ReferentialConstraint>
+          <Principal Role="PurchaseOrder">
+            <PropertyRef Name="PurchaseOrderId"/>
+          </Principal>
+          <Dependent Role="Items">
+            <PropertyRef Name="PurchaseOrderId"/>
+          </Dependent>
+        </ReferentialConstraint>
+      </Association>
+      <EntityContainer Name="PurchaseOrderSrv_Entities" m:IsDefaultEntityContainer="true">
+        <EntitySet Name="PurchaseOrderSet" EntityType="com.example.po.PurchaseOrder"/>
+        <EntitySet Name="PurchaseOrderItemSet" EntityType="com.example.po.PurchaseOrderItem"/>
+        <AssociationSet Name="PurchaseOrder_Items_AssocSet" Association="com.example.po.PurchaseOrder_Items">
+          <End Role="PurchaseOrder" EntitySet="PurchaseOrderSet"/>
+          <End Role="Items" EntitySet="PurchaseOrderItemSet"/>
+        </AssociationSet>
+        <FunctionImport Name="ApprovePurchaseOrder" ReturnType="com.example.po.PurchaseOrder" EntitySet="PurchaseOrderSet" m:HttpMethod="POST" sap:action-for="com.example.po.PurchaseOrder">
+          <Parameter Name="PurchaseOrderId" Type="Edm.String" Mode="In" MaxLength="10"/>
+        </FunctionImport>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -1,0 +1,41 @@
+name: Metadata not supported
+description: The OData server can't load or serve a metadata.xml
+labels: ["metadata"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't paste metadata of a customer or internal system that you may not share. A reduced
+        example with the same structure is enough, and often better.
+  - type: dropdown
+    id: version
+    attributes:
+      label: OData version of the metadata.xml
+      options:
+        - V2
+        - V4
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where the service comes from
+      placeholder: SAP Gateway (SEGW), RAP, CAP, another server, ...
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: The startup log (with any `navigation disabled` or `not in V2` lines), or the request and the response you got.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: metadata
+    attributes:
+      label: metadata.xml
+      description: The smallest part of the document that shows the problem.
+      render: xml
+    validations:
+      required: true
