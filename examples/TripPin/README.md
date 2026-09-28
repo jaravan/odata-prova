@@ -3,10 +3,10 @@
 An example of a V4 service with actions and functions: bound to an entity
 (`GetFavoriteAirline`, `ShareTrip`), and imported into the container (`GetNearestAirport`,
 `ResetDataSource`). The server routes the calls, logs them with their parameters and answers
-with what the return type allows, see the [odata-server README](../../odata-server/README.md#actions-and-functions).
+with what the return type allows, see [Actions and functions](../../README.md#actions-and-functions).
 
 ```sh
-make odata-up MODEL=TripPin
+node server.js examples/TripPin    # from the repo root; or: npx odata-prova examples/TripPin
 curl 'http://localhost:3000/odata/v4/TripPin/People?$select=UserName,FirstName,Gender'
 curl 'http://localhost:3000/odata/v4/TripPin/GetNearestAirport(lat=33.9,lon=-118.4)'
 ```
