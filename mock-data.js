@@ -5,7 +5,7 @@
 //   odata-prova-mock-data <modelDir> [rows]      (or: node mock-data.js <modelDir> [rows])
 //
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
-// value, or a text the CSV reader would split (it has no quoting).
+// value, or a text that would need quoting in CSV (this writer doesn't quote).
 
 const fs = require("fs");
 const path = require("path");
@@ -20,12 +20,13 @@ function toCsv(columns, rows) {
     .join("\n") + "\n";
 }
 
-// The CSV reader takes ";" as the separator when the header has one, "," otherwise, and
-// splits on it without quoting
+// The CSV reader takes ";" as the separator when the header has one, "," otherwise. A text
+// holding the separator, a line break or a quote would have to be quoted, which this
+// writer doesn't do.
 function csvSafe(type, rows) {
   const props = Object.values(type.properties);
   if (props.some((p) => p.isCollection || p.complexType)) return false;
-  const bad = props.length > 1 ? /[;\r\n]/ : /[;,\r\n]/;
+  const bad = props.length > 1 ? /[;"\r\n]/ : /[;,"\r\n]/;
   return rows.every((row) => props.every((p) => !bad.test(String(row[p.name] ?? ""))));
 }
 

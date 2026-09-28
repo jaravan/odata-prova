@@ -42,7 +42,7 @@ Needs Node.js 22 or later, or Docker. [examples/](examples/) has three services 
 MySrv/
   metadata.xml         # the service's $metadata, V2 or V4
   data/                # optional, one file per entity set (the others get mock data)
-    MyEntitySet.csv    # header row, ; or , separated (JSON also works)
+    MyEntitySet.csv    # header row, ; or , separated, quoted as spreadsheets write it (JSON also works)
   config.json          # optional, what operations change (see Actions and functions)
 ```
 
