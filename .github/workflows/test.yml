@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # engines.node in package.json says >=22: the lowest and the current LTS
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Corepack must be enabled before actions/setup-node's yarn cache resolution runs,
+      # since this repo pins yarn 4 (package.json "packageManager") and the runner's
+      # preinstalled yarn is the classic 1.x line.
+      - run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: yarn
+
+      - run: yarn install --immutable
+
+      - run: yarn test
