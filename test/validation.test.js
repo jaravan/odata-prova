@@ -33,6 +33,13 @@ describe("values are checked against their Edm type", () => {
     assert.deepEqual([r.body.Total, r.body.Qty, r.body.Closed], ["100.50", 3, false]);
   });
 
+  it("one invalid value -> 400, and the valid ones in the same request aren't written", async () => {
+    const r = await send("PATCH", `${s.v4}/${ORDER}`, { Total: "5.00", Qty: "abc" });
+    assert.equal(r.status, 400);
+    const after = await get(`${s.v4}/${ORDER}?$select=Total,Qty`, { accept: "application/json;IEEE754Compatible=true" });
+    assert.deepEqual([after.body.Total, after.body.Qty], ["100.50", 3]);
+  });
+
   it("accepts what the types allow: TRUE, numbers as strings, exponents", async () => {
     const r = await send("PATCH", `${s.v4}/${ORDER}`, { Closed: "TRUE", Qty: "7", Total: "-1.5e2" });
     assert.equal(r.status, 204);
