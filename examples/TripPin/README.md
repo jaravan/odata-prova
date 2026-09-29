@@ -3,7 +3,7 @@
 An example of a V4 service with actions and functions: bound to an entity
 (`GetFavoriteAirline`, `ShareTrip`), and imported into the container (`GetNearestAirport`,
 `ResetDataSource`). The server routes the calls, logs them with their parameters and answers
-with what the return type allows, see [Actions and functions](../../README.md#actions-and-functions).
+with what the return type allows, see [Actions and functions](../../docs/operations.md).
 
 ```sh
 node server.js examples/TripPin    # from the repo root; or: npx odata-prova examples/TripPin
