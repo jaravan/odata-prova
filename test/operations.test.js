@@ -154,13 +154,16 @@ describe("V2 function imports (SAP Gateway style)", () => {
 describe("config.json rules: what an operation changes", () => {
   const fs = require("fs");
   const os = require("os");
-  // A copy of the V2 fixture with the given config.json
+  // A copy of the V2 fixture with the given config.json, removed after the tests
+  const dirs = [];
   function modelWith(config) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ops-"));
+    dirs.push(dir);
     fs.cpSync(GATEWAY_OPS, dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(config));
     return dir;
   }
+  after(() => dirs.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
   it("sets the properties on the entity, seen on both protocols", async () => {
     const s = await start(modelWith({ operations: { ApprovePurchaseOrder: { set: { Status: "Approved", Amount: 99.5 } } } }));
