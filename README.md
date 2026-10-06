@@ -91,15 +91,15 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 - **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount` and `$search`.
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
-- **Drafts** (V4, `Common.DraftRoot`): the Fiori Elements edit flow - edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
+- **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
 
-Not yet: creating new entities as drafts, and ETags. `$apply`, `$compute`, `$skiptoken` and `$deltatoken` are rejected with `501`.
+Not yet: ETags. `$apply`, `$compute`, `$skiptoken` and `$deltatoken` are rejected with `501`.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified.
 
 ## Why not the fe-mockserver or CAP?
 
-- **[fe-mockserver](https://github.com/SAP/open-ux-odata)** runs as middleware inside `ui5 serve`, next to the app that hosts it. Its core can be mounted in your own Express server, but SAP documents it as not meant for direct use. odata-prova is a standalone server or container that any app, pipeline or test can share. fe-mockserver also supports creating new entities as drafts, which odata-prova doesn't yet.
+- **[fe-mockserver](https://github.com/SAP/open-ux-odata)** runs as middleware inside `ui5 serve`, next to the app that hosts it. Its core can be mounted in your own Express server, but SAP documents it as not meant for direct use. odata-prova is a standalone server or container that any app, pipeline or test can share.
 - **[CAP](https://cap.cloud.sap/)** can mock a service too: `cds import` converts its `metadata.xml` to CDS, and `cds watch` serves it with CSV data, but that needs a CAP project around it. odata-prova uses the file as is, with no project or code, and serves it as V2 and V4 at once.
 
 For quick UI work inside a single app, the fe-mockserver is still simpler.

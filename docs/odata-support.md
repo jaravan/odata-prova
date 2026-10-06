@@ -21,31 +21,38 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 ## Drafts
 
-A V4 entity set annotated with `Common.DraftRoot` or `Common.DraftNode`, as CAP and RAP generate them, is served as draft-enabled (the startup log lists them as `draft-enabled: ...`):
+An entity set annotated with `Common.DraftRoot` or `Common.DraftNode`, as CAP and RAP generate them, is served as draft-enabled (the startup log lists them as `draft-enabled: ...`):
 
 - Seeded and generated rows are active entities: `IsActiveEntity` true, `HasActiveEntity` and `HasDraftEntity` false. Seed files don't need those columns, so CAP's work as they are.
 - A composition (`Books` to `chapters` and back) also joins on `IsActiveEntity`, so an active entity reaches active children and a draft its drafts. Any other navigation into a draft-enabled set reaches its active entities.
 - `SiblingEntity` and `DraftAdministrativeData` resolve, so the list report's `SiblingEntity/IsActiveEntity eq null` filter and the object page's `$expand=DraftAdministrativeData` work.
 
-Editing works the way Fiori Elements V4 drives it, with the actions the `DraftRoot` annotation names:
+Creating and editing work the way Fiori Elements drives them, with the actions the `DraftRoot` annotation names:
 
-| Request                                            | Effect                                                                                                                                                  |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST Books(ID=...,IsActiveEntity=true)/draftEdit` | Copies the entity and its compositions into a draft. With `PreserveChanges: true` and a draft already there: `409`; without, the old draft is replaced. |
-| `PATCH` / `PUT` on a draft                         | Changes the draft. `HasActiveEntity` and `HasDraftEntity` are left to the server.                                                                       |
-| `POST Books(...,IsActiveEntity=false)/chapters`    | A new draft child. A missing `Edm.Guid` or integer key is generated, since Fiori Elements sends none.                                                   |
-| `DELETE` on a draft child                          | Removes it from the draft (and from the active entity on activation).                                                                                   |
-| `draftPrepare`                                     | Returns the draft: the mock has nothing to validate.                                                                                                    |
-| `draftActivate`                                    | Writes the draft tree over the active one, deletes the children removed in the draft, and drops the draft.                                              |
-| `DELETE` on a draft root                           | Discards the draft.                                                                                                                                     |
-| `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                            |
+| Request                                            | Effect                                                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST Books`                                       | A new entity, as a draft with no active entity yet. A missing `Edm.Guid` or integer key is generated (a string key too, when it can hold 36 characters), since Fiori Elements sends none. The annotation's `NewAction`, if any, does the same from its parameters. |
+| `POST Books(ID=...,IsActiveEntity=true)/draftEdit` | Copies the entity and its compositions into a draft. With `PreserveChanges: true` and a draft already there: `409`; without, the old draft is replaced.                                                                                                            |
+| `PATCH` / `PUT` on a draft                         | Changes the draft. `HasActiveEntity` and `HasDraftEntity` are left to the server.                                                                                                                                                                                  |
+| `POST Books(...,IsActiveEntity=false)/chapters`    | A new draft child, its key generated the same way. A node can't be created on its own (`POST Chapters`).                                                                                                                                                           |
+| `DELETE` on a draft child                          | Removes it from the draft (and from the active entity on activation).                                                                                                                                                                                              |
+| `draftPrepare`                                     | Returns the draft: the mock has nothing to validate.                                                                                                                                                                                                               |
+| `draftActivate`                                    | Writes the draft tree over the active one (creating it, for a new entity), deletes the children removed in the draft, and drops the draft.                                                                                                                         |
+| `DELETE` on a draft root                           | Discards the draft.                                                                                                                                                                                                                                                |
+| `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                                                                                                                                       |
 
-Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`. Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft; `DraftAdministrativeData` says so. The V2 service of the same model calls the actions as function imports (`POST draftEdit?ID=guid'...'&IsActiveEntity=true`).
+Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`. Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft; `DraftAdministrativeData` says so, and is read-only.
 
-Not yet: creating a new entity as a draft (`POST Books`), and draft annotations in V2 metadata.
+**V2.** SAP Gateway and RAP put the same annotations in V2 metadata, with the actions as function import paths (`Srv.Srv_Entities/TravelEdit`); those are read too. Whichever version the metadata is, the V2 service calls the actions as function imports (`POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`) and the V4 service as bound actions.
+
+Limits:
+
+- A draft and its active entity share the key except `IsActiveEntity`, as in CAP and RAP. Older BOPF-based services that key drafts by a `DraftUUID` aren't supported.
+- A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
+- No validation, side effects, or locks between users.
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. Not yet: creating new entities as drafts (see [Drafts](#drafts)) and ETags.
+Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. Not yet: ETags.
 
 A navigation the server can't join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.

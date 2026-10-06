@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="Common"/>
+  </edmx:Reference>
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="TravelService" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="TravelType" sap:label="Travel" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="TravelUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="TravelUUID" Type="Edm.Guid" Nullable="false" sap:label="Travel UUID"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false" sap:label="Is active"/>
+        <Property Name="TravelID" Type="Edm.String" MaxLength="8" sap:label="Travel ID"/>
+        <Property Name="Description" Type="Edm.String" MaxLength="1024" sap:label="Description"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" sap:label="Has Draft"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" sap:label="Has active"/>
+        <NavigationProperty Name="DraftAdministrativeData" Relationship="TravelService.assoc_Travel_DraftAdmin" FromRole="FromRole_assoc_Travel_DraftAdmin" ToRole="ToRole_assoc_Travel_DraftAdmin"/>
+        <NavigationProperty Name="SiblingEntity" Relationship="TravelService.assoc_Travel_Sibling" FromRole="FromRole_assoc_Travel_Sibling" ToRole="ToRole_assoc_Travel_Sibling"/>
+        <NavigationProperty Name="to_Booking" Relationship="TravelService.assoc_Travel_Booking" FromRole="FromRole_assoc_Travel_Booking" ToRole="ToRole_assoc_Travel_Booking"/>
+      </EntityType>
+      <EntityType Name="BookingType" sap:label="Booking" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="BookingUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="BookingUUID" Type="Edm.Guid" Nullable="false" sap:label="Booking UUID"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false" sap:label="Is active"/>
+        <Property Name="TravelUUID" Type="Edm.Guid" sap:label="Travel UUID"/>
+        <Property Name="BookingID" Type="Edm.String" MaxLength="4" sap:label="Booking ID"/>
+        <Property Name="FlightPrice" Type="Edm.Decimal" Precision="16" Scale="3" sap:label="Price"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" sap:label="Has Draft"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" sap:label="Has active"/>
+        <NavigationProperty Name="DraftAdministrativeData" Relationship="TravelService.assoc_Booking_DraftAdmin" FromRole="FromRole_assoc_Booking_DraftAdmin" ToRole="ToRole_assoc_Booking_DraftAdmin"/>
+        <NavigationProperty Name="SiblingEntity" Relationship="TravelService.assoc_Booking_Sibling" FromRole="FromRole_assoc_Booking_Sibling" ToRole="ToRole_assoc_Booking_Sibling"/>
+        <NavigationProperty Name="to_Travel" Relationship="TravelService.assoc_Travel_Booking" FromRole="ToRole_assoc_Travel_Booking" ToRole="FromRole_assoc_Travel_Booking"/>
+      </EntityType>
+      <EntityType Name="I_DraftAdministrativeDataType" sap:label="Draft Administrative Data" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="DraftUUID"/>
+        </Key>
+        <Property Name="DraftUUID" Type="Edm.Guid" Nullable="false" sap:label="Draft UUID"/>
+        <Property Name="CreationDateTime" Type="Edm.DateTimeOffset" Precision="7" sap:label="Draft Created On"/>
+        <Property Name="CreatedByUser" Type="Edm.String" MaxLength="12" sap:label="Draft Created By"/>
+        <Property Name="LastChangeDateTime" Type="Edm.DateTimeOffset" Precision="7" sap:label="Draft Last Changed On"/>
+        <Property Name="LastChangedByUser" Type="Edm.String" MaxLength="12" sap:label="Draft Last Changed By"/>
+        <Property Name="InProcessByUser" Type="Edm.String" MaxLength="12" sap:label="Draft In Process By"/>
+        <Property Name="DraftIsCreatedByMe" Type="Edm.Boolean" sap:label="Draft Created By Me"/>
+      </EntityType>
+      <Association Name="assoc_Travel_Booking" sap:content-version="1">
+        <End Type="TravelService.TravelType" Multiplicity="1" Role="FromRole_assoc_Travel_Booking"/>
+        <End Type="TravelService.BookingType" Multiplicity="*" Role="ToRole_assoc_Travel_Booking"/>
+        <ReferentialConstraint>
+          <Principal Role="FromRole_assoc_Travel_Booking">
+            <PropertyRef Name="TravelUUID"/>
+            <PropertyRef Name="IsActiveEntity"/>
+          </Principal>
+          <Dependent Role="ToRole_assoc_Travel_Booking">
+            <PropertyRef Name="TravelUUID"/>
+            <PropertyRef Name="IsActiveEntity"/>
+          </Dependent>
+        </ReferentialConstraint>
+      </Association>
+      <Association Name="assoc_Travel_Sibling" sap:content-version="1">
+        <End Type="TravelService.TravelType" Multiplicity="1" Role="FromRole_assoc_Travel_Sibling"/>
+        <End Type="TravelService.TravelType" Multiplicity="0..1" Role="ToRole_assoc_Travel_Sibling"/>
+      </Association>
+      <Association Name="assoc_Booking_Sibling" sap:content-version="1">
+        <End Type="TravelService.BookingType" Multiplicity="1" Role="FromRole_assoc_Booking_Sibling"/>
+        <End Type="TravelService.BookingType" Multiplicity="0..1" Role="ToRole_assoc_Booking_Sibling"/>
+      </Association>
+      <Association Name="assoc_Travel_DraftAdmin" sap:content-version="1">
+        <End Type="TravelService.TravelType" Multiplicity="1" Role="FromRole_assoc_Travel_DraftAdmin"/>
+        <End Type="TravelService.I_DraftAdministrativeDataType" Multiplicity="0..1" Role="ToRole_assoc_Travel_DraftAdmin"/>
+      </Association>
+      <Association Name="assoc_Booking_DraftAdmin" sap:content-version="1">
+        <End Type="TravelService.BookingType" Multiplicity="1" Role="FromRole_assoc_Booking_DraftAdmin"/>
+        <End Type="TravelService.I_DraftAdministrativeDataType" Multiplicity="0..1" Role="ToRole_assoc_Booking_DraftAdmin"/>
+      </Association>
+      <EntityContainer Name="TravelService_Entities" m:IsDefaultEntityContainer="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="Travel" EntityType="TravelService.TravelType" sap:content-version="1"/>
+        <EntitySet Name="Booking" EntityType="TravelService.BookingType" sap:content-version="1"/>
+        <EntitySet Name="I_DraftAdministrativeData" EntityType="TravelService.I_DraftAdministrativeDataType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>
+        <AssociationSet Name="assoc_Travel_Booking" Association="TravelService.assoc_Travel_Booking" sap:content-version="1">
+          <End EntitySet="Travel" Role="FromRole_assoc_Travel_Booking"/>
+          <End EntitySet="Booking" Role="ToRole_assoc_Travel_Booking"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_Travel_Sibling" Association="TravelService.assoc_Travel_Sibling" sap:content-version="1">
+          <End EntitySet="Travel" Role="FromRole_assoc_Travel_Sibling"/>
+          <End EntitySet="Travel" Role="ToRole_assoc_Travel_Sibling"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_Booking_Sibling" Association="TravelService.assoc_Booking_Sibling" sap:content-version="1">
+          <End EntitySet="Booking" Role="FromRole_assoc_Booking_Sibling"/>
+          <End EntitySet="Booking" Role="ToRole_assoc_Booking_Sibling"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_Travel_DraftAdmin" Association="TravelService.assoc_Travel_DraftAdmin" sap:content-version="1">
+          <End EntitySet="Travel" Role="FromRole_assoc_Travel_DraftAdmin"/>
+          <End EntitySet="I_DraftAdministrativeData" Role="ToRole_assoc_Travel_DraftAdmin"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_Booking_DraftAdmin" Association="TravelService.assoc_Booking_DraftAdmin" sap:content-version="1">
+          <End EntitySet="Booking" Role="FromRole_assoc_Booking_DraftAdmin"/>
+          <End EntitySet="I_DraftAdministrativeData" Role="ToRole_assoc_Booking_DraftAdmin"/>
+        </AssociationSet>
+        <FunctionImport Name="TravelActivate" ReturnType="TravelService.TravelType" EntitySet="Travel" m:HttpMethod="POST" sap:action-for="TravelService.TravelType">
+          <Parameter Name="TravelUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="TravelEdit" ReturnType="TravelService.TravelType" EntitySet="Travel" m:HttpMethod="POST" sap:action-for="TravelService.TravelType">
+          <Parameter Name="PreserveChanges" Type="Edm.Boolean" Mode="In" Nullable="true"/>
+          <Parameter Name="TravelUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="TravelPrepare" ReturnType="TravelService.TravelType" EntitySet="Travel" m:HttpMethod="POST" sap:action-for="TravelService.TravelType">
+          <Parameter Name="SideEffectsQualifier" Type="Edm.String" Mode="In" Nullable="true"/>
+          <Parameter Name="TravelUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="BookingPrepare" ReturnType="TravelService.BookingType" EntitySet="Booking" m:HttpMethod="POST" sap:action-for="TravelService.BookingType">
+          <Parameter Name="SideEffectsQualifier" Type="Edm.String" Mode="In" Nullable="true"/>
+          <Parameter Name="BookingUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+      </EntityContainer>
+      <Annotations Target="TravelService.TravelService_Entities/Travel" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.DraftRoot">
+          <Record>
+            <PropertyValue Property="ActivationAction" String="TravelService.TravelService_Entities/TravelActivate"/>
+            <PropertyValue Property="EditAction" String="TravelService.TravelService_Entities/TravelEdit"/>
+            <PropertyValue Property="PreparationAction" String="TravelService.TravelService_Entities/TravelPrepare"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="TravelService.TravelService_Entities/Booking" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.DraftNode">
+          <Record>
+            <PropertyValue Property="PreparationAction" String="TravelService.TravelService_Entities/BookingPrepare"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
