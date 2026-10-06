@@ -19,8 +19,18 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`, over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nested, and with `$it` for the entity outside the lambda.
 
+## Drafts
+
+A V4 entity set annotated with `Common.DraftRoot` or `Common.DraftNode`, as CAP and RAP generate them, is served as draft-enabled (the startup log lists them as `draft-enabled: ...`):
+
+- Seeded and generated rows are active entities: `IsActiveEntity` true, `HasActiveEntity` and `HasDraftEntity` false. Seed files don't need those columns, so CAP's work as they are.
+- A composition (`Books` to `chapters` and back) also joins on `IsActiveEntity`, so an active entity reaches active children and a draft its drafts. Any other navigation into a draft-enabled set reaches its active entities.
+- `SiblingEntity` and `DraftAdministrativeData` resolve, so the list report's `SiblingEntity/IsActiveEntity eq null` filter and the object page's `$expand=DraftAdministrativeData` work.
+
+Not yet: creating and editing drafts. The draft actions (`draftEdit`, `draftActivate`, `draftPrepare`) answer `501`.
+
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. Not yet: drafts and ETags.
+Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. Not yet: editing drafts (see [Drafts](#drafts)) and ETags.
 
 A navigation the server can't join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
