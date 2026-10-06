@@ -46,7 +46,7 @@ app.listen(3000);
 
 ## Possible future improvements
 
-- **Draft editing** - draft-enabled entity sets are served, but drafts can't be created, edited or activated yet, which most Fiori Elements V4 apps with edit flows depend on.
+- **Draft creation** - existing entities can be edited in a draft, but a new entity can't be created as one yet (`POST` on a draft root), and V2 metadata's draft annotations aren't read.
 - **Optimistic concurrency** - no ETags and no `If-Match` checks, so concurrent updates are last-write-wins.
 - **Richer operation rules** - rules can only set fixed values; conditions, computed values or creating entities would need more.
 - **Broader query option support** - `$apply`, `$compute`, and server-driven paging via `$skiptoken`/`$deltatoken` are currently rejected with 501.
