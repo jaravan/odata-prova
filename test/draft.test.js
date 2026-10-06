@@ -5,8 +5,9 @@ const path = require("path");
 const { start, get, send, batch, batchResponses } = require("./helpers");
 const { parseMetadata } = require("../lib/metadata");
 
-// A draft-enabled CAP service: Books (DraftRoot) composes Chapters (DraftNode), and
-// associates Authors, which is not draft-enabled. The seed files have no draft columns.
+// A draft-enabled CAP service, metadata as cds compiles it (see the fixture's README): Books
+// (DraftRoot) composes Chapters (DraftNode), and associates Authors, which is not
+// draft-enabled. The seed files have no draft columns.
 const DRAFT_MODEL = path.join(__dirname, "fixtures", "DraftSrv");
 const XML = fs.readFileSync(path.join(DRAFT_MODEL, "metadata.xml"), "utf8");
 const BOOK = "b0000000-0000-4000-8000-000000000001";
@@ -26,7 +27,13 @@ describe("draft: model", () => {
     });
     assert.equal(model.entitySets.Chapters.draft.root, false);
     assert.equal(model.entitySets.Authors.draft, undefined);
-    assert.deepEqual(model.warnings, []);
+    // CAP's DraftMessages is a collection, which V2 has no place for
+    assert.ok(
+      model.warnings.every((w) =>
+        /^not in V2: .*is a collection-valued property$/.test(w)
+      ),
+      model.warnings.join("\n")
+    );
   });
 
   it("reads the vocabulary's namespace and inline annotations on the entity set", () => {
@@ -91,7 +98,7 @@ describe("draft: reading active entities (V4)", () => {
 
   it("serves seeded rows as active entities without a draft", async () => {
     const r = await get(
-      `${s.v4}/Books?$select=title,IsActiveEntity,HasActiveEntity,HasDraftEntity`
+      `${s.v4}/Books?$select=title,IsActiveEntity,HasActiveEntity,HasDraftEntity,DraftMessages`
     );
     assert.equal(r.status, 200);
     assert.equal(r.body.value.length, 2);
@@ -99,6 +106,7 @@ describe("draft: reading active entities (V4)", () => {
       assert.equal(row.IsActiveEntity, true);
       assert.equal(row.HasActiveEntity, false);
       assert.equal(row.HasDraftEntity, false);
+      assert.deepEqual(row.DraftMessages, []); // a collection is never null
     }
   });
 
@@ -534,18 +542,35 @@ describe("draft: creating a new entity (V4)", () => {
     assert.equal(r.body.IsActiveEntity, false);
     assert.equal(r.body.HasActiveEntity, false);
     id = r.body.ID;
-    assert.ok(r.headers.get("location").endsWith(`Books(ID=${id},IsActiveEntity=false)`));
-    const admin = await get(`${s.v4}/Books(ID=${id},IsActiveEntity=false)/DraftAdministrativeData`);
+    assert.ok(
+      r.headers.get("location").endsWith(`Books(ID=${id},IsActiveEntity=false)`)
+    );
+    const admin = await get(
+      `${s.v4}/Books(ID=${id},IsActiveEntity=false)/DraftAdministrativeData`
+    );
     assert.equal(admin.body.InProcessByUser, "anonymous");
-    assert.match(admin.body["@odata.context"], /#Books\/DraftAdministrativeData\/\$entity$/);
-    const write = await send("PATCH", `${s.v4}/Books(ID=${id},IsActiveEntity=false)/DraftAdministrativeData`, {});
+    assert.match(
+      admin.body["@odata.context"],
+      /#Books\/DraftAdministrativeData\/\$entity$/
+    );
+    const write = await send(
+      "PATCH",
+      `${s.v4}/Books(ID=${id},IsActiveEntity=false)/DraftAdministrativeData`,
+      {}
+    );
     assert.equal(write.status, 405);
   });
 
   it("the new draft gets children, is in the list, and has no sibling", async () => {
     const draft = `Books(ID=${id},IsActiveEntity=false)`;
-    assert.equal((await send("POST", `${s.v4}/${draft}/chapters`, { title: "Chapter I" })).status, 201);
-    const r = await get(`${s.v4}/${draft}?$expand=SiblingEntity,chapters($select=IsActiveEntity)`);
+    assert.equal(
+      (await send("POST", `${s.v4}/${draft}/chapters`, { title: "Chapter I" }))
+        .status,
+      201
+    );
+    const r = await get(
+      `${s.v4}/${draft}?$expand=SiblingEntity,chapters($select=IsActiveEntity)`
+    );
     assert.equal(r.body.SiblingEntity, null);
     assert.deepEqual(r.body.chapters, [{ IsActiveEntity: false }]);
     const list = await get(`${s.v4}/Books?${LIST_FILTER}&$select=title`);
@@ -553,20 +578,49 @@ describe("draft: creating a new entity (V4)", () => {
   });
 
   it("draftActivate creates the active entity and its children", async () => {
-    const r = await send("POST", `${s.v4}/Books(ID=${id},IsActiveEntity=false)/${ACTION("draftActivate")}?$expand=chapters`, {});
+    const r = await send(
+      "POST",
+      `${s.v4}/Books(ID=${id},IsActiveEntity=false)/${ACTION(
+        "draftActivate"
+      )}?$expand=chapters`,
+      {}
+    );
     assert.equal(r.status, 200);
     assert.equal(r.body.IsActiveEntity, true);
     assert.equal(r.body.title, "Villette");
     assert.equal(r.body.chapters.length, 1);
-    assert.equal((await get(`${s.v4}/Books?$filter=IsActiveEntity eq false`)).body.value.length, 0);
+    assert.equal(
+      (await get(`${s.v4}/Books?$filter=IsActiveEntity eq false`)).body.value
+        .length,
+      0
+    );
   });
 
   it("a new draft discarded leaves nothing behind", async () => {
     const r = await send("POST", `${s.v4}/Books`, { title: "Shirley" });
-    await send("POST", `${s.v4}/Books(ID=${r.body.ID},IsActiveEntity=false)/chapters`, {});
-    assert.equal((await send("DELETE", `${s.v4}/Books(ID=${r.body.ID},IsActiveEntity=false)`)).status, 204);
-    assert.equal((await get(`${s.v4}/Books?$filter=title eq 'Shirley'`)).body.value.length, 0);
-    assert.equal((await get(`${s.v4}/Chapters?$filter=IsActiveEntity eq false`)).body.value.length, 0);
+    await send(
+      "POST",
+      `${s.v4}/Books(ID=${r.body.ID},IsActiveEntity=false)/chapters`,
+      {}
+    );
+    assert.equal(
+      (
+        await send(
+          "DELETE",
+          `${s.v4}/Books(ID=${r.body.ID},IsActiveEntity=false)`
+        )
+      ).status,
+      204
+    );
+    assert.equal(
+      (await get(`${s.v4}/Books?$filter=title eq 'Shirley'`)).body.value.length,
+      0
+    );
+    assert.equal(
+      (await get(`${s.v4}/Chapters?$filter=IsActiveEntity eq false`)).body.value
+        .length,
+      0
+    );
   });
 
   it("a node is created under its parent's draft only", async () => {
@@ -584,7 +638,7 @@ describe("draft: NewAction (V4)", () => {
       path.join(dir, "metadata.xml"),
       XML.replace(
         '<PropertyValue Property="EditAction" String="CatalogService.draftEdit"/>',
-        '<PropertyValue Property="EditAction" String="CatalogService.draftEdit"/>\n            <PropertyValue Property="NewAction" String="CatalogService.draftNew"/>',
+        '<PropertyValue Property="EditAction" String="CatalogService.draftEdit"/>\n            <PropertyValue Property="NewAction" String="CatalogService.draftNew"/>'
       ).replace(
         '<Action Name="draftEdit"',
         `<Action Name="draftNew" IsBound="true" EntitySetPath="in">
@@ -592,8 +646,8 @@ describe("draft: NewAction (V4)", () => {
         <Parameter Name="title" Type="Edm.String"/>
         <ReturnType Type="CatalogService.Books"/>
       </Action>
-      <Action Name="draftEdit"`,
-      ),
+      <Action Name="draftEdit"`
+      )
     );
     s = await start(dir);
   });
@@ -603,7 +657,9 @@ describe("draft: NewAction (V4)", () => {
   });
 
   it("creates a draft from the action's parameters", async () => {
-    const r = await send("POST", `${s.v4}/Books/${ACTION("draftNew")}`, { title: "Agnes Grey" });
+    const r = await send("POST", `${s.v4}/Books/${ACTION("draftNew")}`, {
+      title: "Agnes Grey",
+    });
     assert.equal(r.status, 201);
     assert.equal(r.body.title, "Agnes Grey");
     assert.equal(r.body.IsActiveEntity, false);
@@ -615,7 +671,8 @@ describe("draft: NewAction (V4)", () => {
 // actions are function imports named by path, and the associations join on IsActiveEntity
 const DRAFT_V2_MODEL = path.join(__dirname, "fixtures", "DraftSrvV2");
 const TRAVEL = "a0000000-0000-4000-8000-000000000001";
-const travel = (active = true) => `Travel(TravelUUID=guid'${TRAVEL}',IsActiveEntity=${active})`;
+const travel = (active = true) =>
+  `Travel(TravelUUID=guid'${TRAVEL}',IsActiveEntity=${active})`;
 const JSON_ACCEPT = { accept: "application/json" };
 
 describe("draft: V2 metadata (RAP)", () => {
@@ -630,7 +687,12 @@ describe("draft: V2 metadata (RAP)", () => {
   });
 
   it("serves seeded rows as active entities, with SiblingEntity and DraftAdministrativeData", async () => {
-    const r = await get(`${s.v2}/${travel()}?$expand=to_Booking,SiblingEntity,DraftAdministrativeData`, JSON_ACCEPT);
+    const r = await get(
+      `${
+        s.v2
+      }/${travel()}?$expand=to_Booking,SiblingEntity,DraftAdministrativeData`,
+      JSON_ACCEPT
+    );
     assert.equal(r.status, 200);
     assert.equal(r.body.d.HasDraftEntity, false);
     assert.equal(r.body.d.to_Booking.results.length, 2);
@@ -639,35 +701,77 @@ describe("draft: V2 metadata (RAP)", () => {
   });
 
   it("edits, changes and activates through the function imports", async () => {
-    const edit = await send("POST", `${s.v2}/TravelEdit?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=true&PreserveChanges=true`, undefined, JSON_ACCEPT);
+    const edit = await send(
+      "POST",
+      `${s.v2}/TravelEdit?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=true&PreserveChanges=true`,
+      undefined,
+      JSON_ACCEPT
+    );
     assert.equal(edit.status, 200);
     assert.equal(edit.body.d.IsActiveEntity, false);
 
-    assert.equal((await send("MERGE", `${s.v2}/${travel(false)}`, { Description: "Trip to Walldorf and Berlin" })).status, 204);
-    const booking = await send("POST", `${s.v2}/${travel(false)}/to_Booking`, { BookingID: "0003", FlightPrice: "99.000" }, JSON_ACCEPT);
+    assert.equal(
+      (
+        await send("MERGE", `${s.v2}/${travel(false)}`, {
+          Description: "Trip to Walldorf and Berlin",
+        })
+      ).status,
+      204
+    );
+    const booking = await send(
+      "POST",
+      `${s.v2}/${travel(false)}/to_Booking`,
+      { BookingID: "0003", FlightPrice: "99.000" },
+      JSON_ACCEPT
+    );
     assert.equal(booking.status, 201);
     assert.equal(booking.body.d.IsActiveEntity, false);
     const draftBooking = `Booking(BookingUUID=guid'${booking.body.d.BookingUUID}',IsActiveEntity=false)`;
     const back = await get(`${s.v2}/${draftBooking}/to_Travel`, JSON_ACCEPT);
     assert.equal(back.body.d.IsActiveEntity, false); // a draft booking's travel is the draft
-    const prepare = await send("POST", `${s.v2}/BookingPrepare?BookingUUID=guid'${booking.body.d.BookingUUID}'&IsActiveEntity=false`, undefined, JSON_ACCEPT);
+    const prepare = await send(
+      "POST",
+      `${s.v2}/BookingPrepare?BookingUUID=guid'${booking.body.d.BookingUUID}'&IsActiveEntity=false`,
+      undefined,
+      JSON_ACCEPT
+    );
     assert.equal(prepare.status, 200);
 
-    const activate = await send("POST", `${s.v2}/TravelActivate?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=false`, undefined, JSON_ACCEPT);
+    const activate = await send(
+      "POST",
+      `${s.v2}/TravelActivate?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=false`,
+      undefined,
+      JSON_ACCEPT
+    );
     assert.equal(activate.status, 200);
     assert.equal(activate.body.d.IsActiveEntity, true);
-    const active = await get(`${s.v2}/${travel()}?$expand=to_Booking`, JSON_ACCEPT);
+    const active = await get(
+      `${s.v2}/${travel()}?$expand=to_Booking`,
+      JSON_ACCEPT
+    );
     assert.equal(active.body.d.Description, "Trip to Walldorf and Berlin");
     assert.equal(active.body.d.to_Booking.results.length, 3);
-    assert.equal((await get(`${s.v2}/${travel(false)}`, JSON_ACCEPT)).status, 404);
+    assert.equal(
+      (await get(`${s.v2}/${travel(false)}`, JSON_ACCEPT)).status,
+      404
+    );
   });
 
   it("creates a new travel as a draft, and the V4 service of the model edits it", async () => {
-    const r = await send("POST", `${s.v2}/Travel`, { Description: "New trip" }, JSON_ACCEPT);
+    const r = await send(
+      "POST",
+      `${s.v2}/Travel`,
+      { Description: "New trip" },
+      JSON_ACCEPT
+    );
     assert.equal(r.status, 201);
     assert.equal(r.body.d.IsActiveEntity, false);
     const id = r.body.d.TravelUUID;
-    const activated = await send("POST", `${s.v4}/Travel(TravelUUID=${id},IsActiveEntity=false)/TravelService.TravelActivate`, {});
+    const activated = await send(
+      "POST",
+      `${s.v4}/Travel(TravelUUID=${id},IsActiveEntity=false)/TravelService.TravelActivate`,
+      {}
+    );
     assert.equal(activated.status, 200);
     assert.equal(activated.body.IsActiveEntity, true);
   });
