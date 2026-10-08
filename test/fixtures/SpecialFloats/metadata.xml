@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="S" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="M"><Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="V" Type="Edm.Double"/>
+      </EntityType>
+      <EntityContainer Name="C"><EntitySet Name="Ms" EntityType="S.M"/></EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
