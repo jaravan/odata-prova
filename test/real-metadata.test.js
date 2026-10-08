@@ -10,8 +10,11 @@ const FIXTURES = path.join(__dirname, "fixtures");
 // in both versions (the one it was not written in is generated), and answer on every entity set.
 const SERVICES = [
   { dir: "real/NorthwindV2", disabledNavigations: 4 }, // many-to-many links
-  { dir: "real/NorthwindV4", disabledNavigations: 6 }, // many-to-many links, ShipVia -> Shipper
-  { dir: "real/TripPin", disabledNavigations: 7 }, // containment, streams, Flight's no-key links
+  // many-to-many links, ShipVia -> Shipper, and Employee's self-links (ReportsTo), which a join
+  // by naming would match key to key: every employee their own manager
+  { dir: "real/NorthwindV4", disabledNavigations: 8 },
+  // containment, streams, Flight's no-key links, and Person.Friends (many-to-many with itself)
+  { dir: "real/TripPin", disabledNavigations: 8 },
   { dir: "GatewaySrv", disabledNavigations: 0 },
 ];
 

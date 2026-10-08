@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="S" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Order"><Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <NavigationProperty Name="Items" Type="Collection(S.Item)" Partner="Order"/>
+      </EntityType>
+      <EntityType Name="Item"><Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="OrderID" Type="Edm.Int32"/>
+        <NavigationProperty Name="Order" Type="S.Order" Partner="Items"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Orders" EntityType="S.Order"><NavigationPropertyBinding Path="Items" Target="Items"/></EntitySet>
+        <EntitySet Name="Items" EntityType="S.Item"><NavigationPropertyBinding Path="Order" Target="Orders"/></EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

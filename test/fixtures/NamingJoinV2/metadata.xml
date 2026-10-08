@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="S" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="Order"><Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <NavigationProperty Name="Items" Relationship="S.Order_Items" FromRole="Order" ToRole="Item"/>
+      </EntityType>
+      <EntityType Name="Item"><Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="OrderID" Type="Edm.Int32"/>
+        <NavigationProperty Name="Order" Relationship="S.Order_Items" FromRole="Item" ToRole="Order"/>
+      </EntityType>
+      <Association Name="Order_Items">
+        <End Type="S.Order" Multiplicity="1" Role="Order"/>
+        <End Type="S.Item" Multiplicity="*" Role="Item"/>
+      </Association>
+      <EntityContainer Name="C" m:IsDefaultEntityContainer="true">
+        <EntitySet Name="Orders" EntityType="S.Order"/>
+        <EntitySet Name="Items" EntityType="S.Item"/>
+        <AssociationSet Name="Order_Items" Association="S.Order_Items">
+          <End EntitySet="Orders" Role="Order"/><End EntitySet="Items" Role="Item"/>
+        </AssociationSet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
