@@ -1,6 +1,6 @@
 {
   "name": "odata-prova",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Mock OData V2 and V4 server generated from a service's metadata.xml",
   "license": "Apache-2.0",
   "author": "John Aravanis",
