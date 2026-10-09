@@ -8,27 +8,28 @@
 // JSON is an array of objects.
 // Values are converted to the property's Edm type on load, so dates may be written as ISO
 // strings.
-// An entity set without a seed file starts empty, or with generated rows (see generate.js).
+// An entity set without a seed file starts empty, or with generated rows (see generate.ts).
 
 // One store per model is saved, shared by every protocol that serves it.
 
 import fs from "node:fs";
 import path from "node:path";
+import type { EntityType, Key, Model, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
 import { generateData } from "./generate.ts";
 import { asActive } from "./draft.js";
 
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
 // separator, line breaks and "" for a quote. Unquoted fields are trimmed, blank lines skipped.
-function parseCsv(text) {
+function parseCsv(text: string): Record<string, string>[] {
   text = text.replace(/^﻿/, ""); // Excel starts a UTF-8 CSV with a byte order mark
   const sep = /^[^\r\n]*;/.test(text) ? ";" : ",";
-  const records = [];
-  let fields = [],
+  const records: string[][] = [];
+  let fields: string[] = [],
     i = 0,
     line = 1;
   for (;;) {
-    let value;
+    let value: string;
     while (text[i] === " " || text[i] === "\t") i++;
     if (text[i] === '"') {
       const start = line;
@@ -75,13 +76,21 @@ function parseCsv(text) {
   if (records.length === 0) return [];
   const [headers, ...rows] = records;
   return rows.map((cells) => {
-    const row = {};
+    const row: Record<string, string> = {};
     headers.forEach((h, i) => (row[h] = cells[i] ?? ""));
     return row;
   });
 }
 
-function loadSeedFile(dataDir, candidates) {
+// Startup errors in seed files carry code ESEED: shown as a plain message, not a stack trace
+function seedError(message: string): Error {
+  return Object.assign(new Error(message), { code: "ESEED" });
+}
+
+function loadSeedFile(
+  dataDir: string,
+  candidates: string[],
+): { file: string | undefined; rows: Record<string, unknown>[] } {
   for (const base of candidates) {
     for (const ext of ["csv", "json"]) {
       const file = path.join(dataDir, `${base}.${ext}`);
@@ -93,9 +102,7 @@ function loadSeedFile(dataDir, candidates) {
             rows: ext === "csv" ? parseCsv(text) : JSON.parse(text),
           };
         } catch (e) {
-          const err = new Error(`${file}: ${e.message}`);
-          err.code = "ESEED"; // a plain message at startup, not a stack trace
-          throw err;
+          throw seedError(`${file}: ${(e as Error).message}`);
         }
       }
     }
@@ -104,14 +111,24 @@ function loadSeedFile(dataDir, candidates) {
 }
 
 class Store {
+  model: Model;
+  // Rows by entity set
+  data: Record<string, Row[]>;
+  // The entity sets whose rows were generated
+  generated: string[];
+
   // mockRows: rows to generate for each entity set without a seed file (0: leave it empty)
-  constructor(model, modelDir, log = console.log, { mockRows = 0 } = {}) {
+  constructor(
+    model: Model,
+    modelDir: string,
+    log: (message: string) => void = console.log,
+    { mockRows = 0 }: { mockRows?: number } = {},
+  ) {
     this.model = model;
     this.data = {};
-    // The entity sets whose rows were generated
     this.generated = [];
     const dataDir = path.join(modelDir, "data");
-    const files = {};
+    const files: Record<string, string | undefined> = {};
     for (const es of Object.values(model.entitySets)) {
       const et = model.entityTypes[es.entityType];
       const { file, rows } = loadSeedFile(dataDir, [
@@ -125,13 +142,11 @@ class Store {
           return this.normalize(et, row);
         } catch (e) {
           // Row 1 is the CSV header, so data rows count from 2 there
-          const err = new Error(
-            `${file}: row ${file.endsWith(".csv") ? i + 2 : i + 1}: ${
-              e.message
+          throw seedError(
+            `${file}: row ${file?.endsWith(".csv") ? i + 2 : i + 1}: ${
+              (e as Error).message
             }`,
           );
-          err.code = "ESEED"; // a plain message at startup, not a stack trace
-          throw err;
         }
       });
       // Seed files of a draft entity set hold its active entities (CAP's have no draft columns)
@@ -169,15 +184,15 @@ class Store {
 
   // Converts an incoming object into an entity. Known properties converted to their Edm
   // type, unknown keys (and navigation payloads) dropped.
-  normalize(entityType, input) {
-    const row = {};
+  normalize(entityType: EntityType, input: Record<string, unknown>): Row {
+    const row: Row = {};
     for (const p of Object.values(entityType.properties)) {
       row[p.name] = propToInternal(input[p.name], p);
     }
     return row;
   }
 
-  assertKeys(entityType, row, source) {
+  assertKeys(entityType: EntityType, row: Row, source: string): void {
     for (const k of entityType.keys) {
       if (row[k] === null || row[k] === undefined) {
         throw new Error(
@@ -187,25 +202,25 @@ class Store {
     }
   }
 
-  rows(setName) {
+  rows(setName: string): Row[] {
     return this.data[setName];
   }
 
-  matchesKey(entityType, row, key) {
+  matchesKey(entityType: EntityType, row: Row, key: Key): boolean {
     return entityType.keys.every((k) => String(row[k]) === String(key[k]));
   }
 
-  find(setName, entityType, key) {
+  find(setName: string, entityType: EntityType, key: Key): Row | undefined {
     return this.data[setName].find((row) =>
       this.matchesKey(entityType, row, key),
     );
   }
 
-  insert(setName, row) {
+  insert(setName: string, row: Row): void {
     this.data[setName].push(row);
   }
 
-  remove(setName, entityType, key) {
+  remove(setName: string, entityType: EntityType, key: Key): Row | undefined {
     const idx = this.data[setName].findIndex((row) =>
       this.matchesKey(entityType, row, key),
     );
@@ -215,10 +230,10 @@ class Store {
 
   // Whole-store snapshot/restore, used to make $batch changesets and draft actions atomic.
   // structuredClone, not a JSON round trip: that would turn INF and NaN into null.
-  snapshot() {
+  snapshot(): Record<string, Row[]> {
     return structuredClone(this.data);
   }
-  restore(snapshot) {
+  restore(snapshot: Record<string, Row[]>): void {
     this.data = snapshot;
   }
 }

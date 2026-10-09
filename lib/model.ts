@@ -229,8 +229,9 @@ export type PropertyValue =
 // An entity in the store
 export type Row = Record<string, PropertyValue>;
 
-// Key property values of an entity
-export type Key = Record<string, PrimitiveValue>;
+// Key property values of an entity: primitives, but taken from rows and operation
+// parameters as well as from URLs
+export type Key = Record<string, PropertyValue>;
 
 // --- Requests ------------------------------------------------------------------------------
 
