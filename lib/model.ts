@@ -218,11 +218,19 @@ export interface OperationView {
 
 // --- Data ----------------------------------------------------------------------------------
 
-// An entity in the store, values in their internal form (see toInternal in types.js)
-export type Row = Record<string, unknown>;
+// A primitive value in its internal form (see toInternal in types.ts): Int64 and Decimal as
+// strings, dates and times as ISO strings
+export type PrimitiveValue = string | number | boolean | null;
+
+// A property value: a primitive, a complex value (field by field) or a collection
+export type PropertyValue =
+  PrimitiveValue | PropertyValue[] | { [name: string]: PropertyValue };
+
+// An entity in the store
+export type Row = Record<string, PropertyValue>;
 
 // Key property values of an entity
-export type Key = Record<string, unknown>;
+export type Key = Record<string, PrimitiveValue>;
 
 // --- Requests ------------------------------------------------------------------------------
 

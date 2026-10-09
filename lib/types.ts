@@ -17,6 +17,7 @@
 //   Date                          "YYYY-MM-DD"
 //   TimeOfDay                     "HH:MM:SS[.fff]"
 
+import type { PrimitiveValue, Property, PropertyValue } from "./model.ts";
 import { HttpError } from "./query.js";
 
 const V2_DATE = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/;
@@ -24,52 +25,56 @@ const V2_TIME = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i;
 const TIME_OF_DAY = /^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?$/;
 
 // V2 type -> canonical (V4) type. Everything not listed is the same in both.
-const V2_TO_CANONICAL = {
+const V2_TO_CANONICAL: Record<string, string> = {
   "Edm.DateTime": "Edm.DateTimeOffset",
   "Edm.Time": "Edm.TimeOfDay",
 };
 
 // Canonical type -> V2 type, for a model that came from a V4 document.
-const CANONICAL_TO_V2 = {
+const CANONICAL_TO_V2: Record<string, string> = {
   "Edm.Date": "Edm.DateTime",
   "Edm.TimeOfDay": "Edm.Time",
   "Edm.Duration": "Edm.String",
   "Edm.Stream": "Edm.Binary",
 };
 
-function isNumericType(type) {
+function isNumericType(type: string): boolean {
   return /^Edm\.(Int16|Int32|Int64|Byte|SByte|Decimal|Double|Single)$/.test(
     type,
   );
 }
-function isIntegerType(type) {
+function isIntegerType(type: string): boolean {
   return /^Edm\.(Int16|Int32|Byte|SByte)$/.test(type);
 }
 
-function pad2(n) {
+function pad2(n: string | number): string {
   return String(n).padStart(2, "0");
 }
 
 const INT64 = /^[+-]?\d+$/;
 const DECIMAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
 // Edm.Double and Edm.Single spell the special values as these strings in JSON
-const SPECIAL_FLOATS = { INF: Infinity, "-INF": -Infinity, NaN: NaN };
+const SPECIAL_FLOATS: Record<string, number> = {
+  INF: Infinity,
+  "-INF": -Infinity,
+  NaN: NaN,
+};
 
 // The string for Infinity, -Infinity or NaN, the way OData writes them (JSON has no such
 // numbers: JSON.stringify would write null); undefined for any other value
-function specialFloat(value) {
+function specialFloat(value: unknown): string | undefined {
   if (typeof value !== "number" || Number.isFinite(value)) return undefined;
   return Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF";
 }
 
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
 // or as something the type can't hold.
-function invalid(value, type) {
+function invalid(value: unknown, type: string): HttpError {
   return new HttpError(400, `Invalid ${type} value: ${value}`);
 }
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
-function toInternal(value, type) {
+function toInternal(value: unknown, type: string): PrimitiveValue {
   if (value === null || value === undefined || value === "") return null;
   switch (type) {
     case "Edm.Boolean": {
@@ -90,7 +95,8 @@ function toInternal(value, type) {
     }
     case "Edm.Double":
     case "Edm.Single": {
-      if (value in SPECIAL_FLOATS) return SPECIAL_FLOATS[value];
+      if (typeof value === "string" && value in SPECIAL_FLOATS)
+        return SPECIAL_FLOATS[value];
       const n =
         typeof value === "string" && value.trim() === "" ? NaN : Number(value);
       if (Number.isNaN(n)) throw invalid(value, type);
@@ -109,7 +115,7 @@ function toInternal(value, type) {
       return toIsoDateTime(value, type).slice(0, 10);
     case "Edm.TimeOfDay": {
       const s = String(value);
-      let m;
+      let m: RegExpMatchArray | null;
       if ((m = s.match(V2_TIME))) {
         const sec =
           m[3] === undefined
@@ -132,7 +138,7 @@ function toInternal(value, type) {
 // types (objects, converted field by field) and enums (kept as the member name). A CSV cell
 // can hold such a value as JSON. Bad input is a 400, since it comes from a request body.
 // No value is null, or an empty collection: OData never has a null collection.
-function propToInternal(value, prop) {
+function propToInternal(value: unknown, prop: Property): PropertyValue {
   if (value === null || value === undefined || value === "")
     return prop.isCollection ? [] : null;
   if ((prop.isCollection || prop.complexType) && typeof value === "string") {
@@ -148,21 +154,22 @@ function propToInternal(value, prop) {
   return value.map((v) => elementToInternal(v, prop));
 }
 
-function elementToInternal(value, prop) {
+function elementToInternal(value: unknown, prop: Property): PropertyValue {
   if (value === null || value === undefined) return null;
   if (prop.complexType) {
     if (typeof value !== "object" || Array.isArray(value))
       throw new HttpError(400, `${prop.name}: expected an object`);
-    const out = {};
+    const fields = value as Record<string, unknown>;
+    const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
-      out[p.name] = propToInternal(value[p.name], p);
+      out[p.name] = propToInternal(fields[p.name], p);
     return out;
   }
   if (prop.enumType) return String(value);
   return toInternal(value, prop.elementType || prop.type);
 }
 
-function toIsoDateTime(value, type) {
+function toIsoDateTime(value: unknown, type: string): string {
   if (value instanceof Date) return value.toISOString();
   const s = String(value);
   const m = s.match(V2_DATE);
@@ -179,23 +186,28 @@ function toIsoDateTime(value, type) {
 
 // Internal -> value comparable in $filter / $orderby (numbers for numeric types, ms for
 // timestamps; dates and times compare correctly as strings).
-function toComparable(value, type) {
+// Other values are compared as they are.
+function toComparable(
+  value: unknown,
+  type: string | null | undefined,
+): PrimitiveValue {
   if (value === null || value === undefined) return null;
-  if (isNumericType(type)) return Number(value);
-  if (type === "Edm.DateTimeOffset") return new Date(value).getTime();
+  if (type && isNumericType(type)) return Number(value);
+  if (type === "Edm.DateTimeOffset")
+    return new Date(value as string | number).getTime();
   if (type === "Edm.Date") return String(value).slice(0, 10);
-  return value;
+  return value as PrimitiveValue;
 }
 
 // "10:30:00" -> "PT10H30M00S" (how V2 serialises Edm.Time).
-function timeOfDayToV2(value) {
+function timeOfDayToV2(value: string): string {
   const m = String(value).match(TIME_OF_DAY);
   if (!m) return value;
   return `PT${m[1]}H${m[2]}M${m[3] || "00"}${m[4] || ""}S`;
 }
 
 // Milliseconds since epoch for a DateTimeOffset or Date internal value.
-function toMillis(value) {
+function toMillis(value: string | number | Date): number {
   return new Date(
     /^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? `${value}T00:00:00Z` : value,
   ).getTime();
