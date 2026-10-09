@@ -1,5 +1,5 @@
 import path from "node:path";
-import { createApp } from "../lib/app.js";
+import { createApp } from "../lib/app.ts";
 
 // A frozen copy of examples/PurchaseOrderSrv, so the example data can change without
 // breaking assertions on it

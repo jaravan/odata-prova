@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PO_MODEL } from "./helpers.js";
-import { createApp } from "../lib/app.js";
+import { createApp } from "../lib/app.ts";
 
 // Seed files as spreadsheets export them: quoted fields, a byte order mark, CRLF
 describe("CSV seed files", () => {

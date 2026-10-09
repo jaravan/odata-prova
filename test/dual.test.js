@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { start, get, send, ORDER, ITEM, PO_MODEL } from "./helpers.js";
-import { createApp } from "../lib/app.js";
+import { createApp } from "../lib/app.ts";
 
 describe("both protocols share one store", () => {
   let s;

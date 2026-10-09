@@ -9,7 +9,7 @@
 
 import path from "node:path";
 import { writeMockData } from "./lib/mock-data.ts";
-import { findModelDir } from "./lib/app.js";
+import { findModelDir } from "./lib/app.ts";
 
 const [dir, rowsArg = "20"] = process.argv.slice(2);
 const rows = Number(rowsArg);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createApp } from "../lib/app.js";
+import { createApp } from "../lib/app.ts";
 import { writeMockData } from "../lib/mock-data.ts";
 import { start, get, PO_MODEL } from "./helpers.js";
 

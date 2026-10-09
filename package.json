@@ -26,7 +26,7 @@
     "odata-prova": "server.js",
     "odata-prova-mock-data": "mock-data.js"
   },
-  "main": "lib/app.js",
+  "main": "lib/app.ts",
   "type": "module",
   "files": [
     "server.js",

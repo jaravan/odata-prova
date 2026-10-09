@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findModelDir } from "../lib/app.js";
+import { findModelDir } from "../lib/app.ts";
 
 const MODELS = path.join(import.meta.dirname, "..", "examples");
 

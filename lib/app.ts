@@ -1,20 +1,23 @@
 // Builds the Express app: one model, one store, and a V2 and/or V4 service on top of it.
 import express from "express";
+import type { ErrorRequestHandler, Express, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMetadata, emitV2, emitV4 } from "./metadata.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
+import type { Protocol, Rules } from "./service.ts";
+import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { HttpError, decodeUrl } from "./query.ts";
 import v2 from "./protocols/v2.ts";
 import v4 from "./protocols/v4.ts";
 
-const protocols = { v2, v4 };
+const protocols: Record<"v2" | "v4", Protocol> = { v2, v4 };
 
 // MODEL_DIR is either a model folder (it has a metadata.xml) or a folder holding exactly
 // one model folder. Kubernetes uses the second form: the model image decides the name.
-function findModelDir(dir) {
+function findModelDir(dir: string): string {
   if (fs.existsSync(path.join(dir, "metadata.xml")) || !fs.existsSync(dir))
     return dir;
   const models = fs
@@ -27,26 +30,27 @@ function findModelDir(dir) {
     .map((d) => d.name)
     .sort(); // listing order depends on the filesystem
   if (models.length === 1) return path.join(dir, models[0]);
-  const err = new Error(
-    models.length
-      ? `${dir} holds ${models.length} models (${models.join(", ")}): point MODEL_DIR at one of them`
-      : `${dir} has no metadata.xml and no model folder`,
+  throw Object.assign(
+    new Error(
+      models.length
+        ? `${dir} holds ${models.length} models (${models.join(", ")}): point MODEL_DIR at one of them`
+        : `${dir} has no metadata.xml and no model folder`,
+    ),
+    { code: "ENOMODEL" }, // a plain message at startup, not a stack trace
   );
-  err.code = "ENOMODEL"; // a plain message at startup, not a stack trace
-  throw err;
 }
 
 // Optional <modelDir>/config.json: { "operations": { "<Name>": { "set": { "<Prop>": value } } } }
 // sets properties on the entity an operation acts on (Approve sets Status to Approved).
 // Validated at startup, so a typo fails there instead of never applying.
-function operationRules(model, modelDir) {
+function operationRules(model: Model, modelDir: string): Rules {
   const file = path.join(modelDir, "config.json");
   if (!fs.existsSync(file)) return {};
-  let config;
+  let config: { operations?: Rules };
   try {
     config = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (e) {
-    throw new Error(`${file}: ${e.message}`);
+    throw new Error(`${file}: ${(e as Error).message}`);
   }
   const rules = config.operations || {};
   const views = Object.values(model.operationViews);
@@ -70,19 +74,33 @@ function operationRules(model, modelDir) {
   return rules;
 }
 
-function escapeRegex(s) {
+function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// options: { modelDir, v2Path, v4Path, log, mockRows }. A falsy path disables that protocol.
-// mockRows: rows to generate for each entity set without a seed file (0, the default: none).
+export interface AppOptions {
+  // The folder with metadata.xml, and data/ and config.json if any
+  modelDir: string;
+  // Where each protocol is served; a falsy path disables it
+  v2Path?: string;
+  v4Path?: string;
+  log?: (message: string) => void;
+  // Rows to generate for each entity set without a seed file (0, the default: none)
+  mockRows?: number;
+}
+
 function createApp({
   modelDir,
   v2Path,
   v4Path,
   log = console.log,
   mockRows = 0,
-}) {
+}: AppOptions): {
+  app: Express;
+  model: Model;
+  store: Store;
+  services: ODataService[];
+} {
   // Read input metadata file
   const metadataXml = fs.readFileSync(
     path.join(modelDir, "metadata.xml"),
@@ -99,7 +117,7 @@ function createApp({
   const drafts = Object.values(model.entitySets).filter((es) => es.draft);
   if (drafts.length)
     log(
-      `  draft-enabled: ${drafts.map((es) => (es.draft.root ? `${es.name} (root)` : es.name)).join(", ")}`,
+      `  draft-enabled: ${drafts.map((es) => (es.draft?.root ? `${es.name} (root)` : es.name)).join(", ")}`,
     );
   const rules = operationRules(model, modelDir);
 
@@ -113,11 +131,11 @@ function createApp({
     v4: model.sourceVersion === "4.0" ? metadataXml : emitV4(model),
   };
 
-  const services = [];
+  const services: ODataService[] = [];
   for (const [name, servicePath] of [
     ["v2", v2Path],
     ["v4", v4Path],
-  ]) {
+  ] as const) {
     if (!servicePath) continue;
     services.push(
       new ODataService({
@@ -186,7 +204,11 @@ function createApp({
     express.json({ type: ["application/json", "text/plain"], limit: "10mb" }),
   );
 
-  function sendResult(res, protocol, result) {
+  function sendResult(
+    res: Response,
+    protocol: Protocol,
+    result: ODataResponse,
+  ) {
     res.set(protocol.headers);
     if (result.headers) res.set(result.headers);
     if (result.status === 204 || result.body === undefined)
@@ -231,7 +253,14 @@ function createApp({
   // JSON or is too large (express.json sets the status), or a bug. Answered in the error
   // format of the service the request was for, instead of Express's HTML page with a
   // stack trace.
-  app.use((err, req, res, next) => {
+  // err: an HttpError, or an Error from Express or body-parser, which sets status and
+  // expose (true for a client error)
+  const onError: ErrorRequestHandler = (
+    err: Error & { status?: number; expose?: boolean },
+    req,
+    res,
+    next,
+  ) => {
     if (res.headersSent) return next(err);
     const status = err instanceof HttpError || err.expose ? err.status : 500;
     if (status === 500) console.error(err);
@@ -242,8 +271,9 @@ function createApp({
           req.path.startsWith(`${s.servicePath}/`),
       ) || services[0];
     const protocol = service?.protocol || protocols.v4;
-    sendResult(res, protocol, protocol.error(status, err.message));
-  });
+    sendResult(res, protocol, protocol.error(status ?? 500, err.message));
+  };
+  app.use(onError);
 
   return { app, model, store, services };
 }
