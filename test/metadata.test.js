@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.js";
+import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.ts";
 import { PO_MODEL, SALES_MODEL } from "./helpers.js";
 
 const v2Xml = fs.readFileSync(path.join(PO_MODEL, "metadata.xml"), "utf8");

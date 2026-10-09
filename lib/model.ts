@@ -202,8 +202,8 @@ export interface Operation {
   binding?: TypedElement;
   parameters: TypedElement[];
   returnType?: TypedElement;
-  // V2 function imports say which method calls them
-  httpMethod?: "GET" | "POST";
+  // V2 function imports say which method calls them (m:HttpMethod: GET, POST, ...)
+  httpMethod?: string;
   // The entity set an import's result comes from
   entitySet?: string;
   // A V2 import that acts on an entity, found by the key parameters (sap:action-for)

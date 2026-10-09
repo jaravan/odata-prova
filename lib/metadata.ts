@@ -1,4 +1,19 @@
 import { XMLParser } from "fast-xml-parser";
+import type {
+  ComplexType,
+  Container,
+  EntityType,
+  EnumType,
+  JoinPair,
+  Model,
+  NavigationProperty,
+  Operation,
+  OperationView,
+  Property,
+  TypedElement,
+  V2NavigationProperty,
+  V4NavigationProperty,
+} from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
 import {
   parseDraftAnnotations,
@@ -41,6 +56,20 @@ const parser = new XMLParser({
     ].includes(name),
 });
 
+// The parsed XML: elements and attributes by name, repeating elements as arrays (see
+// isArray above). Untyped: the parser below reads what it needs and builds the typed Model.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Xml = any;
+
+// Resolves a term's vocabulary alias (see termQualifier)
+export type Qualify = (name: string) => string;
+
+// How a navigation's rows join: which side holds the foreign key, and the property pairs
+interface Join {
+  dependentSide: "source" | "target";
+  pairs: JoinPair[];
+}
+
 const NS = {
   v2: {
     edmx: "http://schemas.microsoft.com/ado/2007/06/edmx",
@@ -56,80 +85,76 @@ const NS = {
 
 // --- Parsing ------------------------------------------------------------------------------
 
-function parseMetadata(xml) {
+function parseMetadata(xml: string): Model {
   // removeNSPrefix would turn sap:label into label; keep the SAP attributes recognisable.
-  const doc = parser.parse(xml.replace(/(\s)sap:([A-Za-z-]+=)/g, "$1sap__$2"));
-  const edmx = doc.Edmx;
+  const doc: Xml = parser.parse(
+    xml.replace(/(\s)sap:([A-Za-z-]+=)/g, "$1sap__$2"),
+  );
+  const edmx: Xml = doc.Edmx;
   if (!edmx) throw new Error("metadata.xml: no <edmx:Edmx> root element");
-  const schemas = edmx.DataServices?.Schema;
+  const schemas: Xml[] = edmx.DataServices?.Schema;
   if (!schemas)
     throw new Error("metadata.xml: no <edmx:DataServices><Schema> found");
   const isV4 = String(edmx.Version || "").startsWith("4");
 
-  const model = {
-    sourceVersion: isV4 ? "4.0" : "2.0",
-    // Parts of the metadata the server skipped (see disableOnError), logged at startup
-    warnings: [],
-    entityTypes: {},
-    complexTypes: {},
-    enumTypes: {},
-    entitySets: {},
-    container: undefined,
-    associations: {},
-    associationSets: [],
-    // Actions and functions (V4) and function imports (V2), see parseOperations
-    operations: { bound: [], imports: {} },
-    // Operations per protocol, translated for the one the metadata wasn't written in:
-    // { "2.0": { bound, imports }, "4.0": { bound, imports } }
-    operationViews: undefined,
-    referencesXml: extractBlocks(xml, "edmx:Reference"),
-    annotationsXml: extractBlocks(xml, "Annotations"),
-  };
+  // Collected first; the model is put together once there is a container
+  const entityTypes: Model["entityTypes"] = {};
+  const complexTypes: Model["complexTypes"] = {};
+  const enumTypes: Model["enumTypes"] = {};
+  const entitySets: Model["entitySets"] = {};
+  const associations: Model["associations"] = {};
+  const associationSets: Model["associationSets"] = [];
+  let container: Container | undefined;
 
   for (const schema of schemas) {
     const ns = schema.Namespace;
 
     for (const et of schema.EntityType || []) {
       const fullName = `${ns}.${et.Name}`;
-      const properties = {};
+      const properties: Record<string, Property> = {};
       for (const p of et.Property || [])
         properties[p.Name] = normalizeProperty(p, isV4);
-      model.entityTypes[fullName] = {
+      entityTypes[fullName] = {
         name: et.Name,
         fullName,
         namespace: ns,
         baseType: et.BaseType,
-        keys: (et.Key?.[0]?.PropertyRef || []).map((k) => k.Name),
+        keys: (et.Key?.[0]?.PropertyRef || []).map((k: Xml) => k.Name),
         properties,
-        navigationProperties: (et.NavigationProperty || []).map((n) =>
-          isV4
-            ? {
-                name: n.Name,
-                type: n.Type,
-                partner: n.Partner,
-                containsTarget: n.ContainsTarget === "true",
-                onDeleteCascade: n.OnDelete?.Action === "Cascade",
-                constraints: (n.ReferentialConstraint || []).map((c) => ({
-                  property: c.Property,
-                  referencedProperty: c.ReferencedProperty,
-                })),
-              }
-            : {
-                name: n.Name,
-                relationship: n.Relationship,
-                fromRole: n.FromRole,
-                toRole: n.ToRole,
-              },
+        navigationProperties: (et.NavigationProperty || []).map(
+          (n: Xml): NavigationProperty =>
+            isV4
+              ? {
+                  name: n.Name,
+                  type: n.Type,
+                  partner: n.Partner,
+                  containsTarget: n.ContainsTarget === "true",
+                  onDeleteCascade: n.OnDelete?.Action === "Cascade",
+                  constraints: (n.ReferentialConstraint || []).map(
+                    (c: Xml) => ({
+                      property: c.Property,
+                      referencedProperty: c.ReferencedProperty,
+                    }),
+                  ),
+                }
+              : {
+                  name: n.Name,
+                  relationship: n.Relationship,
+                  fromRole: n.FromRole,
+                  toRole: n.ToRole,
+                },
         ),
+        // Resolved after inheritance (see resolveNavigationsV2/V4)
+        navigations: {},
       };
     }
 
     for (const ct of schema.ComplexType || []) {
       const fullName = `${ns}.${ct.Name}`;
-      const properties = {};
+      const properties: Record<string, Property> = {};
       for (const p of ct.Property || [])
         properties[p.Name] = normalizeProperty(p, isV4);
-      model.complexTypes[fullName] = {
+      complexTypes[fullName] = {
         name: ct.Name,
         fullName,
         namespace: ns,
@@ -140,13 +165,13 @@ function parseMetadata(xml) {
 
     for (const en of schema.EnumType || []) {
       const fullName = `${ns}.${en.Name}`;
-      model.enumTypes[fullName] = {
+      enumTypes[fullName] = {
         name: en.Name,
         fullName,
         namespace: ns,
         underlyingType: en.UnderlyingType,
         isFlags: en.IsFlags === "true",
-        members: (en.Member || []).map((m) => ({
+        members: (en.Member || []).map((m: Xml) => ({
           name: m.Name,
           value: m.Value,
         })),
@@ -156,10 +181,10 @@ function parseMetadata(xml) {
     for (const assoc of schema.Association || []) {
       const fullName = `${ns}.${assoc.Name}`;
       const constraint = assoc.ReferentialConstraint?.[0];
-      model.associations[fullName] = {
+      associations[fullName] = {
         name: assoc.Name,
         fullName,
-        ends: (assoc.End || []).map((e) => ({
+        ends: (assoc.End || []).map((e: Xml) => ({
           role: e.Role,
           type: e.Type,
           multiplicity: e.Multiplicity,
@@ -169,13 +194,13 @@ function parseMetadata(xml) {
               principal: {
                 role: constraint.Principal.Role,
                 properties: (constraint.Principal.PropertyRef || []).map(
-                  (p) => p.Name,
+                  (p: Xml) => p.Name,
                 ),
               },
               dependent: {
                 role: constraint.Dependent.Role,
                 properties: (constraint.Dependent.PropertyRef || []).map(
-                  (p) => p.Name,
+                  (p: Xml) => p.Name,
                 ),
               },
             }
@@ -183,23 +208,23 @@ function parseMetadata(xml) {
       };
     }
 
-    for (const container of schema.EntityContainer || []) {
-      model.container ||= { name: container.Name, namespace: ns };
-      for (const es of container.EntitySet || []) {
-        model.entitySets[es.Name] = {
+    for (const c of schema.EntityContainer || []) {
+      container ||= { name: c.Name, namespace: ns };
+      for (const es of c.EntitySet || []) {
+        entitySets[es.Name] = {
           name: es.Name,
           entityType: es.EntityType,
-          bindings: (es.NavigationPropertyBinding || []).map((b) => ({
+          bindings: (es.NavigationPropertyBinding || []).map((b: Xml) => ({
             path: b.Path,
             target: b.Target,
           })),
         };
       }
-      for (const as of container.AssociationSet || []) {
-        model.associationSets.push({
+      for (const as of c.AssociationSet || []) {
+        associationSets.push({
           name: as.Name,
           association: as.Association,
-          ends: (as.End || []).map((e) => ({
+          ends: (as.End || []).map((e: Xml) => ({
             role: e.Role,
             entitySet: e.EntitySet,
           })),
@@ -207,8 +232,30 @@ function parseMetadata(xml) {
       }
     }
   }
-  if (!model.container)
-    throw new Error("metadata.xml: no <EntityContainer> found");
+  if (!container) throw new Error("metadata.xml: no <EntityContainer> found");
+
+  const model: Model = {
+    sourceVersion: isV4 ? "4.0" : "2.0",
+    // Parts of the metadata the server skipped (see disableOnError), logged at startup
+    warnings: [],
+    entityTypes,
+    complexTypes,
+    enumTypes,
+    entitySets,
+    container,
+    associations,
+    associationSets,
+    // Actions and functions (V4) and function imports (V2), see parseOperations
+    operations: { bound: [], imports: {} },
+    // Operations per protocol, translated for the one the metadata wasn't written in; set
+    // below, once the operations are resolved
+    operationViews: {
+      "2.0": { bound: [], imports: {} },
+      "4.0": { bound: [], imports: {} },
+    },
+    referencesXml: extractBlocks(xml, "edmx:Reference"),
+    annotationsXml: extractBlocks(xml, "Annotations"),
+  };
 
   const qualify = termQualifier(edmx, schemas);
   parseComputed(model, schemas, qualify); // before flattenInheritance: derived types share it
@@ -238,13 +285,14 @@ function parseMetadata(xml) {
   return model;
 }
 
-const list = (x) => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
+const list = (x: Xml): Xml[] =>
+  x === undefined ? [] : Array.isArray(x) ? x : [x];
 
 // A function that resolves a term's alias to its namespace, from the document's
 // <edmx:Include Alias> and <Schema Alias>:
 // "Common.DraftRoot" -> "com.sap.vocabularies.Common.v1.DraftRoot"
-function termQualifier(edmx, schemas) {
-  const aliases = {};
+function termQualifier(edmx: Xml, schemas: Xml[]): Qualify {
+  const aliases: Record<string, string> = {};
   for (const ref of list(edmx.Reference))
     for (const inc of list(ref.Include))
       if (inc.Alias) aliases[inc.Alias] = inc.Namespace;
@@ -261,10 +309,10 @@ function termQualifier(edmx, schemas) {
 // Core.Computed on an entity type's property, inline or in an <Annotations> block targeting
 // it ("Ns.Type/Prop"), sets p.computed: the service fills the value in, so a write doesn't
 // need to carry it. V2 documents can carry these V4 annotations too.
-function parseComputed(model, schemas, qualify) {
-  const computed = (annotations) =>
+function parseComputed(model: Model, schemas: Xml[], qualify: Qualify): void {
+  const computed = (annotations: Xml) =>
     list(annotations).some(
-      (a) =>
+      (a: Xml) =>
         !a.Qualifier &&
         qualify(a.Term) === "Org.OData.Core.V1.Computed" &&
         a.Bool !== "false",
@@ -286,9 +334,16 @@ function parseComputed(model, schemas, qualify) {
 
 // A derived type (BaseType) gets its base's key, properties and navigations copied in, so
 // every type stands on its own and the generated $metadata needs no BaseType.
-function flattenInheritance(types, kind) {
-  const done = new Set();
-  const flatten = (type, seen) => {
+// Entity and complex types alike; only entity types have keys and navigation properties
+type Structured = ComplexType &
+  Partial<Pick<EntityType, "keys" | "navigationProperties">>;
+
+function flattenInheritance(
+  types: Record<string, Structured>,
+  kind: string,
+): void {
+  const done = new Set<string>();
+  const flatten = (type: Structured, seen: Set<string>) => {
     if (!type.baseType || done.has(type.fullName)) return;
     if (seen.has(type.fullName))
       throw new Error(`${kind} ${type.fullName}: BaseType cycle`);
@@ -300,10 +355,11 @@ function flattenInheritance(types, kind) {
       );
     flatten(base, seen);
     type.properties = { ...base.properties, ...type.properties };
-    if (type.keys && type.keys.length === 0) type.keys = [...base.keys];
+    // An entity type's base is an entity type, so it has both
+    if (type.keys && type.keys.length === 0) type.keys = [...base.keys!];
     if (type.navigationProperties)
       type.navigationProperties = [
-        ...base.navigationProperties,
+        ...base.navigationProperties!,
         ...type.navigationProperties,
       ];
     done.add(type.fullName);
@@ -313,12 +369,12 @@ function flattenInheritance(types, kind) {
 
 // Each property points at its complex or enum type, so values can be converted and emitted.
 // V2 has no collection-valued properties: those are left out of the V2 service.
-function resolvePropertyTypes(model) {
+function resolvePropertyTypes(model: Model): void {
   const types = [
     ...Object.values(model.entityTypes),
     ...Object.values(model.complexTypes),
   ];
-  const done = new Set(); // inherited properties are shared with the base type
+  const done = new Set<Property>(); // inherited properties are shared with the base type
   for (const type of types) {
     for (const p of Object.values(type.properties)) {
       if (done.has(p)) continue;
@@ -335,7 +391,7 @@ function resolvePropertyTypes(model) {
 }
 
 // Sets isCollection, elementType, complexType and enumType on a property, parameter or return type
-function resolveTypeRef(model, p) {
+function resolveTypeRef(model: Model, p: Property): void {
   const m = p.type.match(/^Collection\((.+)\)$/);
   p.isCollection = !!m;
   p.elementType = m ? m[1] : p.type;
@@ -350,16 +406,16 @@ function resolveTypeRef(model, p) {
 // binding, parameters and returnType are shaped like properties (normalizeProperty).
 // V4: bound operations go to operations.bound, imports (by import name) to operations.imports.
 // V2 has only function imports; m:HttpMethod POST makes one an action, GET a function.
-function parseOperations(model, schemas, isV4) {
-  const typeRef = (name, type) =>
+function parseOperations(model: Model, schemas: Xml[], isV4: boolean): void {
+  const typeRef = (name: string, type: string | undefined) =>
     type ? normalizeProperty({ Name: name, Type: type }, isV4) : undefined;
-  const unbound = {};
+  const unbound: Record<string, Operation> = {};
   for (const schema of schemas) {
     const ns = schema.Namespace;
     if (isV4) {
-      for (const kind of ["Action", "Function"]) {
+      for (const kind of ["Action", "Function"] as const) {
         for (const o of schema[kind] || []) {
-          const params = (o.Parameter || []).map((p) =>
+          const params: TypedElement[] = (o.Parameter || []).map((p: Xml) =>
             normalizeProperty(p, true),
           );
           const isBound = o.IsBound === "true";
@@ -369,10 +425,10 @@ function parseOperations(model, schemas, isV4) {
             );
             continue;
           }
-          const op = {
+          const op: Operation = {
             name: o.Name,
             fullName: `${ns}.${o.Name}`,
-            kind: kind.toLowerCase(),
+            kind: kind === "Action" ? "action" : "function",
             isBound,
             binding: isBound ? params[0] : undefined,
             parameters: isBound ? params.slice(1) : params,
@@ -415,7 +471,7 @@ function parseOperations(model, schemas, isV4) {
           fullName: `${ns}.${fi.Name}`,
           kind: httpMethod === "GET" ? "function" : "action",
           isBound: false,
-          parameters: (fi.Parameter || []).map((p) =>
+          parameters: (fi.Parameter || []).map((p: Xml) =>
             normalizeProperty(p, false),
           ),
           returnType: typeRef("", fi.ReturnType),
@@ -429,7 +485,7 @@ function parseOperations(model, schemas, isV4) {
   }
 }
 
-function resolveOperationTypes(model) {
+function resolveOperationTypes(model: Model): void {
   const ops = [
     ...model.operations.bound,
     ...Object.values(model.operations.imports),
@@ -453,16 +509,19 @@ function resolveOperationTypes(model) {
 // In a V2 view, an operation on an entity has bindsTo: { type, setName, isCollection }; the
 // service finds the entity from the key parameters.
 
-function firstSetOf(model, typeName) {
+function firstSetOf(model: Model, typeName: string): string | undefined {
   return Object.values(model.entitySets).find(
     (es) => es.entityType === typeName,
   )?.name;
 }
 
-function bindingParameter(et, isCollection = false) {
+function bindingParameter(et: EntityType, isCollection = false): TypedElement {
+  const type = isCollection ? `Collection(${et.fullName})` : et.fullName;
   return {
     name: "_it",
-    type: isCollection ? `Collection(${et.fullName})` : et.fullName,
+    type,
+    v2Type: type,
+    sap: {},
     elementType: et.fullName,
     isCollection,
     entityType: et,
@@ -470,33 +529,39 @@ function bindingParameter(et, isCollection = false) {
   };
 }
 
-function v2ViewOfV2(model) {
-  const imports = {};
+function v2ViewOfV2(model: Model): OperationView {
+  const imports: Record<string, Operation> = {};
   for (const op of Object.values(model.operations.imports)) {
-    const et = model.entityTypes[op.actionFor];
+    const et = op.actionFor ? model.entityTypes[op.actionFor] : undefined;
     const byKey =
       et && et.keys.every((k) => op.parameters.some((p) => p.name === k));
     const setName =
+      et &&
       byKey &&
-      (model.entitySets[op.entitySet]?.entityType === et.fullName
+      (op.entitySet &&
+      model.entitySets[op.entitySet]?.entityType === et.fullName
         ? op.entitySet
         : firstSetOf(model, et.fullName));
-    imports[op.name] = setName
-      ? { ...op, bindsTo: { type: et, setName, isCollection: false } }
-      : op;
+    imports[op.name] =
+      et && setName
+        ? { ...op, bindsTo: { type: et, setName, isCollection: false } }
+        : op;
   }
   return { bound: [], imports };
 }
 
-function v4ViewOfV2(model) {
+function v4ViewOfV2(model: Model): OperationView {
   const ns = model.container.namespace;
-  const view = { bound: [], imports: {} };
+  const view: OperationView = { bound: [], imports: {} };
   for (const op of Object.values(v2ViewOfV2(model).imports)) {
     const base = {
       name: op.name,
       fullName: `${ns}.${op.name}`,
       // V4 functions need a return type: a V2 GET import without one becomes an action
-      kind: op.kind === "function" && !op.returnType ? "action" : op.kind,
+      kind:
+        op.kind === "function" && !op.returnType
+          ? ("action" as const)
+          : op.kind,
       returnType: op.returnType,
     };
     if (op.bindsTo) {
@@ -519,24 +584,25 @@ function v4ViewOfV2(model) {
   return view;
 }
 
-function v2ViewOfV4(model) {
-  const imports = {};
-  const skip = (op, why) =>
+function v2ViewOfV4(model: Model): OperationView {
+  const imports: Record<string, Operation> = {};
+  const skip = (op: Operation, why: string) =>
     model.warnings.push(`not in V2: ${op.kind} ${op.name}: ${why}`);
-  const returnSet = (op) =>
+  const returnSet = (op: Operation) =>
     op.returnType?.entityType
       ? firstSetOf(model, op.returnType.elementType)
       : undefined;
-  const uniqueName = (name, suffix) =>
+  const uniqueName = (name: string, suffix: string) =>
     imports[name] ? `${name}_${suffix}` : name;
   // V2 function import parameters are primitive
-  const primitiveParams = (op) =>
+  const primitiveParams = (op: Operation) =>
     op.parameters.every((p) => !p.complexType && !p.isCollection);
 
   for (const op of model.operations.bound) {
-    const et = op.binding.entityType;
+    const binding = op.binding!; // a bound operation has one (see parseOperations)
+    const et = binding.entityType;
     if (!et) {
-      skip(op, `bound to ${op.binding.type}, not an entity type`);
+      skip(op, `bound to ${binding.type}, not an entity type`);
       continue;
     }
     const setName = firstSetOf(model, et.fullName);
@@ -548,7 +614,7 @@ function v2ViewOfV4(model) {
       skip(op, "complex or collection parameters");
       continue;
     }
-    const keys = op.binding.isCollection
+    const keys = binding.isCollection
       ? []
       : et.keys.map((k) => et.properties[k]);
     if (op.parameters.some((p) => keys.some((k) => k.name === p.name))) {
@@ -564,8 +630,8 @@ function v2ViewOfV4(model) {
       httpMethod: op.kind === "action" ? "POST" : "GET",
       parameters: [...keys, ...op.parameters],
       entitySet: returnSet(op),
-      bindsTo: { type: et, setName, isCollection: op.binding.isCollection },
-      actionFor: op.binding.isCollection ? undefined : et.fullName,
+      bindsTo: { type: et, setName, isCollection: binding.isCollection },
+      actionFor: binding.isCollection ? undefined : et.fullName,
     };
   }
   for (const op of Object.values(model.operations.imports)) {
@@ -584,12 +650,13 @@ function v2ViewOfV4(model) {
   return { bound: [], imports };
 }
 
-function normalizeProperty(p, isV4) {
-  const sap = {};
-  for (const [k, v] of Object.entries(p))
+// isCollection and elementType are set again by resolveTypeRef, once all types are known
+function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
+  const sap: Record<string, string> = {};
+  for (const [k, v] of Object.entries<string>(p))
     if (k.startsWith("sap__")) sap[k.slice(5)] = v;
-  let type = p.Type,
-    v2Type;
+  let type: string = p.Type,
+    v2Type: string;
   if (isV4) {
     v2Type = CANONICAL_TO_V2[type] || type;
   } else {
@@ -608,11 +675,13 @@ function normalizeProperty(p, isV4) {
     scale: p.Scale,
     label: sap.label,
     sap,
+    isCollection: false,
+    elementType: type,
   };
 }
 
 // Raw "<Tag ...>...</Tag>" (or self-closing) blocks, kept verbatim for re-emission.
-function extractBlocks(xml, tag) {
+function extractBlocks(xml: string, tag: string): string[] {
   const re = new RegExp(
     `<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`,
     "g",
@@ -620,20 +689,27 @@ function extractBlocks(xml, tag) {
   return xml.match(re) || [];
 }
 
-function setsByType(model) {
-  const out = {};
+function setsByType(model: Model): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
   for (const es of Object.values(model.entitySets))
     (out[es.entityType] ||= []).push(es.name);
   return out;
 }
 
-function finishNavigation(et, nav, targetType, targetSet, join, cascadeHint) {
+function finishNavigation(
+  et: EntityType,
+  nav: NavigationProperty,
+  targetType: EntityType,
+  targetSet: string,
+  join: Join,
+  cascadeHint: boolean,
+): void {
   const dependentIsTarget = join.dependentSide === "target";
   et.navigations[nav.name] = {
     name: nav.name,
     targetSet,
     targetType: targetType.fullName,
-    isCollection: nav.isCollection,
+    isCollection: nav.isCollection ?? false,
     dependentSide: join.dependentSide,
     join: join.pairs,
     // Deleting a principal takes its dependents with it when they cannot exist on their
@@ -649,13 +725,14 @@ function finishNavigation(et, nav, targetType, targetSet, join, cascadeHint) {
   };
 }
 
-function resolveNavigationsV2(model) {
+function resolveNavigationsV2(model: Model): void {
   const byType = setsByType(model);
   for (const et of Object.values(model.entityTypes)) {
     et.navigations = {};
     et.disabledNavigations = {};
-    // SiblingEntity and DraftAdministrativeData: see resolveDraftNavigations
-    const navs = et.navigationProperties.filter(
+    // SiblingEntity and DraftAdministrativeData: see resolveDraftNavigations. A V2
+    // document has only V2 navigation properties.
+    const navs = (et.navigationProperties as V2NavigationProperty[]).filter(
       (nav) => !isDraftNavigation(model, et, nav),
     );
     for (const nav of navs)
@@ -691,11 +768,11 @@ function resolveNavigationsV2(model) {
 
         nav.isCollection = toEnd.multiplicity === "*";
         const rc = assoc.referentialConstraint;
-        let join;
+        let join: Join;
         if (rc && rc.principal.role === nav.fromRole) {
           join = {
             dependentSide: "target",
-            pairs: rc.principal.properties.map((p, i) => [
+            pairs: rc.principal.properties.map((p, i): JoinPair => [
               p,
               rc.dependent.properties[i],
             ]),
@@ -703,7 +780,7 @@ function resolveNavigationsV2(model) {
         } else if (rc) {
           join = {
             dependentSide: "source",
-            pairs: rc.dependent.properties.map((p, i) => [
+            pairs: rc.dependent.properties.map((p, i): JoinPair => [
               p,
               rc.principal.properties[i],
             ]),
@@ -723,13 +800,14 @@ function resolveNavigationsV2(model) {
   }
 }
 
-function resolveNavigationsV4(model) {
+function resolveNavigationsV4(model: Model): void {
   const byType = setsByType(model);
   for (const et of Object.values(model.entityTypes)) {
     et.navigations = {};
     et.disabledNavigations = {};
-    // SiblingEntity and DraftAdministrativeData have no join: see resolveDraftNavigations
-    const navs = et.navigationProperties.filter(
+    // SiblingEntity and DraftAdministrativeData have no join: see resolveDraftNavigations.
+    // A V4 document has only V4 navigation properties.
+    const navs = (et.navigationProperties as V4NavigationProperty[]).filter(
       (nav) => !isDraftNavigation(model, et, nav),
     );
     for (const nav of navs)
@@ -743,7 +821,7 @@ function resolveNavigationsV4(model) {
             `${et.name}.${nav.name}: unknown target type ${targetTypeName}`,
           );
 
-        let targetSet;
+        let targetSet: string | undefined;
         for (const setName of byType[et.fullName] || []) {
           const binding = model.entitySets[setName].bindings.find(
             (b) => b.path === nav.name,
@@ -759,22 +837,22 @@ function resolveNavigationsV4(model) {
             `${et.name}.${nav.name}: no entity set for ${targetTypeName}`,
           );
 
-        let join;
+        let join: Join;
         if (nav.constraints.length) {
           join = {
             dependentSide: "source",
-            pairs: nav.constraints.map((c) => [
+            pairs: nav.constraints.map((c): JoinPair => [
               c.property,
               c.referencedProperty,
             ]),
           };
         } else {
           // The constraint lives on the dependent side; for the other direction look at the partner.
+          const targetNavs =
+            targetType.navigationProperties as V4NavigationProperty[];
           const partner = nav.partner
-            ? targetType.navigationProperties.find(
-                (p) => p.name === nav.partner,
-              )
-            : targetType.navigationProperties.find(
+            ? targetNavs.find((p) => p.name === nav.partner)
+            : targetNavs.find(
                 (p) =>
                   p.type.replace(/^Collection\((.+)\)$/, "$1") ===
                     et.fullName && p.constraints.length,
@@ -782,7 +860,7 @@ function resolveNavigationsV4(model) {
           if (partner && partner.constraints.length) {
             join = {
               dependentSide: "target",
-              pairs: partner.constraints.map((c) => [
+              pairs: partner.constraints.map((c): JoinPair => [
                 c.referencedProperty,
                 c.property,
               ]),
@@ -790,10 +868,8 @@ function resolveNavigationsV4(model) {
           } else {
             // Many on the source's end: the partner (named, or else any navigation back) is a collection
             const back =
-              targetType.navigationProperties.find(
-                (p) => p.name === nav.partner,
-              ) ||
-              targetType.navigationProperties.find(
+              targetNavs.find((p) => p.name === nav.partner) ||
+              targetNavs.find(
                 (p) =>
                   p.type.replace(/^Collection\((.+)\)$/, "$1") === et.fullName,
               );
@@ -822,12 +898,18 @@ function resolveNavigationsV4(model) {
 // A navigation the server cannot resolve (unknown association, no join condition, ...) is
 // switched off instead of failing the whole model: real services often have a few, e.g.
 // many-to-many links. Requests that use it get a 501; everything else keeps working.
-function disableOnError(model, et, nav, resolve) {
+function disableOnError(
+  model: Model,
+  et: EntityType,
+  nav: NavigationProperty,
+  resolve: () => void,
+): void {
   try {
     resolve();
   } catch (e) {
-    et.disabledNavigations[nav.name] = e.message;
-    model.warnings.push(`navigation disabled: ${e.message}`);
+    const message = (e as Error).message;
+    (et.disabledNavigations ??= {})[nav.name] = message;
+    model.warnings.push(`navigation disabled: ${message}`);
   }
 }
 
@@ -845,19 +927,19 @@ function disableOnError(model, et, nav, resolve) {
 // sourceIsMany: whether the source's end is "many" (V2's multiplicity, V4's partner).
 // Every join found this way is logged: it's a guess.
 function joinByNaming(
-  model,
-  sourceType,
-  nav,
-  targetType,
-  relationshipName,
-  sourceIsMany,
-) {
+  model: Model,
+  sourceType: EntityType,
+  nav: NavigationProperty,
+  targetType: EntityType,
+  relationshipName: string,
+  sourceIsMany: boolean,
+): Join {
   const many = nav.isCollection || sourceIsMany || sourceType === targetType;
   // Joins one side's whole key to the other's: the props, all of `type`'s keys
-  const isWholeKey = (type, props) =>
+  const isWholeKey = (type: EntityType, props: string[]) =>
     props.length === type.keys.length &&
     type.keys.every((k) => props.includes(k));
-  const found = (dependentSide, pairs) => {
+  const found = (dependentSide: Join["dependentSide"], pairs: JoinPair[]) => {
     const on = pairs
       .map(([s, t]) => `${sourceType.name}.${s} = ${targetType.name}.${t}`)
       .join(", ");
@@ -875,7 +957,7 @@ function joinByNaming(
   )
     return found(
       "target",
-      sourceType.keys.map((k) => [k, k]),
+      sourceType.keys.map((k): JoinPair => [k, k]),
     );
   if (
     targetType.keys.length &&
@@ -884,12 +966,12 @@ function joinByNaming(
   )
     return found(
       "source",
-      targetType.keys.map((k) => [k, k]),
+      targetType.keys.map((k): JoinPair => [k, k]),
     );
 
   // Gateway entity types are often named <Entity>Type
-  const base = (type) => type.name.replace(/Type$/, "");
-  const named = (type, names) =>
+  const base = (type: EntityType) => type.name.replace(/Type$/, "");
+  const named = (type: EntityType, names: string[]) =>
     names.find((n) => type.properties[n] && !type.keys.includes(n));
   if (sourceType.keys.length === 1) {
     const k = sourceType.keys[0];
@@ -917,7 +999,7 @@ function joinByNaming(
 
 // Marks navigations that are each other's inverse, so V2 emission can share one
 // Association between them and V4 emission can write Partner.
-function resolvePartners(model) {
+function resolvePartners(model: Model): void {
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
       const target = model.entityTypes[nav.targetType];
@@ -935,21 +1017,28 @@ function resolvePartners(model) {
 
 // --- Emission -----------------------------------------------------------------------------
 
-function esc(s) {
+function esc(s: unknown): string {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/"/g, "&quot;");
 }
-function attrs(pairs) {
+// [name, value] pairs; empty values are left out
+function attrs(pairs: [string, unknown][]): string {
   return pairs
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
     .map(([k, v]) => ` ${k}="${esc(v)}"`)
     .join("");
 }
-function typesByNamespace(model) {
-  const out = {};
-  const ns = (name) =>
+interface NamespaceTypes {
+  enumTypes: EnumType[];
+  complexTypes: ComplexType[];
+  entityTypes: EntityType[];
+}
+
+function typesByNamespace(model: Model): Record<string, NamespaceTypes> {
+  const out: Record<string, NamespaceTypes> = {};
+  const ns = (name: string) =>
     (out[name] ||= { enumTypes: [], complexTypes: [], entityTypes: [] });
   for (const t of Object.values(model.enumTypes))
     ns(t.namespace).enumTypes.push(t);
@@ -961,7 +1050,7 @@ function typesByNamespace(model) {
   return out;
 }
 
-function propertyV4(p, indent) {
+function propertyV4(p: Property, indent: string): string[] {
   const a = attrs([
     ["Name", p.name],
     ["Type", p.type],
@@ -978,7 +1067,7 @@ function propertyV4(p, indent) {
   ];
 }
 
-function propertyV2(p, indent) {
+function propertyV2(p: Property, indent: string): string[] {
   const a = attrs([
     ["Name", p.name],
     ["Type", p.v2Type],
@@ -992,7 +1081,7 @@ function propertyV2(p, indent) {
   return p.v2Omit ? [] : [`${indent}<Property${a}/>`];
 }
 
-function parameterV4(p, indent) {
+function parameterV4(p: TypedElement, indent: string): string {
   const a = attrs([
     ["Name", p.name],
     ["Type", p.type],
@@ -1005,12 +1094,12 @@ function parameterV4(p, indent) {
 }
 
 // <Action>/<Function> elements for a V4 view: bound operations and those behind imports
-function operationsV4(view, indent) {
-  const out = [];
+function operationsV4(view: OperationView, indent: string): string[] {
+  const out: string[] = [];
   for (const op of [...view.bound, ...Object.values(view.imports)]) {
     const tag = op.kind === "action" ? "Action" : "Function";
     const children = [op.binding, ...op.parameters]
-      .filter(Boolean)
+      .filter((p) => p !== undefined)
       .map((p) => parameterV4(p, `${indent}  `));
     if (op.returnType)
       children.push(
@@ -1021,11 +1110,11 @@ function operationsV4(view, indent) {
     const returnsBinding =
       op.isBound &&
       op.returnType?.entityType &&
-      op.returnType.elementType === op.binding.elementType;
+      op.returnType.elementType === op.binding?.elementType;
     const a = attrs([
       ["Name", op.name],
       ["IsBound", op.isBound ? "true" : undefined],
-      ["EntitySetPath", returnsBinding ? op.binding.name : undefined],
+      ["EntitySetPath", returnsBinding ? op.binding?.name : undefined],
     ]);
     if (children.length)
       out.push(`${indent}<${tag}${a}>`, ...children, `${indent}</${tag}>`);
@@ -1036,7 +1125,7 @@ function operationsV4(view, indent) {
 
 // V2 type name: complex and entity types unchanged, enums as Edm.String, V4-only types
 // (Edm.Date, ...) mapped to their V2 counterparts
-function v2TypeName(p) {
+function v2TypeName(p: TypedElement): string {
   const element =
     p.complexType || p.entityType
       ? p.elementType
@@ -1046,8 +1135,8 @@ function v2TypeName(p) {
   return p.isCollection ? `Collection(${element})` : element;
 }
 
-function functionImportsV2(view, indent) {
-  const out = [];
+function functionImportsV2(view: OperationView, indent: string): string[] {
+  const out: string[] = [];
   for (const op of Object.values(view.imports)) {
     const a = attrs([
       ["Name", op.name],
@@ -1077,8 +1166,8 @@ function functionImportsV2(view, indent) {
   return out;
 }
 
-function emitV4(model) {
-  const out = [];
+function emitV4(model: Model): string {
+  const out: string[] = [];
   out.push('<?xml version="1.0" encoding="utf-8"?>');
   out.push(`<edmx:Edmx Version="4.0" xmlns:edmx="${NS.v4.edmx}">`);
   for (const ref of model.referencesXml) out.push(`  ${ref}`);
@@ -1141,7 +1230,7 @@ function emitV4(model) {
           ["Type", type],
           ["Partner", nav.partner],
         ]);
-        const children = [];
+        const children: string[] = [];
         if (nav.dependentSide === "source") {
           for (const [src, tgt] of nav.join)
             children.push(
@@ -1216,12 +1305,23 @@ function emitV4(model) {
   return out.join("\n") + "\n";
 }
 
-function emitV2(model) {
+interface AssociationOut {
+  name: string;
+  ends: { role: string; type: string; multiplicity: string; set: string }[];
+  principal: { role: string; properties: string[] };
+  dependent: { role: string; properties: string[] };
+}
+
+function emitV2(model: Model): string {
   const byType = setsByType(model);
 
   // One Association per navigation pair (a navigation and its partner share it).
-  const associations = [];
-  const navAssoc = {}; // "Type/nav" -> { assoc, fromRole, toRole }
+  const associations: AssociationOut[] = [];
+  // "Type/nav" -> { assoc, fromRole, toRole }
+  const navAssoc: Record<
+    string,
+    { assoc: AssociationOut; fromRole: string; toRole: string }
+  > = {};
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
       const key = `${et.fullName}/${nav.name}`;
@@ -1242,7 +1342,7 @@ function emitV2(model) {
           : "*";
       const toMultiplicity = nav.isCollection ? "*" : "1";
       const principalIsSource = nav.dependentSide === "target";
-      const assoc = {
+      const assoc: AssociationOut = {
         name,
         ends: [
           {
@@ -1278,7 +1378,7 @@ function emitV2(model) {
     }
   }
 
-  const out = [];
+  const out: string[] = [];
   out.push('<?xml version="1.0" encoding="utf-8"?>');
   out.push(
     `<edmx:Edmx Version="1.0" xmlns:edmx="${NS.v2.edmx}" xmlns:m="${NS.v2.m}" xmlns:sap="${NS.v2.sap}">`,

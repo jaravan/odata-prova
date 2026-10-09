@@ -13,7 +13,7 @@ import {
   ITEM,
 } from "./helpers.js";
 import { createApp } from "../lib/app.js";
-import { parseMetadata } from "../lib/metadata.js";
+import { parseMetadata } from "../lib/metadata.ts";
 
 // A copy of a model folder with its metadata.xml edited, removed again by the returned cleanup
 function editedModel(modelDir, edit) {
