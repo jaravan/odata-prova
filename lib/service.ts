@@ -911,8 +911,9 @@ class ODataService {
       throw new HttpError(404, `${first} is not an entity set or operation`);
 
     // Walk: entity set, then navigation properties, keeping the current row/collection.
-    let { set, type } = this.entitySet(first);
-    let setName = set.name;
+    const start = this.entitySet(first);
+    let type = start.type;
+    let setName = start.set.name;
     let rows = this.store.rows(setName);
     let row: Row | undefined = undefined; // defined when the current position is a single entity
     const key = this.parseKey(segments[0].keyText, type);

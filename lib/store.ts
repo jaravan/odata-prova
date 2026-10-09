@@ -22,7 +22,7 @@ import { asActive } from "./draft.ts";
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
 // separator, line breaks and "" for a quote. Unquoted fields are trimmed, blank lines skipped.
 function parseCsv(text: string): Record<string, string>[] {
-  text = text.replace(/^﻿/, ""); // Excel starts a UTF-8 CSV with a byte order mark
+  text = text.replace(/^\uFEFF/, ""); // Excel starts a UTF-8 CSV with a byte order mark
   const sep = /^[^\r\n]*;/.test(text) ? ";" : ",";
   const records: string[][] = [];
   let fields: string[] = [],
@@ -99,7 +99,10 @@ function loadSeedFile(
         try {
           return {
             file,
-            rows: ext === "csv" ? parseCsv(text) : JSON.parse(text),
+            rows:
+              ext === "csv"
+                ? parseCsv(text)
+                : (JSON.parse(text) as Record<string, unknown>[]),
           };
         } catch (e) {
           throw seedError(`${file}: ${(e as Error).message}`);

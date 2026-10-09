@@ -48,9 +48,9 @@ function operationRules(model: Model, modelDir: string): Rules {
   if (!fs.existsSync(file)) return {};
   let config: { operations?: Rules };
   try {
-    config = JSON.parse(fs.readFileSync(file, "utf8"));
+    config = JSON.parse(fs.readFileSync(file, "utf8")) as typeof config;
   } catch (e) {
-    throw new Error(`${file}: ${(e as Error).message}`);
+    throw new Error(`${file}: ${(e as Error).message}`, { cause: e });
   }
   const rules = config.operations || {};
   const views = Object.values(model.operationViews);

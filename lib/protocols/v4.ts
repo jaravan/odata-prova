@@ -103,7 +103,7 @@ function withPrecision(
   const digits = Number(precision) || 0;
   return String(value).replace(
     /(:\d{2})(?:\.(\d+))?(?=Z|[+-]\d{2}:\d{2}|$)/,
-    (_: string, sec: string, frac = "") =>
+    (_: string, sec: string, frac: string = "") =>
       digits ? `${sec}.${frac.padEnd(digits, "0").slice(0, digits)}` : sec,
   );
 }

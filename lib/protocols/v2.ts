@@ -8,7 +8,6 @@ import type {
   Property,
   PropertyValue,
   QueryNode,
-  ResponseOptions,
   Row,
 } from "../model.ts";
 import type { ODataService, Protocol } from "../service.ts";
