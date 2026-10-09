@@ -8,7 +8,35 @@
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
 //     up per parent: items 0001, 0002 of one order, 0001 of the next.
 //
-// Values are produced in the store's internal representation (see types.js).
+// Values are produced in the store's internal representation (see types.ts).
+
+import type {
+  Model,
+  PrimitiveValue,
+  Property,
+  PropertyValue,
+  Row,
+} from "./model.ts";
+
+// A seeded random number generator, uniform in [0, 1)
+type Rng = () => number;
+
+// What a value is generated for: the property, the set's generator, the row's number (1..)
+// and the entity or complex type's name
+interface Ctx {
+  prop: Property;
+  rng: Rng;
+  index: number;
+  typeName: string;
+}
+
+// "props of set hold principalProps of principal" (see foreignKeys)
+interface ForeignKey {
+  set: string;
+  props: string[];
+  principal: string;
+  principalProps: string[];
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 // Dates fall in 2025, not "the last year", so the data does not change over time
@@ -74,7 +102,7 @@ const CITIES = [
   "Warsaw",
   "Lisbon",
 ];
-const COUNTRIES = [
+const COUNTRIES: [string, string][] = [
   ["DE", "Germany"],
   ["GB", "United Kingdom"],
   ["FR", "France"],
@@ -125,7 +153,7 @@ const WORDS = [
 // --- Randomness ---------------------------------------------------------------------------
 
 // FNV-1a: a string -> 32-bit seed
-function hash(s) {
+function hash(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++)
     h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
@@ -133,7 +161,7 @@ function hash(s) {
 }
 
 // mulberry32: a small seeded generator, uniform in [0, 1)
-function random(seed) {
+function random(seed: string): Rng {
   let a = hash(seed);
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -143,19 +171,19 @@ function random(seed) {
   };
 }
 
-const int = (rng, n) => Math.floor(rng() * n); // 0 .. n-1
-const pick = (rng, list) => list[int(rng, list.length)];
-const pad = (n, width) => String(n).padStart(width, "0");
+const int = (rng: Rng, n: number) => Math.floor(rng() * n); // 0 .. n-1
+const pick = <T>(rng: Rng, list: T[]): T => list[int(rng, list.length)];
+const pad = (n: number, width: number) => String(n).padStart(width, "0");
 
 // --- Foreign keys -------------------------------------------------------------------------
 
 // Every join the model knows, as "props of set hold principalProps of principal". A
 // navigation and its partner describe the same foreign key, so each is listed once.
-function foreignKeys(model) {
-  const setsOfType = {};
+function foreignKeys(model: Model): ForeignKey[] {
+  const setsOfType: Record<string, string[]> = {};
   for (const es of Object.values(model.entitySets))
     (setsOfType[es.entityType] ||= []).push(es.name);
-  const out = new Map();
+  const out = new Map<string, ForeignKey>();
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
       for (const source of setsOfType[et.fullName] || []) {
@@ -175,17 +203,21 @@ function foreignKeys(model) {
 
 // A foreign key that is part of the dependent's key: its values have to be known before the
 // rest of the key can be made unique, so the principal is generated first.
-function isKeyPart(model, fk) {
+function isKeyPart(model: Model, fk: ForeignKey): boolean {
   const type = model.entityTypes[model.entitySets[fk.set].entityType];
   return fk.principal !== fk.set && fk.props.some((p) => type.keys.includes(p));
 }
 
 // Principals before the sets whose keys depend on them. A cycle is broken wherever it is
 // found; the foreign key that closes it is then filled like any non-key one.
-function generationOrder(model, sets, fks) {
-  const order = [];
-  const state = {};
-  const visit = (set) => {
+function generationOrder(
+  model: Model,
+  sets: string[],
+  fks: ForeignKey[],
+): string[] {
+  const order: string[] = [];
+  const state: Record<string, string> = {};
+  const visit = (set: string) => {
     if (state[set]) return;
     state[set] = "visiting";
     for (const fk of fks)
@@ -198,14 +230,14 @@ function generationOrder(model, sets, fks) {
   return order;
 }
 
-function copyForeignKey(row, fk, parent) {
+function copyForeignKey(row: Row, fk: ForeignKey, parent: Row): void {
   fk.props.forEach((p, i) => (row[p] = parent[fk.principalProps[i]]));
 }
 
 // --- Values -------------------------------------------------------------------------------
 
 // "PurchaseOrderId" -> "Purchase Order Id"
-function humanize(name) {
+function humanize(name: string): string {
   return name
     .replace(/_/g, " ")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -213,12 +245,12 @@ function humanize(name) {
     .trim();
 }
 
-function fit(s, maxLength) {
+function fit(s: string, maxLength: string | undefined): string {
   const max = Number(maxLength);
   return max > 0 && s.length > max ? s.slice(0, max) : s;
 }
 
-function uuid(rng) {
+function uuid(rng: Rng): string {
   const hex = Array.from({ length: 32 }, () => int(rng, 16).toString(16));
   hex[12] = "4";
   hex[16] = (8 + int(rng, 4)).toString(16);
@@ -228,7 +260,7 @@ function uuid(rng) {
 
 // A string that suits the property's name. Checked in order: the specific names come before
 // the generic ones (CurrencyCode is a currency, not a code; CompanyCode is a code).
-const STRING_RULES = [
+const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
   [
     /e-?mail/,
     (c) =>
@@ -291,14 +323,14 @@ const STRING_RULES = [
   ],
 ];
 
-function stringValue(c) {
+function stringValue(c: Ctx): string {
   const name = c.prop.name.toLowerCase();
   const rule = STRING_RULES.find(([re]) => re.test(name));
   const s = rule ? rule[1](c) : `${humanize(c.prop.name)} ${c.index}`;
   return fit(s, c.prop.maxLength);
 }
 
-function numberRange(name) {
+function numberRange(name: string): [number, number] {
   if (
     /price|amount|cost|value|total|net|gross|salary|revenue|freight/.test(name)
   )
@@ -309,13 +341,13 @@ function numberRange(name) {
   return [1, 1000];
 }
 
-const INT_LIMITS = {
+const INT_LIMITS: Record<string, [number, number]> = {
   "Edm.Byte": [0, 255],
   "Edm.SByte": [-128, 127],
   "Edm.Int16": [-32768, 32767],
 };
 
-function integerValue(c, type) {
+function integerValue(c: Ctx, type: string): number {
   let [min, max] = numberRange(c.prop.name.toLowerCase());
   const limits = INT_LIMITS[type];
   if (limits) [min, max] = [Math.max(min, limits[0]), Math.min(max, limits[1])];
@@ -324,14 +356,14 @@ function integerValue(c, type) {
 
 // Scale is the number of decimals (2 when the metadata leaves it open); Precision caps the
 // digits in total, so it also caps the integer part.
-function decimalScale(prop) {
-  return /^\d+$/.test(prop.scale) ? Number(prop.scale) : 2;
+function decimalScale(prop: Property): number {
+  return /^\d+$/.test(prop.scale ?? "") ? Number(prop.scale) : 2;
 }
 
-function decimalValue(c) {
+function decimalValue(c: Ctx): string {
   const scale = decimalScale(c.prop);
   let [min, max] = numberRange(c.prop.name.toLowerCase());
-  if (/^\d+$/.test(c.prop.precision)) {
+  if (/^\d+$/.test(c.prop.precision ?? "")) {
     const top = 10 ** (Number(c.prop.precision) - scale) - 1;
     max = Math.min(max, top);
     min = Math.min(min, max);
@@ -339,7 +371,7 @@ function decimalValue(c) {
   return (min + c.rng() * (max - min)).toFixed(scale);
 }
 
-function dateTimeValue(c) {
+function dateTimeValue(c: Ctx): Date {
   if (/birth/.test(c.prop.name.toLowerCase()))
     return new Date(Date.UTC(1960, 0, 1) + int(c.rng, 40 * 365) * DAY);
   return new Date(
@@ -347,7 +379,7 @@ function dateTimeValue(c) {
   );
 }
 
-function primitiveValue(c, type) {
+function primitiveValue(c: Ctx, type: string): PrimitiveValue {
   switch (type) {
     case "Edm.String":
       return stringValue(c);
@@ -381,12 +413,12 @@ function primitiveValue(c, type) {
   }
 }
 
-function elementValue(c, depth) {
+function elementValue(c: Ctx, depth: number): PropertyValue {
   const { prop } = c;
   if (prop.complexType) {
     // A complex type can contain itself; stop at some depth
     if (depth > 2) return null;
-    const out = {};
+    const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
       out[p.name] = propertyValue(
         { ...c, prop: p, typeName: prop.complexType.name },
@@ -398,14 +430,14 @@ function elementValue(c, depth) {
   return primitiveValue(c, prop.elementType || prop.type);
 }
 
-function propertyValue(c, depth = 0) {
+function propertyValue(c: Ctx, depth = 0): PropertyValue {
   if (!c.prop.isCollection) return elementValue(c, depth);
   return depth > 2 ? [] : [elementValue(c, depth), elementValue(c, depth)];
 }
 
 // A key value that is unique by construction: seq counts up per set (or per parent, when
 // the key also holds a foreign key).
-function keyValue(prop, seq, rng) {
+function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
   switch (prop.type) {
     case "Edm.Byte":
     case "Edm.SByte":
@@ -442,14 +474,20 @@ function keyValue(prop, seq, rng) {
 // Returns { <set>: rows } for each set in `sets`, `rows` per set at most: rows whose key
 // comes out the same as an earlier one are dropped (a key made only of foreign keys can
 // run out of combinations).
-function generateData(model, data, sets, rows) {
+function generateData(
+  model: Model,
+  data: Record<string, Row[]>,
+  sets: string[],
+  rows: number,
+): Record<string, Row[]> {
   const fks = foreignKeys(model);
   const all = { ...data };
   const rngs = Object.fromEntries(
     sets.map((set) => [set, random(`${model.container.namespace}/${set}`)]),
   );
-  const typeOf = (set) => model.entityTypes[model.entitySets[set].entityType];
-  const keyFksDone = new Set();
+  const typeOf = (set: string) =>
+    model.entityTypes[model.entitySets[set].entityType];
+  const keyFksDone = new Set<ForeignKey>();
 
   // Keys first, parents before children, so a child's key can hold its parent's
   for (const set of generationOrder(model, sets, fks)) {
@@ -460,11 +498,11 @@ function generateData(model, data, sets, rows) {
         fk.set === set && isKeyPart(model, fk) && all[fk.principal]?.length,
     );
     keyFks.forEach((fk) => keyFksDone.add(fk));
-    const seqs = new Map();
-    const seen = new Set();
-    const out = [];
+    const seqs = new Map<string, number>();
+    const seen = new Set<string>();
+    const out: Row[] = [];
     for (let i = 0; i < rows; i++) {
-      const row = {};
+      const row: Row = {};
       for (const fk of keyFks)
         copyForeignKey(row, fk, pick(rng, all[fk.principal]));
       const parent = JSON.stringify(type.keys.map((k) => row[k]));
