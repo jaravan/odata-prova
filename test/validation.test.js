@@ -13,6 +13,7 @@ const {
   ITEM,
 } = require("./helpers");
 const { createApp } = require("../lib/app");
+const { parseMetadata } = require("../lib/metadata");
 
 // A copy of a model folder with its metadata.xml edited, removed again by the returned cleanup
 function editedModel(modelDir, edit) {
@@ -200,6 +201,51 @@ describe('Nullable="false" properties are required', () => {
       await s2.close();
       po.cleanup();
       drafts.cleanup();
+    }
+  });
+});
+
+describe("Core.Computed properties aren't required", () => {
+  it("is read inline and from an <Annotations> block, through the vocabulary's alias", () => {
+    const xml = fs.readFileSync(
+      path.join(__dirname, "fixtures", "DraftSrv", "metadata.xml"),
+      "utf8"
+    );
+    const { entityTypes } = parseMetadata(
+      xml.replace(
+        '<Property Name="stock" Type="Edm.Int32"/>',
+        '<Property Name="stock" Type="Edm.Int32"><Annotation Term="Core.Computed"/></Property>'
+      )
+    );
+    const books = entityTypes["CatalogService.Books"].properties;
+    assert.equal(books.DraftMessages.computed, true); // block, Core alias
+    assert.equal(books.stock.computed, true); // inline, Bool defaults to true
+    assert.equal(books.title.computed, undefined);
+  });
+
+  it("a create or update without one -> 201 / 204", async () => {
+    const po = editedModel(PO_MODEL, (xml) =>
+      xml.replace(
+        /(<Property Name="Status" Type="Edm.String" Nullable="false"[^>]*)\/>/,
+        '$1><Annotation Term="Org.OData.Core.V1.Computed" Bool="true"/></Property>'
+      )
+    );
+    const s = await start(po.dir);
+    try {
+      const { Status, ...noStatus } = PO;
+      const created = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+        ...noStatus,
+        PurchaseOrderId: "C001",
+      });
+      assert.equal(created.status, 201);
+      assert.equal(
+        (await send("PUT", `${s.v2}/PurchaseOrderSet('C001')`, noStatus))
+          .status,
+        204
+      );
+    } finally {
+      await s.close();
+      po.cleanup();
     }
   });
 });
