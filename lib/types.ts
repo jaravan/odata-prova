@@ -95,7 +95,7 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
     }
     case "Edm.Double":
     case "Edm.Single": {
-      if (typeof value === "string" && value in SPECIAL_FLOATS)
+      if (typeof value === "string" && Object.hasOwn(SPECIAL_FLOATS, value))
         return SPECIAL_FLOATS[value];
       const n =
         typeof value === "string" && value.trim() === "" ? NaN : Number(value);

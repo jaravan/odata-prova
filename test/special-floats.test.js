@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, batch, batchResponses } from "./helpers.js";
+import { start, get, send, batch, batchResponses } from "./helpers.js";
 
 // Edm.Double values INF, -INF and NaN: JSON has no such numbers, so OData spells them as strings
 describe("INF, -INF and NaN", () => {
@@ -41,6 +41,14 @@ describe("INF, -INF and NaN", () => {
       ],
     ]);
     assert.ok(batchResponses(r.text).some((p) => p.status >= 400));
+    assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
+  });
+
+  it("only these three: a key every object inherits is a 400", async () => {
+    for (const V of ["toString", "constructor", "__proto__"]) {
+      const r = await send("PATCH", `${s.v4}/Ms(4)`, { V });
+      assert.equal(r.status, 400, V);
+    }
     assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
   });
 });
