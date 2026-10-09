@@ -3,6 +3,7 @@
 .github
 .yarn
 node_modules
+dist
 examples
 img
 test
