@@ -7,12 +7,17 @@ const { start, get } = require("./helpers");
 // many-to-many link). They are switched off; the rest of the service keeps working.
 describe("navigations the server cannot resolve are disabled, not fatal", () => {
   let s;
-  before(async () => { s = await start(path.join(__dirname, "fixtures", "ManyToMany")); });
+  before(async () => {
+    s = await start(path.join(__dirname, "fixtures", "ManyToMany"));
+  });
   after(() => s.close());
 
   it("starts, records why, and serves the rest", async () => {
     assert.equal(s.model.warnings.length, 2);
-    assert.match(s.model.warnings[0], /Student\.Courses: cannot derive join condition/);
+    assert.match(
+      s.model.warnings[0],
+      /Student\.Courses: cannot derive join condition/,
+    );
     assert.equal((await get(`${s.v2}/Students(1)`)).body.d.Name, "Ada");
     assert.equal((await get(`${s.v4}/Courses`)).body.value.length, 1);
   });
@@ -26,7 +31,11 @@ describe("navigations the server cannot resolve are disabled, not fatal", () => 
     ]) {
       const r = await get(url);
       assert.equal(r.status, 501, url);
-      assert.match(JSON.stringify(r.body), /Navigation (Courses|Students) is not supported/, url);
+      assert.match(
+        JSON.stringify(r.body),
+        /Navigation (Courses|Students) is not supported/,
+        url,
+      );
     }
   });
 });

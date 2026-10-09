@@ -20,7 +20,7 @@ describe("$select is checked against the type", () => {
       assert.equal(r.status, 400, url);
       assert.match(
         r.body.error.message,
-        /^Nope is not a property or navigation of (PurchaseOrder|PurchaseOrderItem)$/
+        /^Nope is not a property or navigation of (PurchaseOrder|PurchaseOrderItem)$/,
       );
     }
     for (const url of [
@@ -31,7 +31,7 @@ describe("$select is checked against the type", () => {
       assert.equal(r.status, 400, url);
       assert.match(
         r.body.error.message.value,
-        /^Nope is not a property or navigation of /
+        /^Nope is not a property or navigation of /,
       );
     }
   });

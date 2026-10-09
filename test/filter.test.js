@@ -5,12 +5,24 @@ const v2 = require("../lib/protocols/v2");
 const v4 = require("../lib/protocols/v4");
 
 const types = {
-  Name: "Edm.String", Amount: "Edm.Decimal", Qty: "Edm.Int32", When: "Edm.DateTimeOffset",
-  Day: "Edm.Date", Id: "Edm.Guid", Flag: "Edm.Boolean", Nothing: "Edm.String"
+  Name: "Edm.String",
+  Amount: "Edm.Decimal",
+  Qty: "Edm.Int32",
+  When: "Edm.DateTimeOffset",
+  Day: "Edm.Date",
+  Id: "Edm.Guid",
+  Flag: "Edm.Boolean",
+  Nothing: "Edm.String",
 };
 const row = {
-  Name: "Acme Ltd", Amount: "12500.00", Qty: 7, When: "2025-01-20T10:00:00.000Z", Day: "2025-01-20",
-  Id: "01234567-89ab-cdef-0123-456789abcdef", Flag: true, Nothing: null
+  Name: "Acme Ltd",
+  Amount: "12500.00",
+  Qty: 7,
+  When: "2025-01-20T10:00:00.000Z",
+  Day: "2025-01-20",
+  Id: "01234567-89ab-cdef-0123-456789abcdef",
+  Flag: true,
+  Nothing: null,
 };
 const resolve = (r, path) => ({ value: r[path], type: types[path] });
 const run = (protocol, text) => compileFilter(text, protocol)(row, resolve);
@@ -39,11 +51,12 @@ describe("$filter grammar (shared)", () => {
     ["round(Amount) eq 12500", true],
     ["Nothing eq null", true],
     ["Name eq null", false],
-    ["Name eq 'it''s'", false]
+    ["Name eq 'it''s'", false],
   ];
   for (const protocol of [v2, v4]) {
     for (const [text, expected] of cases) {
-      it(`V${protocol.version}: ${text} -> ${expected}`, () => assert.equal(run(protocol, text), expected));
+      it(`V${protocol.version}: ${text} -> ${expected}`, () =>
+        assert.equal(run(protocol, text), expected));
     }
   }
 });
@@ -54,7 +67,10 @@ describe("$filter V2 literals", () => {
     assert.equal(run(v2, "When lt datetime'2025-01-01T00:00:00'"), false);
   });
   it("guid'...' and numeric suffixes", () => {
-    assert.equal(run(v2, "Id eq guid'01234567-89ab-cdef-0123-456789abcdef'"), true);
+    assert.equal(
+      run(v2, "Id eq guid'01234567-89ab-cdef-0123-456789abcdef'"),
+      true,
+    );
     assert.equal(run(v2, "Amount eq 12500M"), true);
     assert.equal(run(v2, "Qty eq 7L"), true);
   });

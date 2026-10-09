@@ -34,13 +34,13 @@ describe("$batch", () => {
     assert.equal(r.status, 200);
     assert.match(
       r.headers.get("content-type"),
-      /multipart\/mixed; ?boundary=batchresponse_/
+      /multipart\/mixed; ?boundary=batchresponse_/,
     );
     assert.equal(r.headers.get("dataserviceversion"), "2.0");
     const parts = batchResponses(r.text);
     assert.deepEqual(
       parts.map((p) => p.status),
-      [200, 201, 204, 200]
+      [200, 201, 204, 200],
     );
     assert.equal(parts[0].body.d.results.length, 1);
     assert.equal(parts[1].headers["dataserviceversion"], "2.0");
@@ -105,7 +105,7 @@ describe("$batch", () => {
     const parts = batchResponses(r.text);
     assert.deepEqual(
       parts.map((p) => p.status),
-      [201, 201, 204, 200]
+      [201, 201, 204, 200],
     );
     assert.equal(parts[0].headers["content-id"], "1");
     assert.equal(parts[0].headers["odata-version"], "4.0");
@@ -125,7 +125,7 @@ describe("$batch", () => {
     assert.equal(parts[0].status, 400);
     assert.match(
       parts[0].body.error.message,
-      /Unknown Content-ID reference \$9/
+      /Unknown Content-ID reference \$9/,
     );
   });
 

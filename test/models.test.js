@@ -10,13 +10,19 @@ const { start, get } = require("./helpers");
 const MODELS = path.join(__dirname, "..", "examples");
 const names = fs
   .readdirSync(MODELS, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && fs.existsSync(path.join(MODELS, d.name, "metadata.xml")))
+  .filter(
+    (d) =>
+      d.isDirectory() &&
+      fs.existsSync(path.join(MODELS, d.name, "metadata.xml")),
+  )
   .map((d) => d.name);
 
 for (const name of names) {
   describe(`examples/${name}`, () => {
     let s;
-    before(async () => { s = await start(path.join(MODELS, name), { mockRows: 20 }); });
+    before(async () => {
+      s = await start(path.join(MODELS, name), { mockRows: 20 });
+    });
     after(() => s.close());
 
     it("answers on every entity set in both versions, with data in some", async () => {
@@ -36,14 +42,18 @@ for (const name of names) {
 
 describe("examples/Northwind links products to categories and suppliers", () => {
   let s;
-  before(async () => { s = await start(path.join(MODELS, "Northwind")); });
+  before(async () => {
+    s = await start(path.join(MODELS, "Northwind"));
+  });
   after(() => s.close());
 
   it("in V4 and V2", async () => {
-    const v4 = (await get(`${s.v4}/Products(1)?$expand=Category,Supplier`)).body;
+    const v4 = (await get(`${s.v4}/Products(1)?$expand=Category,Supplier`))
+      .body;
     assert.equal(v4.Category.CategoryName, "Beverages");
     assert.equal(v4.Supplier.CompanyName, "Exotic Liquids");
-    const v2 = (await get(`${s.v2}/Products(1)?$expand=Category,Supplier`)).body.d;
+    const v2 = (await get(`${s.v2}/Products(1)?$expand=Category,Supplier`)).body
+      .d;
     assert.equal(v2.Category.CategoryName, "Beverages");
     assert.equal(v2.Supplier.CompanyName, "Exotic Liquids");
   });

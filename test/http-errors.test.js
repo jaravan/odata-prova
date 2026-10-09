@@ -6,7 +6,9 @@ const { start, get, batch, batchResponses } = require("./helpers");
 // HTML page with a stack trace.
 describe("bad requests get an OData error, not an HTML page", () => {
   let s;
-  before(async () => { s = await start(); });
+  before(async () => {
+    s = await start();
+  });
   after(() => s.close());
 
   it("a malformed escape in the URL -> 400 in each protocol's error shape", async () => {

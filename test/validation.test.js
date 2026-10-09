@@ -52,7 +52,7 @@ describe("values are checked against their Edm type", () => {
     assert.equal(v2.status, 400);
     assert.match(
       v2.body.error.message.value,
-      /Invalid Edm.DateTimeOffset value/
+      /Invalid Edm.DateTimeOffset value/,
     );
   });
 
@@ -71,7 +71,7 @@ describe("values are checked against their Edm type", () => {
     });
     assert.deepEqual(
       [r.body.Total, r.body.Qty, r.body.Closed],
-      ["100.50", 3, false]
+      ["100.50", 3, false],
     );
   });
 
@@ -99,7 +99,7 @@ describe("values are checked against their Edm type", () => {
     });
     assert.deepEqual(
       [after.body.Total, after.body.Qty, after.body.Closed],
-      ["-1.5e2", 7, true]
+      ["-1.5e2", 7, true],
     );
   });
 });
@@ -154,7 +154,7 @@ describe('Nullable="false" properties are required', () => {
     const after = await get(`${order}?$select=Supplier,Status`);
     assert.deepEqual(
       [after.body.Supplier, after.body.Status],
-      ["Acme Components Ltd", "Open"]
+      ["Acme Components Ltd", "Open"],
     );
     // A PATCH needs only the values it changes
     assert.equal((await send("PATCH", order, { Status: "Open" })).status, 204);
@@ -164,13 +164,13 @@ describe('Nullable="false" properties are required', () => {
     const po = editedModel(PO_MODEL, (xml) =>
       xml.replace(
         'Name="Status" Type="Edm.String" Nullable="false"',
-        '$& sap:creatable="false" sap:updatable="false"'
-      )
+        '$& sap:creatable="false" sap:updatable="false"',
+      ),
     );
     const drafts = editedModel(
       path.join(__dirname, "fixtures", "DraftSrv"),
       (xml) =>
-        xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"')
+        xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"'),
     );
     const s1 = await start(po.dir),
       s2 = await start(drafts.dir);
@@ -183,12 +183,12 @@ describe('Nullable="false" properties are required', () => {
             PurchaseOrderId: "N003",
           })
         ).status,
-        201
+        201,
       );
       assert.equal(
         (await send("PUT", `${s1.v4}/PurchaseOrderSet('N003')`, noStatus))
           .status,
-        204
+        204,
       );
 
       const draft = await send("POST", `${s2.v4}/Books`, {});
@@ -209,13 +209,13 @@ describe("Core.Computed properties aren't required", () => {
   it("is read inline and from an <Annotations> block, through the vocabulary's alias", () => {
     const xml = fs.readFileSync(
       path.join(__dirname, "fixtures", "DraftSrv", "metadata.xml"),
-      "utf8"
+      "utf8",
     );
     const { entityTypes } = parseMetadata(
       xml.replace(
         '<Property Name="stock" Type="Edm.Int32"/>',
-        '<Property Name="stock" Type="Edm.Int32"><Annotation Term="Core.Computed"/></Property>'
-      )
+        '<Property Name="stock" Type="Edm.Int32"><Annotation Term="Core.Computed"/></Property>',
+      ),
     );
     const books = entityTypes["CatalogService.Books"].properties;
     assert.equal(books.DraftMessages.computed, true); // block, Core alias
@@ -227,8 +227,8 @@ describe("Core.Computed properties aren't required", () => {
     const po = editedModel(PO_MODEL, (xml) =>
       xml.replace(
         /(<Property Name="Status" Type="Edm.String" Nullable="false"[^>]*)\/>/,
-        '$1><Annotation Term="Org.OData.Core.V1.Computed" Bool="true"/></Property>'
-      )
+        '$1><Annotation Term="Org.OData.Core.V1.Computed" Bool="true"/></Property>',
+      ),
     );
     const s = await start(po.dir);
     try {
@@ -241,7 +241,7 @@ describe("Core.Computed properties aren't required", () => {
       assert.equal(
         (await send("PUT", `${s.v2}/PurchaseOrderSet('C001')`, noStatus))
           .status,
-        204
+        204,
       );
     } finally {
       await s.close();
@@ -256,12 +256,12 @@ describe("a seed file with an invalid value", () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "seed-"));
     fs.copyFileSync(
       path.join(SALES_MODEL, "metadata.xml"),
-      path.join(dir, "metadata.xml")
+      path.join(dir, "metadata.xml"),
     );
     fs.mkdirSync(path.join(dir, "data"));
     fs.writeFileSync(
       path.join(dir, "data", "Orders.csv"),
-      "ID;Total\n11111111-1111-1111-1111-111111111111;10.00\n22222222-2222-2222-2222-222222222222;12,50\n"
+      "ID;Total\n11111111-1111-1111-1111-111111111111;10.00\n22222222-2222-2222-2222-222222222222;12,50\n",
     );
   });
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -271,7 +271,9 @@ describe("a seed file with an invalid value", () => {
       () => createApp({ modelDir: dir, v4Path: "/v4", log: () => {} }),
       (err) =>
         err.code === "ESEED" &&
-        /Orders\.csv: row 3: Invalid Edm.Decimal value: 12,50/.test(err.message)
+        /Orders\.csv: row 3: Invalid Edm.Decimal value: 12,50/.test(
+          err.message,
+        ),
     );
   });
 });
@@ -281,7 +283,7 @@ describe("draftActivate checks the required values of the whole draft", () => {
   let s, drafts;
   before(async () => {
     drafts = editedModel(path.join(__dirname, "fixtures", "DraftSrv"), (xml) =>
-      xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"')
+      xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"'),
     );
     s = await start(drafts.dir);
   });
@@ -294,7 +296,7 @@ describe("draftActivate checks the required values of the whole draft", () => {
     send(
       "POST",
       `${s.v4}/Books(ID=${id},IsActiveEntity=false)/CatalogService.draftActivate`,
-      {}
+      {},
     );
 
   it("a root without one -> 400, and the draft stays", async () => {
@@ -306,7 +308,7 @@ describe("draftActivate checks the required values of the whole draft", () => {
     assert.equal((await get(draft)).status, 200);
     assert.equal(
       (await get(`${s.v4}/Books(ID=${ID},IsActiveEntity=true)`)).status,
-      404
+      404,
     );
 
     assert.equal((await send("PATCH", draft, { title: "Done" })).status, 204);

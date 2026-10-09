@@ -41,7 +41,7 @@ describe("both protocols share one store", () => {
       OrderDate: "/Date(1767225600000)/",
     });
     const viaV4 = await get(
-      `${s.v4}/PurchaseOrderSet('D001')?$select=Status,OrderDate`
+      `${s.v4}/PurchaseOrderSet('D001')?$select=Status,OrderDate`,
     );
     assert.equal(viaV4.body.Status, "Approved");
     assert.equal(viaV4.body.OrderDate, "2026-01-01");
@@ -51,10 +51,10 @@ describe("both protocols share one store", () => {
     assert.equal(
       (
         await get(
-          `${s.v2}/PurchaseOrderItemSet(PurchaseOrderId='D001',ItemPosition='0001')`
+          `${s.v2}/PurchaseOrderItemSet(PurchaseOrderId='D001',ItemPosition='0001')`,
         )
       ).status,
-      404
+      404,
     );
   });
 
@@ -73,11 +73,11 @@ describe("both protocols share one store", () => {
     const base = `http://127.0.0.1:${server.address().port}`;
     assert.equal(
       (await get(`${base}/only/v4/PurchaseOrderSet/$count`)).status,
-      200
+      200,
     );
     assert.equal(
       (await get(`${base}/odata/v2/PurchaseOrderSrv/PurchaseOrderSet`)).status,
-      404
+      404,
     );
     await new Promise((resolve) => server.close(resolve));
   });

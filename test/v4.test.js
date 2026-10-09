@@ -29,22 +29,22 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.match(md.body, /<edmx:Edmx Version="4.0"/);
     assert.match(
       md.body,
-      /<NavigationProperty Name="Items" Type="Collection\(com.example.po.PurchaseOrderItem\)" Partner="PurchaseOrder">/
+      /<NavigationProperty Name="Items" Type="Collection\(com.example.po.PurchaseOrderItem\)" Partner="PurchaseOrder">/,
     );
     assert.match(
       md.body,
-      /<NavigationPropertyBinding Path="Items" Target="PurchaseOrderItemSet"\/>/
+      /<NavigationPropertyBinding Path="Items" Target="PurchaseOrderItemSet"\/>/,
     );
   });
 
   it("collection with $count, $filter (bare date, contains, in), $orderby, paging", async () => {
     const r = await get(
-      `${v4}/PurchaseOrderSet?$count=true&$filter=OrderDate ge 2025-02-01 and contains(Supplier,'e') and Status in ('Open','Approved')&$orderby=TotalAmount desc&$top=2&$skip=0&$select=PurchaseOrderId,TotalAmount`
+      `${v4}/PurchaseOrderSet?$count=true&$filter=OrderDate ge 2025-02-01 and contains(Supplier,'e') and Status in ('Open','Approved')&$orderby=TotalAmount desc&$top=2&$skip=0&$select=PurchaseOrderId,TotalAmount`,
     );
     assert.equal(r.status, 200);
     assert.equal(
       r.body["@odata.context"],
-      "/odata/v4/T/$metadata#PurchaseOrderSet"
+      "/odata/v4/T/$metadata#PurchaseOrderSet",
     );
     assert.equal(typeof r.body["@odata.count"], "number");
     assert.ok(r.body.value.length <= 2);
@@ -61,7 +61,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.match(r.headers.get("content-type"), /IEEE754Compatible=true/);
     assert.equal(
       r.body["@odata.context"],
-      "/odata/v4/T/$metadata#PurchaseOrderSet/$entity"
+      "/odata/v4/T/$metadata#PurchaseOrderSet/$entity",
     );
     assert.equal(r.body.OrderDate, "2025-01-20"); // Edm.Date, from sap:display-format="Date"
     assert.equal("Items" in r.body, false); // no deferred stubs in V4
@@ -69,7 +69,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
 
   it("$expand with nested options and $count", async () => {
     const r = await get(
-      `${v4}/PurchaseOrderSet('4500000001')?$expand=Items($select=Material,NetPrice;$orderby=NetPrice desc;$top=1;$count=true;$expand=PurchaseOrder($select=Supplier))&$select=PurchaseOrderId`
+      `${v4}/PurchaseOrderSet('4500000001')?$expand=Items($select=Material,NetPrice;$orderby=NetPrice desc;$top=1;$count=true;$expand=PurchaseOrder($select=Supplier))&$select=PurchaseOrderId`,
     );
     assert.equal(r.status, 200);
     assert.equal(r.body["Items@odata.count"], 2);
@@ -86,14 +86,14 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
 
   it("$search across string properties", async () => {
     const r = await get(
-      `${v4}/PurchaseOrderSet?$search=nordic&$select=Supplier`
+      `${v4}/PurchaseOrderSet?$search=nordic&$select=Supplier`,
     );
     assert.deepEqual(r.body.value, [{ Supplier: "Nordic Steel AB" }]);
   });
 
   it("navigation, property, $value, $count and null single-valued navigation", async () => {
     const parent = await get(
-      `${v4}/PurchaseOrderItemSet(PurchaseOrderId='4500000001',ItemPosition='0002')/PurchaseOrder?$select=Supplier`
+      `${v4}/PurchaseOrderItemSet(PurchaseOrderId='4500000001',ItemPosition='0002')/PurchaseOrder?$select=Supplier`,
     );
     assert.deepEqual(parent.body, {
       "@odata.context": "/odata/v4/T/$metadata#PurchaseOrderSet/$entity",
@@ -107,12 +107,12 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     });
     assert.equal(
       (await get(`${v4}/PurchaseOrderSet('4500000001')/Supplier/$value`)).body,
-      "Acme Components Ltd"
+      "Acme Components Ltd",
     );
     assert.equal(
       (await get(`${v4}/PurchaseOrderSet/$count?$filter=Status eq 'Open'`))
         .body,
-      "2"
+      "2",
     );
     // An item whose order does not exist: single-valued navigation resolves to nothing -> 204.
     await send("POST", `${v4}/PurchaseOrderItemSet`, {
@@ -123,14 +123,14 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.equal(
       (
         await get(
-          `${v4}/PurchaseOrderItemSet(PurchaseOrderId='0000000000',ItemPosition='0001')/PurchaseOrder`
+          `${v4}/PurchaseOrderItemSet(PurchaseOrderId='0000000000',ItemPosition='0001')/PurchaseOrder`,
         )
       ).status,
-      204
+      204,
     );
     await send(
       "DELETE",
-      `${v4}/PurchaseOrderItemSet(PurchaseOrderId='0000000000',ItemPosition='0001')`
+      `${v4}/PurchaseOrderItemSet(PurchaseOrderId='0000000000',ItemPosition='0001')`,
     );
   });
 
@@ -158,12 +158,12 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
           },
         ],
       },
-      IEEE
+      IEEE,
     );
     assert.equal(created.status, 201);
     assert.equal(
       created.headers.get("location"),
-      "/odata/v4/T/PurchaseOrderSet('4500000098')"
+      "/odata/v4/T/PurchaseOrderSet('4500000098')",
     );
     assert.equal(created.body.TotalAmount, "5.00");
     const items = await get(`${v4}/PurchaseOrderSet('4500000098')/Items`);
@@ -173,7 +173,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
       "PATCH",
       `${v4}/PurchaseOrderSet('4500000098')`,
       { Status: "Approved" },
-      { prefer: "return=minimal" }
+      { prefer: "return=minimal" },
     );
     assert.equal(minimal.status, 204);
     assert.equal(minimal.headers.get("preference-applied"), "return=minimal");
@@ -181,7 +181,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
       "PATCH",
       `${v4}/PurchaseOrderSet('4500000098')`,
       { Status: "Closed" },
-      { prefer: "return=representation" }
+      { prefer: "return=representation" },
     );
     assert.equal(repr.status, 200);
     assert.equal(repr.body.Status, "Closed");
@@ -191,12 +191,12 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
       "POST",
       `${v4}/PurchaseOrderSet('4500000098')/Items`,
       { ...ITEM, ItemPosition: "0002" },
-      { prefer: "return=minimal" }
+      { prefer: "return=minimal" },
     );
     assert.equal(minimalPost.status, 204);
     assert.equal(
       minimalPost.headers.get("location"),
-      "/odata/v4/T/PurchaseOrderItemSet(PurchaseOrderId='4500000098',ItemPosition='0002')"
+      "/odata/v4/T/PurchaseOrderItemSet(PurchaseOrderId='4500000098',ItemPosition='0002')",
     );
 
     await send("PUT", `${v4}/PurchaseOrderSet('4500000098')`, {
@@ -208,15 +208,15 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
 
     assert.equal(
       (await send("DELETE", `${v4}/PurchaseOrderSet('4500000098')`)).status,
-      204
+      204,
     );
     assert.equal(
       (
         await get(
-          `${v4}/PurchaseOrderItemSet/$count?$filter=PurchaseOrderId eq '4500000098'`
+          `${v4}/PurchaseOrderItemSet/$count?$filter=PurchaseOrderId eq '4500000098'`,
         )
       ).body,
-      "0"
+      "0",
     );
   });
 });
@@ -237,13 +237,13 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
     assert.match(md2.body, /<Association Name="Orders_Items">/);
     assert.match(
       md2.body,
-      /<Property Name="ID" Type="Edm.Guid" Nullable="false"\/>/
+      /<Property Name="ID" Type="Edm.Guid" Nullable="false"\/>/,
     );
   });
 
   it("bare Guid keys and date/time types on the V4 wire", async () => {
     const r = await get(
-      `${v4}/Orders(11111111-1111-1111-1111-111111111111)?$expand=Items($select=Product)`
+      `${v4}/Orders(11111111-1111-1111-1111-111111111111)?$expand=Items($select=Product)`,
     );
     assert.equal(r.status, 200);
     assert.equal(r.body.OrderDate, "2025-03-01");
@@ -254,33 +254,33 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
     assert.equal(r.body.Closed, false);
     assert.equal(r.body.Items.length, 2);
     const f = await get(
-      `${v4}/Orders?$filter=OrderDate eq 2025-03-15 and DeliveryTime ge 12:00:00&$select=OrderNo`
+      `${v4}/Orders?$filter=OrderDate eq 2025-03-15 and DeliveryTime ge 12:00:00&$select=OrderNo`,
     );
     assert.deepEqual(f.body.value, [{ OrderNo: "SO-2" }]);
     const byGuid = await get(
-      `${v4}/Items?$filter=Order_ID eq 22222222-2222-2222-2222-222222222222&$select=Product`
+      `${v4}/Items?$filter=Order_ID eq 22222222-2222-2222-2222-222222222222&$select=Product`,
     );
     assert.deepEqual(byGuid.body.value, [{ Product: "Gizmo" }]);
   });
 
   it("the same entity on the V2 wire: guid'' keys, /Date()/ and PT..S", async () => {
     const r = await get(
-      `${v2}/Orders(guid'11111111-1111-1111-1111-111111111111')`
+      `${v2}/Orders(guid'11111111-1111-1111-1111-111111111111')`,
     );
     assert.equal(r.status, 200);
     assert.equal(
       r.body.d.__metadata.uri,
-      "/odata/v2/T/Orders(guid'11111111-1111-1111-1111-111111111111')"
+      "/odata/v2/T/Orders(guid'11111111-1111-1111-1111-111111111111')",
     );
     assert.equal(r.body.d.OrderDate, `/Date(${Date.UTC(2025, 2, 1)})/`);
     assert.equal(r.body.d.DeliveryTime, "PT10H30M00S");
     assert.equal(
       r.body.d.CreatedAt,
-      `/Date(${Date.UTC(2025, 2, 1, 8, 15)}+0000)/`
+      `/Date(${Date.UTC(2025, 2, 1, 8, 15)}+0000)/`,
     );
     assert.equal(r.body.d.Total, "100.50");
     const f = await get(
-      `${v2}/Orders?$filter=OrderDate eq datetime'2025-03-15T00:00:00'&$select=OrderNo`
+      `${v2}/Orders?$filter=OrderDate eq datetime'2025-03-15T00:00:00'&$select=OrderNo`,
     );
     assert.equal(f.body.d.results[0].OrderNo, "SO-2");
   });
@@ -291,10 +291,10 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
       (
         await send(
           "DELETE",
-          `${v2}/Orders(guid'22222222-2222-2222-2222-222222222222')`
+          `${v2}/Orders(guid'22222222-2222-2222-2222-222222222222')`,
         )
       ).status,
-      204
+      204,
     );
     assert.equal((await get(`${v4}/Items/$count`)).body, "2");
   });
@@ -308,11 +308,11 @@ describe("V4 wire format: fractional seconds follow the Precision facet", () => 
   it("drops the fraction when there is no Precision (defaults to 0)", () => {
     assert.equal(
       toWire("2025-01-20T10:15:30.123Z", dto()),
-      "2025-01-20T10:15:30Z"
+      "2025-01-20T10:15:30Z",
     );
     assert.equal(
       toWire("2025-01-20T10:15:30.123Z", dto("0")),
-      "2025-01-20T10:15:30Z"
+      "2025-01-20T10:15:30Z",
     );
     assert.equal(toWire("10:30:00.5", tod()), "10:30:00");
   });
@@ -320,11 +320,11 @@ describe("V4 wire format: fractional seconds follow the Precision facet", () => 
   it("cuts or pads the fraction to Precision digits", () => {
     assert.equal(
       toWire("2025-01-20T10:15:30.123Z", dto("2")),
-      "2025-01-20T10:15:30.12Z"
+      "2025-01-20T10:15:30.12Z",
     );
     assert.equal(
       toWire("2025-01-20T10:15:30.123Z", dto("7")),
-      "2025-01-20T10:15:30.1230000Z"
+      "2025-01-20T10:15:30.1230000Z",
     );
     assert.equal(toWire("10:30:00", tod("3")), "10:30:00.000");
   });

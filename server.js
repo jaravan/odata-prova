@@ -35,7 +35,12 @@ if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
   exitWithError(
     "bad MOCK_ROWS",
     // a code: a plain message, not a stack trace
-    Object.assign(new Error(`MOCK_ROWS must be a whole number, got '${process.env.MOCK_ROWS}'`), { code: "EMOCKROWS" }),
+    Object.assign(
+      new Error(
+        `MOCK_ROWS must be a whole number, got '${process.env.MOCK_ROWS}'`,
+      ),
+      { code: "EMOCKROWS" },
+    ),
   );
 
 let app;

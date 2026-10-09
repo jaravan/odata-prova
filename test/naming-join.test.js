@@ -9,11 +9,17 @@ const { start, get, send } = require("./helpers");
 for (const version of ["V2", "V4"]) {
   describe(`join by naming, both types keyed by ID (${version} metadata)`, () => {
     let s;
-    before(async () => (s = await start(path.join(__dirname, "fixtures", `NamingJoin${version}`))));
+    before(
+      async () =>
+        (s = await start(
+          path.join(__dirname, "fixtures", `NamingJoin${version}`),
+        )),
+    );
     after(() => s.close());
 
     it("joins on the foreign key named after the other side, both ways, and logs it", () => {
-      const nav = (type, name) => s.model.entityTypes[`S.${type}`].navigations[name];
+      const nav = (type, name) =>
+        s.model.entityTypes[`S.${type}`].navigations[name];
       assert.deepEqual(nav("Order", "Items").join, [["ID", "OrderID"]]);
       assert.deepEqual(nav("Item", "Order").join, [["OrderID", "ID"]]);
       assert.equal(nav("Order", "Items").partner, "Order");
@@ -25,7 +31,10 @@ for (const version of ["V2", "V4"]) {
     });
 
     it("an order's items are the ones that point at it", async () => {
-      const items = async (order) => (await get(`${s.v4}/Orders(${order})/Items?$select=ID`)).body.value.map((i) => i.ID);
+      const items = async (order) =>
+        (await get(`${s.v4}/Orders(${order})/Items?$select=ID`)).body.value.map(
+          (i) => i.ID,
+        );
       assert.deepEqual(await items(1), [1, 2]);
       assert.deepEqual(await items(2), [3]);
       assert.equal((await get(`${s.v4}/Items(3)/Order`)).body.ID, 2);

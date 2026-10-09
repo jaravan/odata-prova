@@ -122,7 +122,7 @@ function batchResponses(text) {
         .split(/\r\n/)
         .filter(Boolean)
         .map((l) => l.split(/:\s*/, 2))
-        .map(([k, v]) => [k.toLowerCase(), v])
+        .map(([k, v]) => [k.toLowerCase(), v]),
     );
     let body = m[3];
     try {
