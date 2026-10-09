@@ -30,4 +30,6 @@ jobs:
 
       - run: yarn install --immutable
 
+      - run: yarn format:check
+
       - run: yarn test
