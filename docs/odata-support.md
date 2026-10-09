@@ -38,8 +38,8 @@ Creating and editing work the way Fiori Elements drives them, with the actions t
 | `PATCH` / `PUT` on a draft                         | Changes the draft. `HasActiveEntity` and `HasDraftEntity` are left to the server.                                                                                                                                                                                  |
 | `POST Books(...,IsActiveEntity=false)/chapters`    | A new draft child, its key generated the same way. A node can't be created on its own (`POST Chapters`).                                                                                                                                                           |
 | `DELETE` on a draft child                          | Removes it from the draft (and from the active entity on activation).                                                                                                                                                                                              |
-| `draftPrepare`                                     | Returns the draft: the mock has nothing to validate.                                                                                                                                                                                                               |
-| `draftActivate`                                    | Writes the draft tree over the active one (creating it, for a new entity), deletes the children removed in the draft, and drops the draft.                                                                                                                         |
+| `draftPrepare`                                     | Returns the draft: required values are checked on activation.                                                                                                                                                                                                      |
+| `draftActivate`                                    | Checks the draft tree's required values (`400` if one is missing, and the draft stays), then writes it over the active one (creating it, for a new entity), deletes the children removed in the draft, and drops the draft.                                        |
 | `DELETE` on a draft root                           | Discards the draft.                                                                                                                                                                                                                                                |
 | `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                                                                                                                                       |
 
@@ -51,7 +51,7 @@ Limits:
 
 - A draft and its active entity share the key except `IsActiveEntity`, as in CAP and RAP. Older BOPF-based services that key drafts by a `DraftUUID` aren't supported.
 - A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
-- No validation, side effects, or locks between users.
+- No validation besides required values on activation, no side effects, and no locks between users.
 
 ## Not supported
 

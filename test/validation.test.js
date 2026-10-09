@@ -275,3 +275,52 @@ describe("a seed file with an invalid value", () => {
     );
   });
 });
+
+// A draft may lack required values, its active entity may not
+describe("draftActivate checks the required values of the whole draft", () => {
+  let s, drafts;
+  before(async () => {
+    drafts = editedModel(path.join(__dirname, "fixtures", "DraftSrv"), (xml) =>
+      xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"')
+    );
+    s = await start(drafts.dir);
+  });
+  after(async () => {
+    await s.close();
+    drafts.cleanup();
+  });
+
+  const activate = (id) =>
+    send(
+      "POST",
+      `${s.v4}/Books(ID=${id},IsActiveEntity=false)/CatalogService.draftActivate`,
+      {}
+    );
+
+  it("a root without one -> 400, and the draft stays", async () => {
+    const { ID } = (await send("POST", `${s.v4}/Books`, {})).body;
+    const r = await activate(ID);
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.message, "Property title is required");
+    const draft = `${s.v4}/Books(ID=${ID},IsActiveEntity=false)`;
+    assert.equal((await get(draft)).status, 200);
+    assert.equal(
+      (await get(`${s.v4}/Books(ID=${ID},IsActiveEntity=true)`)).status,
+      404
+    );
+
+    assert.equal((await send("PATCH", draft, { title: "Done" })).status, 204);
+    assert.equal((await activate(ID)).status, 200);
+  });
+
+  it("a composed child without one -> 400", async () => {
+    const { ID } = (await send("POST", `${s.v4}/Books`, { title: "Book" }))
+      .body;
+    const draft = `${s.v4}/Books(ID=${ID},IsActiveEntity=false)`;
+    assert.equal((await send("POST", `${draft}/chapters`, {})).status, 201);
+    const r = await activate(ID);
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.message, "Property title is required");
+    assert.equal((await get(draft)).status, 200);
+  });
+});
