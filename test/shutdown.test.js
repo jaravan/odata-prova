@@ -13,7 +13,7 @@ describe(
     it("exits with 0 shortly after SIGTERM", async () => {
       const child = spawn(
         process.execPath,
-        [path.join(import.meta.dirname, "..", "server.js"), PO_MODEL],
+        [path.join(import.meta.dirname, "..", "server.ts"), PO_MODEL],
         {
           env: { ...process.env, PORT: "0" },
         },

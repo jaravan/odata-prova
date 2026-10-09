@@ -23,14 +23,14 @@
     "ui5"
   ],
   "bin": {
-    "odata-prova": "server.js",
-    "odata-prova-mock-data": "mock-data.js"
+    "odata-prova": "server.ts",
+    "odata-prova-mock-data": "mock-data.ts"
   },
   "main": "lib/app.ts",
   "type": "module",
   "files": [
-    "server.js",
-    "mock-data.js",
+    "server.ts",
+    "mock-data.ts",
     "lib/",
     "NOTICE"
   ],
@@ -39,8 +39,8 @@
   },
   "packageManager": "yarn@4.12.0",
   "scripts": {
-    "start": "node server.js examples/PurchaseOrderSrv",
-    "dev": "node --watch server.js examples/PurchaseOrderSrv",
+    "start": "node server.ts examples/PurchaseOrderSrv",
+    "dev": "node --watch server.ts examples/PurchaseOrderSrv",
     "test": "node --test test/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

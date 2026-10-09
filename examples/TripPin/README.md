@@ -6,7 +6,7 @@ An example of a V4 service with actions and functions: bound to an entity
 with what the return type allows, see [Actions and functions](../../docs/operations.md).
 
 ```sh
-node server.js examples/TripPin    # from the repo root; or: npx odata-prova examples/TripPin
+node server.ts examples/TripPin    # from the repo root; or: npx odata-prova examples/TripPin
 curl 'http://localhost:3000/odata/v4/TripPin/People?$select=UserName,FirstName,Gender'
 curl 'http://localhost:3000/odata/v4/TripPin/GetNearestAirport(lat=33.9,lon=-118.4)'
 ```

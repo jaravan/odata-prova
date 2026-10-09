@@ -1,6 +1,6 @@
 # The README's hero GIF. Render it from the repo root (needs vhs, jq and a free port 3000):
 #   vhs img/hero.tape
-# Until odata-prova is on npm, the hidden setup makes `npx odata-prova` run this repo's server.js.
+# The hidden setup makes `npx odata-prova` run this repo's server.ts, so the recording shows the working tree.
 
 Output img/hero.gif
 
@@ -18,7 +18,7 @@ Set Framerate 24
 # Setup, not recorded: a folder with only the metadata.xml, and npx pointed at this repo
 Hide
 Type "PROVA=$PWD; export PS1='$ '" Enter
-Type `npx() { shift; node "$PROVA/server.js" "$@"; }` Enter
+Type `npx() { shift; node "$PROVA/server.ts" "$@"; }` Enter
 Type "rm -rf /tmp/prova-demo && mkdir -p /tmp/prova-demo/PurchaseOrderSrv" Enter
 Type "cp examples/PurchaseOrderSrv/metadata.xml /tmp/prova-demo/PurchaseOrderSrv/ && cd /tmp/prova-demo && clear" Enter
 Sleep 500ms

@@ -25,7 +25,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY --from=builder /app/node_modules ./node_modules
-COPY package.json server.js mock-data.js ./
+COPY package.json server.ts mock-data.ts ./
 COPY lib ./lib
 
 USER node
@@ -36,4 +36,4 @@ EXPOSE 3000
 # No model in the image. Mount one at /models/<ServiceName> (the folder name is the service
 # name); with several, set MODEL_DIR to one. Startup fails with a clear message if none is found.
 ENV MODEL_DIR=/models
-CMD ["node", "server.js"]
+CMD ["node", "server.ts"]

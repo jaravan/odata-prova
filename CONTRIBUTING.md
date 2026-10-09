@@ -9,7 +9,7 @@ You need Node.js 22.18 or later with Corepack (`corepack enable`, for the pinned
 ```sh
 yarn install
 yarn dev        # serves examples/PurchaseOrderSrv on port 3000, restarting on changes
-node server.js examples/TripPin   # any other model
+node server.ts examples/TripPin   # any other model
 ```
 
 ## Test

@@ -4,6 +4,8 @@
 //   odata-prova [modelDir]      (default: the current directory)
 
 import path from "node:path";
+import type { AddressInfo } from "node:net";
+import type { Express } from "express";
 import { createApp, findModelDir } from "./lib/app.ts";
 
 const PORT = process.env.PORT || 3000;
@@ -11,10 +13,11 @@ const PORT = process.env.PORT || 3000;
 // current directory. findModelDir picks the one model in a folder that holds only one.
 let MODEL_DIR = path.resolve(process.argv[2] || process.env.MODEL_DIR || ".");
 
-function exitWithError(context, err) {
+function exitWithError(context: string, err: unknown): never {
+  const e = err as Error & { code?: string };
   console.error(`odata-prova failed to start: ${context}`);
   // System errors (ENOENT, EADDRINUSE, ...) are self-explanatory, show stack for everything else
-  console.error(err.code ? err.message : err.stack);
+  console.error(e.code ? e.message : e.stack);
   process.exit(1);
 }
 
@@ -43,7 +46,7 @@ if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
     ),
   );
 
-let app;
+let app: Express;
 try {
   ({ app } = createApp({
     modelDir: MODEL_DIR,
@@ -58,7 +61,7 @@ try {
 // Express 5 passes listen errors (eg port in use) to callback instead of throwing
 const server = app.listen(PORT, (err) => {
   if (err) exitWithError(`cannot listen on port ${PORT}`, err);
-  const { port } = server.address();
+  const { port } = server.address() as AddressInfo;
   console.log(`odata-prova listening on port ${port}`);
   if (V2_PATH) console.log(`  V2: http://localhost:${port}${V2_PATH}/`);
   if (V4_PATH) console.log(`  V4: http://localhost:${port}${V4_PATH}/`);
@@ -67,7 +70,7 @@ const server = app.listen(PORT, (err) => {
 // As PID 1 in a container, Node ignores SIGTERM unless handled, so Docker and Kubernetes
 // would wait out their grace period before killing it. Stop taking connections, let open
 // requests finish, then exit; give up after 10 seconds.
-function shutdown(signal) {
+function shutdown(signal: string): void {
   console.log(`${signal} received, shutting down`);
   server.close(() => process.exit(0));
   server.closeIdleConnections();

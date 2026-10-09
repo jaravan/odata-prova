@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["lib", "test", "server.js", "mock-data.js"]
+  "include": ["lib", "test", "server.ts", "mock-data.ts"]
 }

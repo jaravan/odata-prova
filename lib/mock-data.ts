@@ -1,6 +1,6 @@
 // Writes the generated mock data of a model to its data/ folder, one file per entity set
 // that has no seed file yet, so it can be edited by hand. Existing files are never touched.
-// Used by the odata-prova-mock-data CLI (mock-data.js).
+// Used by the odata-prova-mock-data CLI (mock-data.ts).
 //
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
 // value, or a text that would need quoting in CSV (this writer doesn't quote).

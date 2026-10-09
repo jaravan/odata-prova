@@ -1,4 +1,4 @@
-# LF everywhere, as .editorconfig says; the shebang in server.js and mock-data.js needs it
+# LF everywhere, as .editorconfig says; the shebang in server.ts and mock-data.ts needs it
 * text=auto eol=lf
 
 /.yarn/**            linguist-vendored

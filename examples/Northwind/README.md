@@ -4,7 +4,7 @@ An example of a model written in OData V4; [PurchaseOrderSrv](../PurchaseOrderSr
 in V2. The server serves either one as both V2 and V4:
 
 ```sh
-node server.js examples/Northwind    # from the repo root; or: npx odata-prova examples/Northwind
+node server.ts examples/Northwind    # from the repo root; or: npx odata-prova examples/Northwind
 curl 'http://localhost:3000/odata/v4/Northwind/Products?$expand=Category,Supplier'
 curl 'http://localhost:3000/odata/v2/Northwind/Products?$expand=Category,Supplier'
 ```

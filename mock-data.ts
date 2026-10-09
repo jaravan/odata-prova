@@ -2,7 +2,7 @@
 // Writes the generated mock data of a model to its data/ folder, one file per entity set
 // that has no seed file yet, so it can be edited by hand. Existing files are never touched.
 //
-//   odata-prova-mock-data <modelDir> [rows]      (or: node mock-data.js <modelDir> [rows])
+//   odata-prova-mock-data <modelDir> [rows]      (or: node mock-data.ts <modelDir> [rows])
 //
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
 // value, or a text that would need quoting in CSV (this writer doesn't quote).
@@ -25,6 +25,7 @@ try {
   for (const { file, rows } of written)
     console.log(`wrote ${file} (${rows} rows)`);
 } catch (err) {
-  console.error(err.code ? err.message : err.stack);
+  const e = err as Error & { code?: string };
+  console.error(e.code ? e.message : e.stack);
   process.exit(1);
 }
