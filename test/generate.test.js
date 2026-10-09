@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { createApp } = require("../lib/app");
-const { writeMockData } = require("../mock-data");
+const { writeMockData } = require("../lib/mock-data");
 const { start, get, PO_MODEL } = require("./helpers");
 
 const FIXTURES = path.join(__dirname, "fixtures");
