@@ -1,19 +1,19 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const {
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
   start,
   get,
   send,
   SALES_MODEL,
   PO_MODEL,
-  ORDER: PO,
+  ORDER as PO,
   ITEM,
-} = require("./helpers");
-const { createApp } = require("../lib/app");
-const { parseMetadata } = require("../lib/metadata");
+} from "./helpers.js";
+import { createApp } from "../lib/app.js";
+import { parseMetadata } from "../lib/metadata.js";
 
 // A copy of a model folder with its metadata.xml edited, removed again by the returned cleanup
 function editedModel(modelDir, edit) {
@@ -168,7 +168,7 @@ describe('Nullable="false" properties are required', () => {
       ),
     );
     const drafts = editedModel(
-      path.join(__dirname, "fixtures", "DraftSrv"),
+      path.join(import.meta.dirname, "fixtures", "DraftSrv"),
       (xml) =>
         xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"'),
     );
@@ -208,7 +208,7 @@ describe('Nullable="false" properties are required', () => {
 describe("Core.Computed properties aren't required", () => {
   it("is read inline and from an <Annotations> block, through the vocabulary's alias", () => {
     const xml = fs.readFileSync(
-      path.join(__dirname, "fixtures", "DraftSrv", "metadata.xml"),
+      path.join(import.meta.dirname, "fixtures", "DraftSrv", "metadata.xml"),
       "utf8",
     );
     const { entityTypes } = parseMetadata(
@@ -282,8 +282,10 @@ describe("a seed file with an invalid value", () => {
 describe("draftActivate checks the required values of the whole draft", () => {
   let s, drafts;
   before(async () => {
-    drafts = editedModel(path.join(__dirname, "fixtures", "DraftSrv"), (xml) =>
-      xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"'),
+    drafts = editedModel(
+      path.join(import.meta.dirname, "fixtures", "DraftSrv"),
+      (xml) =>
+        xml.replaceAll('Name="title" Type="Edm.String"', '$& Nullable="false"'),
     );
     s = await start(drafts.dir);
   });

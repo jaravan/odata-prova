@@ -1,6 +1,6 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const { start, get, batch, batchResponses, ORDER, ITEM } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { start, get, batch, batchResponses, ORDER, ITEM } from "./helpers.js";
 
 describe("$batch", () => {
   let s;

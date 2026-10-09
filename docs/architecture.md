@@ -33,7 +33,7 @@ One model, parsed once at startup, backs a V2 service and a V4 service sharing t
 The package exports the Express app, so you can start it from a test or mount it in your own server:
 
 ```js
-const { createApp } = require("odata-prova");
+import { createApp } from "odata-prova";
 
 const { app } = createApp({
   modelDir: "./MySrv",

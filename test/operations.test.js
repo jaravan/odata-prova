@@ -1,10 +1,12 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get, send, batch, batchResponses } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { start, get, send, batch, batchResponses } from "./helpers.js";
 
-const TRIPPIN = path.join(__dirname, "fixtures", "real", "TripPin");
-const GATEWAY_OPS = path.join(__dirname, "fixtures", "OperationsV2");
+const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
+const GATEWAY_OPS = path.join(import.meta.dirname, "fixtures", "OperationsV2");
 const NS = "Microsoft.OData.SampleService.Models.TripPin";
 
 // The server routes the call, checks the method, reads and logs the parameters, and answers
@@ -253,8 +255,6 @@ describe("V2 function imports (SAP Gateway style)", () => {
 });
 
 describe("config.json rules: what an operation changes", () => {
-  const fs = require("fs");
-  const os = require("os");
   // A copy of the V2 fixture with the given config.json, removed after the tests
   const dirs = [];
   function modelWith(config) {

@@ -1,14 +1,14 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get } from "./helpers.js";
 
 // Real services often declare a few navigations the server cannot join (here a
 // many-to-many link). They are switched off; the rest of the service keeps working.
 describe("navigations the server cannot resolve are disabled, not fatal", () => {
   let s;
   before(async () => {
-    s = await start(path.join(__dirname, "fixtures", "ManyToMany"));
+    s = await start(path.join(import.meta.dirname, "fixtures", "ManyToMany"));
   });
   after(() => s.close());
 

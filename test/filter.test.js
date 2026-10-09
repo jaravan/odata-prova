@@ -1,8 +1,8 @@
-const { describe, it } = require("node:test");
-const assert = require("node:assert/strict");
-const { compileFilter } = require("../lib/filter");
-const v2 = require("../lib/protocols/v2");
-const v4 = require("../lib/protocols/v4");
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { compileFilter } from "../lib/filter.js";
+import v2 from "../lib/protocols/v2.js";
+import v4 from "../lib/protocols/v4.js";
 
 const types = {
   Name: "Edm.String",

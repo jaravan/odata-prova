@@ -1,6 +1,7 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const { start, get, send, ORDER, ITEM } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { start, get, send, ORDER, ITEM, PO_MODEL } from "./helpers.js";
+import { createApp } from "../lib/app.js";
 
 describe("both protocols share one store", () => {
   let s;
@@ -59,9 +60,8 @@ describe("both protocols share one store", () => {
   });
 
   it("a protocol can be switched off", async () => {
-    const { createApp } = require("../lib/app");
     const { app, services } = createApp({
-      modelDir: require("./helpers").PO_MODEL,
+      modelDir: PO_MODEL,
       v2Path: "",
       v4Path: "/only/v4",
       log: () => {},

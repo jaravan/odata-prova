@@ -1,11 +1,11 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const { findModelDir } = require("../lib/app");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { findModelDir } from "../lib/app.js";
 
-const MODELS = path.join(__dirname, "..", "examples");
+const MODELS = path.join(import.meta.dirname, "..", "examples");
 
 // MODEL_DIR can name the model itself, or a folder holding exactly one model (how the
 // Kubernetes model image is mounted, so the image alone decides which model is served).

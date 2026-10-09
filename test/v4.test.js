@@ -1,6 +1,7 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const { start, get, send, SALES_MODEL, ORDER, ITEM } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { start, get, send, SALES_MODEL, ORDER, ITEM } from "./helpers.js";
+import v4Protocol from "../lib/protocols/v4.js";
 
 const IEEE = {
   accept: "application/json;odata.metadata=minimal;IEEE754Compatible=true",
@@ -301,7 +302,7 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
 });
 
 describe("V4 wire format: fractional seconds follow the Precision facet", () => {
-  const { toWire } = require("../lib/protocols/v4");
+  const { toWire } = v4Protocol;
   const dto = (precision) => ({ type: "Edm.DateTimeOffset", precision });
   const tod = (precision) => ({ type: "Edm.TimeOfDay", precision });
 

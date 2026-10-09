@@ -1,10 +1,10 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const { PO_MODEL } = require("./helpers");
-const { createApp } = require("../lib/app");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { PO_MODEL } from "./helpers.js";
+import { createApp } from "../lib/app.js";
 
 // Seed files as spreadsheets export them: quoted fields, a byte order mark, CRLF
 describe("CSV seed files", () => {

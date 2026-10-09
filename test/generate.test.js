@@ -1,13 +1,13 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const { createApp } = require("../lib/app");
-const { writeMockData } = require("../lib/mock-data");
-const { start, get, PO_MODEL } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createApp } from "../lib/app.js";
+import { writeMockData } from "../lib/mock-data.js";
+import { start, get, PO_MODEL } from "./helpers.js";
 
-const FIXTURES = path.join(__dirname, "fixtures");
+const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const NORTHWIND_V4 = path.join(FIXTURES, "real", "NorthwindV4");
 
 function load(modelDir, mockRows) {

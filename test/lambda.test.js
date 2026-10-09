@@ -1,9 +1,9 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get } from "./helpers.js";
 
-const TRIPPIN = path.join(__dirname, "fixtures", "real", "TripPin");
+const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
 
 // The lambda operators any/all in $filter. Fiori Elements V4 generates them for filter fields
 // on a to-many navigation, e.g. Items/any(i:i/Material eq 'X').

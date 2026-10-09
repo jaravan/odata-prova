@@ -1,14 +1,15 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get, send } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get, send } from "./helpers.js";
 
 // Product and ProductDetail share their key (ProductID) with no ReferentialConstraint: a
 // one-to-one link, joined key to key, whose ends both cascade on delete
 describe("cascading delete over a one-to-one link", () => {
   let s;
   before(
-    async () => (s = await start(path.join(__dirname, "fixtures", "OneToOne"))),
+    async () =>
+      (s = await start(path.join(import.meta.dirname, "fixtures", "OneToOne"))),
   );
   after(() => s.close());
 

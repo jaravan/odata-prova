@@ -1,10 +1,10 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get, send } = require("./helpers");
-const { parseMetadata } = require("../lib/metadata");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get, send } from "./helpers.js";
+import { parseMetadata } from "../lib/metadata.js";
 
-const FIXTURES = path.join(__dirname, "fixtures");
+const FIXTURES = path.join(import.meta.dirname, "fixtures");
 
 // Services the server was not written for. Each must load, serve a self-consistent $metadata
 // in both versions (the one it was not written in is generated), and answer on every entity set.

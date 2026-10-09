@@ -1,6 +1,6 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const { start, get, send } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { start, get, send } from "./helpers.js";
 
 const item = (pos) => ({
   ItemPosition: pos,

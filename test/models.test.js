@@ -1,13 +1,13 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const path = require("path");
-const { start, get } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { start, get } from "./helpers.js";
 
 // The example models under examples/ must keep working: each loads, answers on every entity
 // set in both versions, and has data, from seed files or generated as the server does by
 // default (MOCK_ROWS=20; TripPin has no seed files).
-const MODELS = path.join(__dirname, "..", "examples");
+const MODELS = path.join(import.meta.dirname, "..", "examples");
 const names = fs
   .readdirSync(MODELS, { withFileTypes: true })
   .filter(

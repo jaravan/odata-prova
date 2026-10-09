@@ -1,14 +1,15 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const path = require("path");
-const { start, get, send, batch, batchResponses } = require("./helpers");
-const { parseMetadata } = require("../lib/metadata");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { start, get, send, batch, batchResponses } from "./helpers.js";
+import { parseMetadata } from "../lib/metadata.js";
 
 // A draft-enabled CAP service, metadata as cds compiles it (see the fixture's README): Books
 // (DraftRoot) composes Chapters (DraftNode), and associates Authors, which is not
 // draft-enabled. The seed files have no draft columns.
-const DRAFT_MODEL = path.join(__dirname, "fixtures", "DraftSrv");
+const DRAFT_MODEL = path.join(import.meta.dirname, "fixtures", "DraftSrv");
 const XML = fs.readFileSync(path.join(DRAFT_MODEL, "metadata.xml"), "utf8");
 const BOOK = "b0000000-0000-4000-8000-000000000001";
 const book = (active = true) => `Books(ID=${BOOK},IsActiveEntity=${active})`;
@@ -194,7 +195,7 @@ describe("draft: reading active entities (V4)", () => {
 describe("draft: generated rows", () => {
   let s;
   before(async () => {
-    const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "draft-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-"));
     fs.copyFileSync(
       path.join(DRAFT_MODEL, "metadata.xml"),
       path.join(dir, "metadata.xml"),
@@ -635,7 +636,7 @@ describe("draft: creating a new entity (V4)", () => {
 describe("draft: NewAction (V4)", () => {
   let s, dir;
   before(async () => {
-    dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "draft-new-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-new-"));
     fs.writeFileSync(
       path.join(dir, "metadata.xml"),
       XML.replace(
@@ -671,7 +672,7 @@ describe("draft: NewAction (V4)", () => {
 
 // A RAP-style V2 service: the draft annotations are V4 ones inside the V2 document, the
 // actions are function imports named by path, and the associations join on IsActiveEntity
-const DRAFT_V2_MODEL = path.join(__dirname, "fixtures", "DraftSrvV2");
+const DRAFT_V2_MODEL = path.join(import.meta.dirname, "fixtures", "DraftSrvV2");
 const TRAVEL = "a0000000-0000-4000-8000-000000000001";
 const travel = (active = true) =>
   `Travel(TravelUUID=guid'${TRAVEL}',IsActiveEntity=${active})`;

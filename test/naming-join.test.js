@@ -1,7 +1,7 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get, send } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get, send } from "./helpers.js";
 
 // Order and Item both keyed by ID, and no ReferentialConstraint: the join comes from naming.
 // Items 1, 2, 3 belong to orders 1, 1, 2 (Item.OrderID). Matching the source's key names alone
@@ -12,7 +12,7 @@ for (const version of ["V2", "V4"]) {
     before(
       async () =>
         (s = await start(
-          path.join(__dirname, "fixtures", `NamingJoin${version}`),
+          path.join(import.meta.dirname, "fixtures", `NamingJoin${version}`),
         )),
     );
     after(() => s.close());

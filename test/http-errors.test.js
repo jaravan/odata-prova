@@ -1,6 +1,6 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const { start, get, batch, batchResponses } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { start, get, batch, batchResponses } from "./helpers.js";
 
 // Requests the service never gets to see: they must still get an OData error, not Express's
 // HTML page with a stack trace.

@@ -7,9 +7,9 @@
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
 // value, or a text that would need quoting in CSV (this writer doesn't quote).
 
-const path = require("path");
-const { writeMockData } = require("./lib/mock-data");
-const { findModelDir } = require("./lib/app");
+import path from "node:path";
+import { writeMockData } from "./lib/mock-data.js";
+import { findModelDir } from "./lib/app.js";
 
 const [dir, rowsArg = "20"] = process.argv.slice(2);
 const rows = Number(rowsArg);

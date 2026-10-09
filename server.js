@@ -3,8 +3,8 @@
 //
 //   odata-prova [modelDir]      (default: the current directory)
 
-const path = require("path");
-const { createApp, findModelDir } = require("./lib/app");
+import path from "node:path";
+import { createApp, findModelDir } from "./lib/app.js";
 
 const PORT = process.env.PORT || 3000;
 // The model to serve: the first argument, else MODEL_DIR (the image sets /models), else the

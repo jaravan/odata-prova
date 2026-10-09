@@ -1,9 +1,9 @@
-const { describe, it } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("fs");
-const path = require("path");
-const { parseMetadata, emitV2, emitV4 } = require("../lib/metadata");
-const { PO_MODEL, SALES_MODEL } = require("./helpers");
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.js";
+import { PO_MODEL, SALES_MODEL } from "./helpers.js";
 
 const v2Xml = fs.readFileSync(path.join(PO_MODEL, "metadata.xml"), "utf8");
 const v4Xml = fs.readFileSync(path.join(SALES_MODEL, "metadata.xml"), "utf8");
@@ -193,7 +193,7 @@ describe("parseMetadata (what `cds compile --to edmx` actually emits)", () => {
   // schema-level <Annotation Term="Core.Links">, Nullable after MaxLength, Edm.Date.
   const model = parseMetadata(
     fs.readFileSync(
-      path.join(__dirname, "fixtures", "cap", "metadata.xml"),
+      path.join(import.meta.dirname, "fixtures", "cap", "metadata.xml"),
       "utf8",
     ),
   );

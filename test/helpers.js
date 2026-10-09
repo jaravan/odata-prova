@@ -1,10 +1,10 @@
-const path = require("path");
-const { createApp } = require("../lib/app");
+import path from "node:path";
+import { createApp } from "../lib/app.js";
 
 // A frozen copy of examples/PurchaseOrderSrv, so the example data can change without
 // breaking assertions on it
-const PO_MODEL = path.join(__dirname, "fixtures", "PurchaseOrderSrv");
-const SALES_MODEL = path.join(__dirname, "fixtures", "SalesSrv");
+const PO_MODEL = path.join(import.meta.dirname, "fixtures", "PurchaseOrderSrv");
+const SALES_MODEL = path.join(import.meta.dirname, "fixtures", "SalesSrv");
 
 // The Nullable="false" values of PO_MODEL's order and item other than their keys, for a
 // write to start from
@@ -139,7 +139,7 @@ function batchResponses(text) {
   return out;
 }
 
-module.exports = {
+export {
   PO_MODEL,
   SALES_MODEL,
   ORDER,

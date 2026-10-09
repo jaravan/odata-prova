@@ -1,14 +1,16 @@
-const { describe, it, before, after } = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("path");
-const { start, get, batch, batchResponses } = require("./helpers");
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get, batch, batchResponses } from "./helpers.js";
 
 // Edm.Double values INF, -INF and NaN: JSON has no such numbers, so OData spells them as strings
 describe("INF, -INF and NaN", () => {
   let s;
   before(
     async () =>
-      (s = await start(path.join(__dirname, "fixtures", "SpecialFloats"))),
+      (s = await start(
+        path.join(import.meta.dirname, "fixtures", "SpecialFloats"),
+      )),
   );
   after(() => s.close());
 
