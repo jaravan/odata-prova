@@ -134,8 +134,10 @@ export interface Navigation {
   join: JoinPair[];
   cascadeDelete: boolean;
   partner?: string;
-  // A composition between draft-enabled sets, which also joins on IsActiveEntity
-  draft?: "composition";
+  // Into a draft-enabled set (see resolveDraftNavigations): "composition" from parent to
+  // children inside a draft tree (also joined on IsActiveEntity), "active" from outside the
+  // tree (reaches the active entities only)
+  draft?: "composition" | "active";
 }
 
 // SiblingEntity or DraftAdministrativeData, which the metadata gives no join for

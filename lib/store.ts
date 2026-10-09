@@ -17,7 +17,7 @@ import path from "node:path";
 import type { EntityType, Key, Model, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
 import { generateData } from "./generate.ts";
-import { asActive } from "./draft.js";
+import { asActive } from "./draft.ts";
 
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
 // separator, line breaks and "" for a quote. Unquoted fields are trimmed, blank lines skipped.

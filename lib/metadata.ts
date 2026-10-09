@@ -19,7 +19,7 @@ import {
   parseDraftAnnotations,
   isDraftNavigation,
   resolveDraftNavigations,
-} from "./draft.js";
+} from "./draft.ts";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -59,7 +59,7 @@ const parser = new XMLParser({
 // The parsed XML: elements and attributes by name, repeating elements as arrays (see
 // isArray above). Untyped: the parser below reads what it needs and builds the typed Model.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Xml = any;
+export type Xml = any;
 
 // Resolves a term's vocabulary alias (see termQualifier)
 export type Qualify = (name: string) => string;
