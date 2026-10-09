@@ -39,3 +39,22 @@ jobs:
       - run: yarn build
 
       - run: yarn test
+
+  # The Docker image, built from this commit and run as users run it (test/docker)
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --immutable
+
+      - run: docker build -t odata-prova:test .
+
+      - run: yarn test:image

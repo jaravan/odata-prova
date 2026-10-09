@@ -21,7 +21,12 @@ yarn lint
 yarn format:check   # yarn format fixes it
 ```
 
-CI runs all four on every push and pull request.
+CI runs all four on every push and pull request. It also builds the Docker image and runs it the way users do, which you can do locally too (Docker needed):
+
+```sh
+docker build -t odata-prova:test .
+yarn test:image
+```
 
 ## Changes
 
