@@ -1,6 +1,17 @@
 // v2 response characteristics: the {d: ...} envelope, __metadata/__deferred,
 // /Date()/ timestamps, typed URL literals (datetime'...', guid'...', 12L), $inlinecount
 // instead of $count, and $expand/$select written as slash-separated paths.
+import type {
+  EntityType,
+  Literal,
+  ODataResponse,
+  Property,
+  PropertyValue,
+  QueryNode,
+  ResponseOptions,
+  Row,
+} from "../model.ts";
+import type { ODataService, Protocol } from "../service.ts";
 import { toInternal, toMillis, timeOfDayToV2, specialFloat } from "../types.ts";
 import {
   HttpError,
@@ -13,7 +24,7 @@ import {
 } from "../query.ts";
 
 const version = "2.0";
-const headers = { DataServiceVersion: "2.0" };
+const headers: Record<string, string> = { DataServiceVersion: "2.0" };
 const typedLiteralPrefixes = new Set([
   "datetime",
   "datetimeoffset",
@@ -24,9 +35,9 @@ const typedLiteralPrefixes = new Set([
 ]);
 
 // URL / $filter literal -> { value (internal), type }.
-function parseLiteral(text) {
+function parseLiteral(text: string): Literal {
   const t = text.trim();
-  let m;
+  let m: RegExpMatchArray | null;
   if ((m = t.match(/^'((?:[^']|'')*)'$/)))
     return { value: m[1].replace(/''/g, "'"), type: "Edm.String" };
   if ((m = t.match(/^guid'([^']+)'$/i)))
@@ -57,21 +68,22 @@ function parseLiteral(text) {
 }
 
 // Internal -> key literal in a URL, e.g. 'abc', 42, guid'...', datetime'2025-01-01T00:00:00'.
-function keyLiteral(value, prop) {
+// Internal date and time values are ISO strings.
+function keyLiteral(value: PropertyValue, prop: Property): string {
   switch (prop.v2Type) {
     case "Edm.String":
       return `'${String(value).replace(/'/g, "''")}'`;
     case "Edm.Guid":
       return `guid'${value}'`;
     case "Edm.DateTime":
-      return `datetime'${new Date(toMillis(value))
+      return `datetime'${new Date(toMillis(value as string))
         .toISOString()
         .replace(/\.000Z$/, "")
         .replace(/Z$/, "")}'`;
     case "Edm.DateTimeOffset":
       return `datetimeoffset'${value}'`;
     case "Edm.Time":
-      return `time'${timeOfDayToV2(value)}'`;
+      return `time'${timeOfDayToV2(value as string)}'`;
     case "Edm.Int64":
       return `${value}L`;
     case "Edm.Decimal":
@@ -83,53 +95,67 @@ function keyLiteral(value, prop) {
 
 // Internal -> V2 JSON value. A complex value carries its type in __metadata, as SAP
 // Gateway sends it; collection-valued properties do not exist in V2 (v2Omit).
-function toWire(value, prop) {
+// Returns a JSON value.
+function toWire(value: PropertyValue | undefined, prop: Property): unknown {
   if (value === null || value === undefined) return null;
   if (specialFloat(value)) return specialFloat(value);
   if (prop.complexType) {
-    const out = { __metadata: { type: prop.complexType.fullName } };
+    const fields = value as Record<string, PropertyValue>;
+    const out: Record<string, unknown> = {
+      __metadata: { type: prop.complexType.fullName },
+    };
     for (const p of Object.values(prop.complexType.properties))
-      if (!p.v2Omit) out[p.name] = toWire(value[p.name], p);
+      if (!p.v2Omit) out[p.name] = toWire(fields[p.name], p);
     return out;
   }
+  // Internal date and time values are ISO strings
   switch (prop.v2Type) {
     case "Edm.DateTime":
-      return `/Date(${toMillis(value)})/`;
+      return `/Date(${toMillis(value as string)})/`;
     case "Edm.DateTimeOffset":
-      return `/Date(${toMillis(value)}+0000)/`;
+      return `/Date(${toMillis(value as string)}+0000)/`;
     case "Edm.Time":
-      return timeOfDayToV2(value);
+      return timeOfDayToV2(value as string);
     default:
       return value;
   }
 }
 
-function parseQueryOptions(query) {
+function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   rejectUnsupported(query);
+  // Query string values are text (a repeated option isn't supported)
+  const q = query as Record<string, string | undefined>;
   const root = newNode();
-  for (const path of (query.$expand || "").split(","))
-    addExpandPath(root, path);
-  if (query.$select)
-    for (const path of query.$select.split(",")) addSelectPath(root, path);
+  for (const path of (q.$expand || "").split(",")) addExpandPath(root, path);
+  if (q.$select)
+    for (const path of q.$select.split(",")) addSelectPath(root, path);
   return {
-    filter: query.$filter,
-    orderby: query.$orderby,
-    top: parseInt10(query.$top, "$top"),
-    skip: parseInt10(query.$skip, "$skip"),
-    count: query.$inlinecount === "allpages",
+    filter: q.$filter,
+    orderby: q.$orderby,
+    top: parseInt10(q.$top, "$top"),
+    skip: parseInt10(q.$skip, "$skip"),
+    count: q.$inlinecount === "allpages",
     search: undefined,
     select: root.select,
     expand: root.expand,
   };
 }
 
-function serialize(svc, row, setName, type, node) {
+function serialize(
+  svc: ODataService,
+  row: Row,
+  setName: string,
+  type: EntityType,
+  node: QueryNode,
+): Record<string, unknown> {
   const uri = svc.entityUri(setName, type, row);
-  const out = { __metadata: { id: uri, uri, type: type.fullName } };
+  const out: Record<string, unknown> = {
+    __metadata: { id: uri, uri, type: type.fullName },
+  };
   const selectAll = !node.select || node.select.has("*");
 
   for (const p of Object.values(type.properties)) {
-    if (!p.v2Omit && (selectAll || node.select.has(p.name)))
+    if (!p.v2Omit && (selectAll || node.select?.has(p.name)))
       out[p.name] = toWire(row[p.name], p);
   }
   // Unknown $expand names are ignored as before; a disabled navigation is a 501
@@ -137,11 +163,12 @@ function serialize(svc, row, setName, type, node) {
   const navs = { ...type.navigations, ...type.draftNavigations };
   for (const nav of Object.values(navs)) {
     const expanded = nav.name in node.expand;
-    if (!selectAll && !node.select.has(nav.name) && !expanded) continue;
+    if (!selectAll && !node.select?.has(nav.name) && !expanded) continue;
     if (expanded) {
       const child = node.expand[nav.name];
       const { rows, type: targetType } = svc.expandRows(row, type, nav, child);
-      const nested = (r) => serialize(svc, r, nav.targetSet, targetType, child);
+      const nested = (r: Row) =>
+        serialize(svc, r, nav.targetSet, targetType, child);
       out[nav.name] = nav.isCollection
         ? { results: rows.map(nested) }
         : rows[0]
@@ -154,7 +181,11 @@ function serialize(svc, row, setName, type, node) {
   return out;
 }
 
-function json(status, body, extra) {
+function json(
+  status: number,
+  body: unknown,
+  extra?: Record<string, string>,
+): ODataResponse {
   return {
     status,
     body,
@@ -163,20 +194,19 @@ function json(status, body, extra) {
   };
 }
 
-export default {
+const v2: Protocol = {
   version,
   headers,
   typedLiteralPrefixes,
   parseLiteral,
   keyLiteral,
-  toWire,
   parseQueryOptions,
   serviceDocument(svc) {
     return json(200, { d: { EntitySets: Object.keys(svc.model.entitySets) } });
   },
   collection(svc, { rows, count }, setName, type, node) {
     checkSelect(svc, type, node);
-    const d = {
+    const d: Record<string, unknown> = {
       results: rows.map((r) => serialize(svc, r, setName, type, node)),
     };
     if (count !== undefined) d.__count = String(count);
@@ -192,14 +222,16 @@ export default {
   // Non-entity result of a function import, as SAP Gateway sends it:
   // { d: { <FunctionName>: value } }, or { d: { results: [...] } } for a collection
   operationValue(svc, op, returnType, value) {
-    const element = {
+    const element: Property = {
       ...returnType,
       isCollection: false,
       v2Type: returnType.v2Type.replace(/^Collection\((.+)\)$/, "$1"),
     };
     if (returnType.isCollection)
       return json(200, {
-        d: { results: value.map((v) => toWire(v, element)) },
+        d: {
+          results: (value as PropertyValue[]).map((v) => toWire(v, element)),
+        },
       });
     return json(200, { d: { [op.name]: toWire(value, element) } });
   },
@@ -217,3 +249,5 @@ export default {
     });
   },
 };
+
+export default v2;

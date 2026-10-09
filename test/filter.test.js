@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { compileFilter } from "../lib/filter.ts";
-import v2 from "../lib/protocols/v2.js";
-import v4 from "../lib/protocols/v4.js";
+import v2 from "../lib/protocols/v2.ts";
+import v4 from "../lib/protocols/v4.ts";
 
 const types = {
   Name: "Edm.String",
