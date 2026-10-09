@@ -7,11 +7,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { EntityType, PropertyValue, Row } from "./model.ts";
 import { parseMetadata } from "./metadata.ts";
 import { Store } from "./store.ts";
 
-function toCsv(columns, rows) {
-  const cell = (v) => (v === null || v === undefined ? "" : String(v));
+function toCsv(columns: string[], rows: Row[]): string {
+  const cell = (v: PropertyValue | undefined) =>
+    v === null || v === undefined ? "" : String(v);
   return (
     [columns, ...rows.map((row) => columns.map((c) => cell(row[c])))]
       .map((cells) => cells.join(";"))
@@ -22,7 +24,7 @@ function toCsv(columns, rows) {
 // The CSV reader takes ";" as the separator when the header has one, "," otherwise. A text
 // holding the separator, a line break or a quote would have to be quoted, which this
 // writer doesn't do.
-function csvSafe(type, rows) {
+function csvSafe(type: EntityType, rows: Row[]): boolean {
   const props = Object.values(type.properties);
   if (props.some((p) => p.isCollection || p.complexType)) return false;
   const bad = props.length > 1 ? /[;"\r\n]/ : /[;,"\r\n]/;
@@ -32,13 +34,16 @@ function csvSafe(type, rows) {
 }
 
 // Returns the files written, relative to the model folder
-function writeMockData(modelDir, rows) {
+function writeMockData(
+  modelDir: string,
+  rows: number,
+): { file: string; rows: number }[] {
   const model = parseMetadata(
     fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
   );
   const store = new Store(model, modelDir, () => {}, { mockRows: rows });
   const dataDir = path.join(modelDir, "data");
-  const written = [];
+  const written: { file: string; rows: number }[] = [];
   for (const set of store.generated) {
     const type = model.entityTypes[model.entitySets[set].entityType];
     const data = store.rows(set);
@@ -49,8 +54,9 @@ function writeMockData(modelDir, rows) {
     try {
       fs.mkdirSync(dataDir, { recursive: true });
       fs.writeFileSync(path.join(dataDir, file), text, { flag: "wx" });
-    } catch (err) {
+    } catch (e) {
       // A read-only mount shows up as EROFS, or as ENOENT on Docker Desktop
+      const err = e as Error;
       err.message = `cannot write ${path.join(dataDir, file)}: ${err.message} (is the model folder read-only?)`;
       throw err;
     }

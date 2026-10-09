@@ -8,7 +8,7 @@
 // value, or a text that would need quoting in CSV (this writer doesn't quote).
 
 import path from "node:path";
-import { writeMockData } from "./lib/mock-data.js";
+import { writeMockData } from "./lib/mock-data.ts";
 import { findModelDir } from "./lib/app.js";
 
 const [dir, rowsArg = "20"] = process.argv.slice(2);

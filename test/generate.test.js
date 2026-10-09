@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createApp } from "../lib/app.js";
-import { writeMockData } from "../lib/mock-data.js";
+import { writeMockData } from "../lib/mock-data.ts";
 import { start, get, PO_MODEL } from "./helpers.js";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
