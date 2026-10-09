@@ -1,0 +1,13 @@
+// The build: compiles the server, the mock-data CLI and lib/ to dist/, with type
+// declarations for code that uses the package. The tests run on the sources instead.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": true
+  },
+  "include": ["lib", "server.ts", "mock-data.ts"]
+}

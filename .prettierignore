@@ -2,3 +2,4 @@ test/fixtures/
 examples/
 .yarn/
 yarn.lock
+dist/

@@ -23,15 +23,14 @@
     "ui5"
   ],
   "bin": {
-    "odata-prova": "server.ts",
-    "odata-prova-mock-data": "mock-data.ts"
+    "odata-prova": "dist/server.js",
+    "odata-prova-mock-data": "dist/mock-data.js"
   },
-  "main": "lib/app.ts",
+  "main": "dist/lib/app.js",
+  "types": "dist/lib/app.d.ts",
   "type": "module",
   "files": [
-    "server.ts",
-    "mock-data.ts",
-    "lib/",
+    "dist/",
     "NOTICE"
   ],
   "engines": {
@@ -41,6 +40,8 @@
   "scripts": {
     "start": "node server.ts examples/PurchaseOrderSrv",
     "dev": "node --watch server.ts examples/PurchaseOrderSrv",
+    "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "yarn build",
     "test": "node --test test/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -48,12 +49,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@types/express": "5.0.6",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.11.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/express": "5.0.6",
     "@types/node": "22.20.5",
     "eslint": "10.12.0",
     "globals": "17.13.0",
