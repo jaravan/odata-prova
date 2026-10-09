@@ -3,28 +3,49 @@
 // through service.dispatch(), and combine the results back into a multipart response.
 // Changesets are atomic - we snapshot the store first and roll back if any part fails -
 // and within one, `$<Content-ID>/Nav` can reference an entity a prior part just created.
+import type { Request, Response } from "express";
+import type { ODataResponse } from "./model.ts";
 import { HttpError, decodeUrl } from "./query.ts";
+import type { ODataService, Protocol } from "./service.ts";
+
+// One application/http part: the request line, its headers (lower-cased) and body
+interface HttpRequestPart {
+  method: string;
+  rawUrl: string;
+  headers: Record<string, string>;
+  bodyText: string;
+}
+
+// A batch part's results: one for a single request, one per member for a changeset (up to
+// the first that failed)
+interface ProcessedPart {
+  changeset: boolean;
+  results: { result: ODataResponse; contentId?: string }[];
+}
 
 // Splits a multipart body on "--<boundary>", dropping the leading preamble and the
 // trailing "--" epilogue that follows the closing "--<boundary>--" delimiter.
-function splitMultipart(bodyText, boundary) {
+function splitMultipart(
+  bodyText: string,
+  boundary: string | undefined,
+): string[] {
   const segments = bodyText.split(`--${boundary}`);
   return segments
     .slice(1, -1)
     .map((s) => s.replace(/^\r?\n/, "").replace(/\r?\n$/, ""));
 }
 
-function splitOnceOnBlankLine(text) {
+function splitOnceOnBlankLine(text: string): [string, string] {
   const match = text.match(/\r?\n\r?\n/);
   if (!match) return [text, ""];
   return [
     text.slice(0, match.index),
-    text.slice(match.index + match[0].length),
+    text.slice(match.index! + match[0].length),
   ];
 }
 
-function parseHeaders(headBlock) {
-  const headers = {};
+function parseHeaders(headBlock: string): Record<string, string> {
+  const headers: Record<string, string> = {};
   for (const line of headBlock.split(/\r?\n/)) {
     const idx = line.indexOf(":");
     if (idx > -1)
@@ -35,14 +56,14 @@ function parseHeaders(headBlock) {
   return headers;
 }
 
-function extractBoundary(contentType) {
+function extractBoundary(contentType: string | undefined): string | undefined {
   const match = (contentType || "").match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   return match ? (match[1] || match[2]).trim() : undefined;
 }
 
 // Parses the "METHOD url HTTP/1.1\r\nHeader: ...\r\n\r\n<body>" text embedded in an
 // application/http batch part.
-function parseHttpRequestPart(text) {
+function parseHttpRequestPart(text: string): HttpRequestPart {
   const [headBlock, bodyText] = splitOnceOnBlankLine(text);
   const lines = headBlock.split(/\r?\n/);
   const [method, rawUrl] = (lines[0] || "").trim().split(" ");
@@ -54,7 +75,7 @@ function parseHttpRequestPart(text) {
   };
 }
 
-const STATUS_TEXT = {
+const STATUS_TEXT: Record<number, string> = {
   200: "OK",
   201: "Created",
   204: "No Content",
@@ -65,7 +86,11 @@ const STATUS_TEXT = {
   500: "Internal Server Error",
 };
 
-function renderHttpResponsePart(result, protocol, contentId) {
+function renderHttpResponsePart(
+  result: ODataResponse,
+  protocol: Protocol,
+  contentId?: string,
+): string {
   let headers = "";
   for (const [k, v] of Object.entries({
     ...protocol.headers,
@@ -84,14 +109,16 @@ function renderHttpResponsePart(result, protocol, contentId) {
   return `HTTP/1.1 ${result.status} ${STATUS_TEXT[result.status] || ""}\r\n${headers}\r\n${bodyText}`;
 }
 
-function createBatchHandler(service) {
+function createBatchHandler(
+  service: ODataService,
+): (req: Request, res: Response) => void {
   const { store, protocol } = service;
 
   // contentIdRefs: { "1": "/odata/v4/Srv/PurchaseOrderSet('x')" } within the current changeset.
   function executeHttpPart(
-    { method, rawUrl, headers, bodyText },
-    contentIdRefs,
-  ) {
+    { method, rawUrl, headers, bodyText }: HttpRequestPart,
+    contentIdRefs: Record<string, string>,
+  ): ODataResponse {
     let url = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
@@ -104,7 +131,7 @@ function createBatchHandler(service) {
     const [pathOnly, queryString] = url.split("?");
     const query = Object.fromEntries(new URLSearchParams(queryString || ""));
 
-    let parsedBody;
+    let parsedBody: unknown;
     if (bodyText) {
       try {
         parsedBody = JSON.parse(bodyText);
@@ -112,11 +139,13 @@ function createBatchHandler(service) {
         parsedBody = undefined;
       }
     }
-    let resourcePath;
+    let resourcePath: string;
     try {
       resourcePath = decodeUrl(pathOnly);
     } catch (e) {
-      return protocol.error(e.status, e.message);
+      // decodeUrl throws only HttpErrors
+      const err = e as HttpError;
+      return protocol.error(err.status, err.message);
     }
     const result = service.dispatch(
       method,
@@ -132,15 +161,15 @@ function createBatchHandler(service) {
 
   // A batch part is either a single "application/http" request, or a nested
   // "multipart/mixed" changeset containing several write requests.
-  function processBatchPart(rawPart) {
+  function processBatchPart(rawPart: string): ProcessedPart {
     const [outerHeadBlock, remainder] = splitOnceOnBlankLine(rawPart);
     const outerContentType = parseHeaders(outerHeadBlock)["content-type"] || "";
 
     if (/multipart\/mixed/i.test(outerContentType)) {
       const innerBoundary = extractBoundary(outerContentType);
       const snapshot = store.snapshot();
-      const refs = {};
-      const results = [];
+      const refs: Record<string, string> = {};
+      const results: ProcessedPart["results"] = [];
       for (const p of splitMultipart(remainder, innerBoundary)) {
         // Each changeset member is itself an "application/http"-wrapped part, so its own
         // Content-Type/Content-ID header block has to be peeled off first.
@@ -167,7 +196,10 @@ function createBatchHandler(service) {
     };
   }
 
-  function buildBatchResponseBody(processedParts, boundary) {
+  function buildBatchResponseBody(
+    processedParts: ProcessedPart[],
+    boundary: string,
+  ): string {
     const chunks = processedParts.map((part) => {
       // A changeset is atomic: if any member request fails, the whole changeset reports as
       // a single error instead of a nested multipart.
@@ -194,7 +226,7 @@ function createBatchHandler(service) {
   }
 
   // Express handler for POST $batch (expects express.raw() to have run first).
-  return (req, res) => {
+  return (req: Request, res: Response) => {
     const boundary = extractBoundary(req.headers["content-type"]);
     if (!boundary) {
       const err = protocol.error(
@@ -204,7 +236,7 @@ function createBatchHandler(service) {
       res
         .status(err.status)
         .set(protocol.headers)
-        .setHeader("Content-Type", err.contentType);
+        .setHeader("Content-Type", err.contentType!); // error() answers JSON
       return res.end(JSON.stringify(err.body));
     }
     const bodyText = Buffer.isBuffer(req.body)
