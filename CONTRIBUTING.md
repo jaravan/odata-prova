@@ -4,7 +4,7 @@ Issues and pull requests are welcome. For a bug, a feature, or a `metadata.xml` 
 
 ## Set up
 
-You need Node.js 22 or later with Corepack (`corepack enable`, for the pinned Yarn 4), and Docker to build the image.
+You need Node.js 22.18 or later with Corepack (`corepack enable`, for the pinned Yarn 4), and Docker to build the image. 22.18 is the first Node 22 release that runs TypeScript files directly, which the tests and `yarn dev` rely on; the published package needs only Node 22.
 
 ```sh
 yarn install
@@ -16,9 +16,11 @@ node server.js examples/TripPin   # any other model
 
 ```sh
 yarn test
+yarn typecheck
+yarn format:check   # yarn format fixes it
 ```
 
-CI runs the tests on every push and pull request.
+CI runs all three on every push and pull request.
 
 ## Changes
 

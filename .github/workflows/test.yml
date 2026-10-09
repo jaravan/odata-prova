@@ -32,4 +32,6 @@ jobs:
 
       - run: yarn format:check
 
+      - run: yarn typecheck
+
       - run: yarn test
