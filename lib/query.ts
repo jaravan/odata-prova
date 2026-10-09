@@ -10,8 +10,11 @@
 //
 //   node = { expand: { <navName>: node }, select?: Set<string>, filter?, orderby?, top?, skip?, count? }
 
+import type { AnyNavigation, EntityType, Model, QueryNode } from "./model.ts";
+
 class HttpError extends Error {
-  constructor(status, message) {
+  status: number;
+  constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
@@ -19,7 +22,10 @@ class HttpError extends Error {
 
 // decodeURI and decodeURIComponent throw a URIError on a malformed escape (%E0%A4%A).
 // That is the client's mistake, so it is a 400.
-function decodeUrl(text, decode = decodeURI) {
+function decodeUrl(
+  text: string,
+  decode: (text: string) => string = decodeURI,
+): string {
   try {
     return decode(text);
   } catch {
@@ -27,12 +33,12 @@ function decodeUrl(text, decode = decodeURI) {
   }
 }
 
-function newNode() {
+function newNode(): QueryNode {
   return { expand: {}, select: undefined };
 }
 
 // "Items/PurchaseOrder" -> ensures node.expand.Items.expand.PurchaseOrder exists; returns the leaf.
-function addExpandPath(root, path) {
+function addExpandPath(root: QueryNode, path: string): QueryNode {
   let node = root;
   for (const seg of path
     .split("/")
@@ -44,7 +50,7 @@ function addExpandPath(root, path) {
 
 // "Material" -> root.select; "Items/Material" -> node(Items).select. A path's intermediate
 // segments must be expanded to matter, but recording them is harmless if they are not.
-function addSelectPath(root, path) {
+function addSelectPath(root: QueryNode, path: string): void {
   const segs = path
     .split("/")
     .map((s) => s.trim())
@@ -58,7 +64,13 @@ function addSelectPath(root, path) {
 // $select names that are neither a property nor a navigation of `type` are a 400, like an
 // unknown $expand. "*" and qualified names (V4 operations, Namespace.*) pass. The protocols
 // check once per response rather than per row, so an empty result is checked too.
-function checkSelect(svc, type, node) {
+// svc: the service, of which only these two are used
+interface Lookup {
+  model: Model;
+  navigation(type: EntityType, name: string): AnyNavigation | undefined;
+}
+
+function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
   for (const name of node.select || []) {
     if (name === "*" || name.includes(".")) continue;
     if (!type.properties[name] && !svc.navigation(type, name))
@@ -75,8 +87,8 @@ function checkSelect(svc, type, node) {
 }
 
 // Splits on `sep` at parenthesis depth 0, ignoring separators inside quotes.
-function splitTopLevel(text, sep) {
-  const parts = [];
+function splitTopLevel(text: string, sep: string): string[] {
+  const parts: string[] = [];
   let depth = 0,
     cur = "",
     inStr = false;
@@ -102,7 +114,8 @@ function splitTopLevel(text, sep) {
 // collection looks like a working response to the caller and is wrong.
 const UNSUPPORTED_OPTIONS = ["$apply", "$compute", "$skiptoken", "$deltatoken"];
 
-function rejectUnsupported(query) {
+// query: the request's query string, parsed
+function rejectUnsupported(query: Record<string, unknown>): void {
   for (const name of UNSUPPORTED_OPTIONS) {
     if (query[name] !== undefined)
       throw new HttpError(501, `${name} is not supported`);
@@ -118,9 +131,9 @@ function rejectUnsupported(query) {
   }
 }
 
-function parseInt10(text, name) {
+function parseInt10(text: unknown, name: string): number | undefined {
   if (text === undefined || text === "") return undefined;
-  const n = parseInt(text, 10);
+  const n = parseInt(String(text), 10);
   if (Number.isNaN(n) || n < 0)
     throw new HttpError(400, `Invalid ${name}: ${text}`);
   return n;

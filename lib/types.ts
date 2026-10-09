@@ -18,7 +18,7 @@
 //   TimeOfDay                     "HH:MM:SS[.fff]"
 
 import type { PrimitiveValue, Property, PropertyValue } from "./model.ts";
-import { HttpError } from "./query.js";
+import { HttpError } from "./query.ts";
 
 const V2_DATE = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/;
 const V2_TIME = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i;
