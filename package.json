@@ -40,13 +40,16 @@
   "scripts": {
     "start": "node server.js examples/PurchaseOrderSrv",
     "dev": "nodemon server.js examples/PurchaseOrderSrv",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "express": "^5.2.1",
     "fast-xml-parser": "^5.11.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "prettier": "3.9.9"
   }
 }
