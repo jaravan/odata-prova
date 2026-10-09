@@ -44,16 +44,21 @@
     "test": "node --test test/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "lint": "eslint ."
   },
   "dependencies": {
     "express": "^5.2.1",
     "fast-xml-parser": "^5.11.1"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/express": "5.0.6",
     "@types/node": "22.20.5",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
     "prettier": "3.9.9",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1"
   }
 }

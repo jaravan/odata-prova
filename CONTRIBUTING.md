@@ -17,10 +17,11 @@ node server.ts examples/TripPin   # any other model
 ```sh
 yarn test
 yarn typecheck
+yarn lint
 yarn format:check   # yarn format fixes it
 ```
 
-CI runs all three on every push and pull request.
+CI runs all four on every push and pull request.
 
 ## Changes
 

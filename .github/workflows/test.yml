@@ -34,4 +34,6 @@ jobs:
 
       - run: yarn typecheck
 
+      - run: yarn lint
+
       - run: yarn test

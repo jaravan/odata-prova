@@ -94,6 +94,8 @@ const list = (x: Xml): Xml[] =>
 // function import path (V2 from SAP Gateway: "Srv.Srv_Entities/TravelEdit"). V2 documents
 // carry these V4 annotations too. schemas are the parsed document's; qualify resolves an
 // alias (see termQualifier in metadata.ts).
+// Reads the raw XML, which is untyped (see Xml in metadata.ts).
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 function parseDraftAnnotations(
   model: Model,
   schemas: Xml[],
@@ -151,6 +153,7 @@ function parseDraftAnnotations(
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
 // The entity type a navigation leads to: V4 names it, V2 has the association say
 function navTargetType(
