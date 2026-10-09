@@ -40,7 +40,7 @@
   "scripts": {
     "start": "node server.js examples/PurchaseOrderSrv",
     "dev": "nodemon server.js examples/PurchaseOrderSrv",
-    "test": "node --test"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^5.2.1",
