@@ -79,6 +79,9 @@ describe("both protocols share one store", () => {
       (await get(`${base}/odata/v2/PurchaseOrderSrv/PurchaseOrderSet`)).status,
       404,
     );
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
   });
 });

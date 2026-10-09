@@ -45,7 +45,11 @@ async function start(modelDir = PO_MODEL, options = {}) {
     base,
     v2: `${base}/odata/v2/T`,
     v4: `${base}/odata/v4/T`,
-    close: () => new Promise((resolve) => server.close(resolve)),
+    close: () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+        server.closeAllConnections();
+      }),
   };
 }
 
