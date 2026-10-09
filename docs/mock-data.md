@@ -1,6 +1,6 @@
 # Mock data
 
-Each entity set without a data file gets 20 generated rows, the same ones on every start ([lib/generate.js](../lib/generate.js)). This is decided per entity set, so you can write files for some sets and let the rest be generated:
+Each entity set without a data file gets 20 generated rows, the same ones on every start ([lib/generate.ts](../lib/generate.ts)). This is decided per entity set, so you can write files for some sets and let the rest be generated:
 
 - Values fit the metadata: MaxLength, Precision and Scale, enums and complex types.
 - Property names pick plausible values: a `Currency` holds EUR or USD, an `Email` an address, a `City` a city.

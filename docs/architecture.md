@@ -5,7 +5,7 @@ flowchart LR
     subgraph Startup["Startup - runs once, at boot"]
         MX["metadata.xml"] --> PM["parseMetadata()"]
         PM --> MODEL[("model")]
-        SEED["data/*.csv, *.json<br/>or generate.js"]
+        SEED["data/*.csv, *.json<br/>or generate.ts"]
     end
 
     ST[("Store")]
@@ -14,11 +14,11 @@ flowchart LR
 
     subgraph Request["Per request - runs on every HTTP call"]
         direction LR
-        REQ(["HTTP request"]) --> APP["app.js (Express)"]
-        APP -- "POST .../$batch" --> BATCH["batch.js"] --> SVC
+        REQ(["HTTP request"]) --> APP["app.ts (Express)"]
+        APP -- "POST .../$batch" --> BATCH["batch.ts"] --> SVC
         APP -- "everything else" --> SVC["ODataService.dispatch()"]
-        SVC -- "$filter, $orderby, $expand..." --> QF["query.js + filter.js"]
-        SVC -- "parse/serialize" --> PROTO["protocol module<br/>(v2.js or v4.js)"]
+        SVC -- "$filter, $orderby, $expand..." --> QF["query.ts + filter.ts"]
+        SVC -- "parse/serialize" --> PROTO["protocol module<br/>(v2.ts or v4.ts)"]
         PROTO --> RES(["HTTP response"])
     end
 
@@ -26,11 +26,13 @@ flowchart LR
     SVC -- "read/write rows" --> ST
 ```
 
-One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.js` does the actual URL/key parsing, navigation, and CRUD, protocol-agnostically.
+One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.ts` does the actual URL/key parsing, navigation, and CRUD, protocol-agnostically.
+
+The sources are TypeScript, in `lib/`; `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
 ## Using it in code
 
-The package exports the Express app, so you can start it from a test or mount it in your own server:
+The package exports the Express app, with its TypeScript types, so you can start it from a test or mount it in your own server:
 
 ```js
 import { createApp } from "odata-prova";
