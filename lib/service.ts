@@ -11,16 +11,115 @@ import {
   specialFloat,
 } from "./types.ts";
 import { compileFilter } from "./filter.ts";
+import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
 import { HttpError, decodeUrl, splitTopLevel } from "./query.ts";
 import { draftMatch, draftAction, Drafts } from "./draft.ts";
+import type {
+  AnyNavigation,
+  EntitySet,
+  EntityType,
+  Key,
+  Literal,
+  Model,
+  ODataResponse,
+  ODataVersion,
+  Operation,
+  OperationView,
+  Property,
+  PropertyValue,
+  QueryNode,
+  ResponseOptions,
+  Row,
+  TypedElement,
+} from "./model.ts";
+import type { Store } from "./store.ts";
+
+// What a protocol module supplies (protocols/v2 and v4): how literals are read and keys
+// written, and what each kind of response looks like
+export interface Protocol extends LiteralSyntax {
+  version: ODataVersion;
+  // Sent with every response (DataServiceVersion, OData-Version)
+  headers: Record<string, string>;
+  keyLiteral(value: PropertyValue, prop: Property): string;
+  parseQueryOptions(query: Record<string, unknown>): QueryNode;
+  serviceDocument(svc: ODataService): ODataResponse;
+  collection(
+    svc: ODataService,
+    result: { rows: Row[]; count?: number },
+    setName: string,
+    type: EntityType,
+    node: QueryNode,
+    opts?: ResponseOptions,
+  ): ODataResponse;
+  entity(
+    svc: ODataService,
+    row: Row,
+    setName: string,
+    type: EntityType,
+    node: QueryNode,
+    status?: number,
+    extra?: Record<string, string>,
+    opts?: ResponseOptions,
+  ): ODataResponse;
+  // A single-valued navigation or operation result that is empty
+  nullEntity(): ODataResponse;
+  // A non-entity operation result
+  operationValue(
+    svc: ODataService,
+    op: Operation,
+    returnType: TypedElement,
+    value: PropertyValue,
+    opts?: ResponseOptions,
+  ): ODataResponse;
+  property(
+    svc: ODataService,
+    uri: string,
+    prop: Property,
+    value: PropertyValue,
+    opts?: ResponseOptions,
+  ): ODataResponse;
+  error(status: number, message: string): ODataResponse;
+}
+
+// What operations change, by operation name (config.json, see operationRules in app.js):
+// { ApprovePurchaseOrder: { set: { Status: "Approved" } } }
+export type Rules = Record<string, { set?: Record<string, unknown> }>;
+
+export interface ServiceOptions {
+  model: Model;
+  store: Store;
+  protocol: Protocol;
+  // Where the service is mounted: /odata/v4/MySrv
+  servicePath: string;
+  metadataXml: string;
+  log?: (message: string) => void;
+  rules?: Rules;
+}
+
+// The request headers dispatch reads (accept, prefer)
+export type RequestHeaders = Record<string, string | string[] | undefined>;
+
+// What an operation is called on: an entity (row) or a collection (rows)
+interface Binding {
+  setName: string;
+  type: EntityType;
+  row?: Row;
+  rows: Row[];
+}
+
+// A path segment: Name, or Name(key or parameters)
+interface Segment {
+  name: string;
+  keyText: string | undefined;
+}
 
 // Neutral value of a (property-shaped) type: the result of an operation that returns no
 // entity, since the mock can't compute the real one.
-function defaultValue(p, depth = 0) {
+function defaultValue(p: Property, depth = 0): PropertyValue {
   if (p.isCollection) return [];
   if (p.complexType) {
     if (depth > 3) return null; // a complex type that contains itself
-    const out = {};
+    const out: Record<string, PropertyValue> = {};
     for (const c of Object.values(p.complexType.properties))
       out[c.name] = defaultValue(c, depth + 1);
     return out;
@@ -57,8 +156,16 @@ function defaultValue(p, depth = 0) {
 }
 
 class ODataService {
-  // rules: what operations change, by operation name (see operationRules in app.js):
-  // { ApprovePurchaseOrder: { set: { Status: "Approved" } } }
+  model: Model;
+  store: Store;
+  protocol: Protocol;
+  servicePath: string;
+  metadataXml: string;
+  log: (message: string) => void;
+  rules: Rules;
+  operations: OperationView;
+  drafts: Drafts;
+
   constructor({
     model,
     store,
@@ -67,7 +174,7 @@ class ODataService {
     metadataXml,
     log = () => {},
     rules = {},
-  }) {
+  }: ServiceOptions) {
     this.model = model;
     this.store = store;
     this.protocol = protocol;
@@ -75,12 +182,12 @@ class ODataService {
     this.metadataXml = metadataXml;
     this.log = log;
     this.rules = rules;
-    // The operations as this protocol serves them (see operationViews in metadata.js)
+    // The operations as this protocol serves them (see operationViews in metadata.ts)
     this.operations = model.operationViews[protocol.version];
     this.drafts = new Drafts(this);
   }
 
-  entitySet(name) {
+  entitySet(name: string): { set: EntitySet; type: EntityType } {
     const es = this.model.entitySets[name];
     if (!es) throw new HttpError(404, `Entity set ${name} not found`);
     return { set: es, type: this.model.entityTypes[es.entityType] };
@@ -90,10 +197,10 @@ class ODataService {
 
   // "PurchaseOrderSet('4500000001')/Items(PurchaseOrderId='4500000001',ItemPosition='0001')/$count"
   // -> [{ name: "PurchaseOrderSet", keyText: "'4500000001'" }, { name: "Items", keyText: "..." }, { name: "$count" }]
-  parseSegments(resourcePath) {
-    const segments = [];
+  parseSegments(resourcePath: string): Segment[] {
+    const segments: Segment[] = [];
     const re = /([^/(]+)(?:\(((?:[^()']|'(?:[^']|'')*')*)\))?/g;
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = re.exec(resourcePath))) {
       segments.push({
         name: decodeUrl(m[1], decodeURIComponent),
@@ -104,9 +211,12 @@ class ODataService {
   }
 
   // "'4500000001'" or "PurchaseOrderId='4500000001',ItemPosition='0001'" -> { PurchaseOrderId, ItemPosition }
-  parseKey(keyText, entityType) {
+  parseKey(
+    keyText: string | undefined,
+    entityType: EntityType,
+  ): Key | undefined {
     if (keyText === undefined) return undefined;
-    const parts = [];
+    const parts: string[] = [];
     let cur = "",
       inStr = false;
     for (const c of keyText) {
@@ -120,7 +230,7 @@ class ODataService {
     }
     parts.push(cur);
 
-    const key = {};
+    const key: Key = {};
     if (
       parts.length === 1 &&
       !/^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[0].trim())
@@ -158,12 +268,12 @@ class ODataService {
     return key;
   }
 
-  keyOf(entityType, row) {
+  keyOf(entityType: EntityType, row: Row): Key {
     return Object.fromEntries(entityType.keys.map((k) => [k, row[k]]));
   }
 
-  entityUri(setName, entityType, row) {
-    const lit = (k) =>
+  entityUri(setName: string, entityType: EntityType, row: Row): string {
+    const lit = (k: string) =>
       this.protocol.keyLiteral(row[k], entityType.properties[k]);
     const keyText =
       entityType.keys.length === 1
@@ -174,17 +284,21 @@ class ODataService {
 
   // --- Navigation ------------------------------------------------------------------------
 
-  // The draft entity set of a draft entity type (draft.js keeps one per type)
-  setOf(entityType) {
+  // The draft entity set of a draft entity type (draft.ts keeps one per type)
+  setOf(entityType: EntityType): string | undefined {
     return Object.values(this.model.entitySets).find(
       (es) => es.draft && es.entityType === entityType.fullName,
     )?.name;
   }
 
-  related(row, entityType, nav) {
+  related(
+    row: Row,
+    entityType: EntityType,
+    nav: AnyNavigation,
+  ): { type: EntityType; rows: Row[] } {
     if (nav.draft === "admin")
       return this.drafts.adminRows(
-        this.setOf(entityType),
+        this.setOf(entityType)!, // a type with draft navigations has a draft set
         entityType,
         nav,
         row,
@@ -201,7 +315,12 @@ class ODataService {
   }
 
   // Related rows for an $expand node, with the node's own $filter/$orderby/$top/$skip applied.
-  expandRows(row, entityType, nav, node) {
+  expandRows(
+    row: Row,
+    entityType: EntityType,
+    nav: AnyNavigation,
+    node: QueryNode,
+  ): { rows: Row[]; count?: number; type: EntityType } {
     const { rows, type } = this.related(row, entityType, nav);
     const { results, count } = this.applyQuery(rows, type, {
       ...node,
@@ -213,9 +332,9 @@ class ODataService {
   // --- Query options ---------------------------------------------------------------------
 
   // The navigation called `name` (SiblingEntity and DraftAdministrativeData included, see
-  // draft.js), or undefined. One the metadata declares but the server had to switch off (see
-  // disableOnError in metadata.js) is a 501, with the reason.
-  navigation(type, name) {
+  // draft.ts), or undefined. One the metadata declares but the server had to switch off (see
+  // disableOnError in metadata.ts) is a 501, with the reason.
+  navigation(type: EntityType, name: string): AnyNavigation | undefined {
     const reason = type.disabledNavigations?.[name];
     if (reason)
       throw new HttpError(
@@ -229,9 +348,13 @@ class ODataService {
   // resolve.collection(row, path), for the lambda operators: a path ending in a collection
   // navigation (after single-valued ones) gives { rows, resolve } for the related rows and
   // their type; one ending in a collection-valued property gives { values, prop }.
-  resolver(entityType) {
+  resolver(entityType: EntityType): Resolve {
     // Follows the single-valued navigations in parts; null when one of them leads nowhere
-    const walk = (row, parts, path) => {
+    const walk = (
+      row: Row,
+      parts: string[],
+      path: string,
+    ): { row: Row; type: EntityType } | null => {
       let currentRow = row,
         currentType = entityType;
       for (const part of parts) {
@@ -245,7 +368,7 @@ class ODataService {
       }
       return { row: currentRow, type: currentType };
     };
-    const resolve = (row, path) => {
+    const resolve = (row: Row, path: string): Literal => {
       const parts = path.replace(/^\$it\//, "").split("/");
       const at = walk(row, parts.slice(0, -1), path);
       if (!at) return { value: null, type: null };
@@ -254,18 +377,23 @@ class ODataService {
         throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
       return { value: at.row[prop.name], type: prop.type };
     };
-    resolve.collection = (row, path) => {
+    resolve.collection = (row: Row, path: string): Collection => {
       const parts = path.replace(/^\$it\//, "").split("/");
       const last = parts[parts.length - 1];
       const at = walk(row, parts.slice(0, -1), path);
       const type = at?.type;
       const nav = type && this.navigation(type, last);
-      if (nav?.isCollection) {
-        const related = this.related(at.row, type, nav);
+      if (at && nav?.isCollection) {
+        const related = this.related(at.row, at.type, nav);
         return { rows: related.rows, resolve: this.resolver(related.type) };
       }
       const prop = type?.properties[last];
-      if (prop?.isCollection) return { values: at.row[prop.name] || [], prop };
+      // A collection-valued property holds an array
+      if (at && prop?.isCollection)
+        return {
+          values: (at.row[prop.name] as PropertyValue[] | null) || [],
+          prop,
+        };
       if (!at) return { values: [] };
       throw new HttpError(400, `${path} is not a collection: any/all need one`);
     };
@@ -273,16 +401,20 @@ class ODataService {
   }
 
   // opts: { filter, orderby, top, skip, count, search } (a parsed query or an $expand node).
-  applyQuery(rows, entityType, opts) {
+  applyQuery(
+    rows: Row[],
+    entityType: EntityType,
+    opts: QueryNode,
+  ): { results: Row[]; count?: number } {
     const resolve = this.resolver(entityType);
     let results = rows;
 
     if (opts.filter) {
-      let predicate;
+      let predicate: (row: Row, resolve: Resolve) => boolean;
       try {
         predicate = compileFilter(opts.filter, this.protocol);
       } catch (e) {
-        throw new HttpError(400, `Invalid $filter: ${e.message}`);
+        throw new HttpError(400, `Invalid $filter: ${(e as Error).message}`);
       }
       try {
         results = results.filter((row) => predicate(row, resolve));
@@ -290,7 +422,7 @@ class ODataService {
         // Errors found only while evaluating (unknown function, lambda over a
         // non-collection) are 400s too
         if (e instanceof HttpError) throw e;
-        throw new HttpError(400, `Invalid $filter: ${e.message}`);
+        throw new HttpError(400, `Invalid $filter: ${(e as Error).message}`);
       }
     }
 
@@ -323,8 +455,13 @@ class ODataService {
           let cmp = 0;
           if (ca === null && cb !== null) cmp = -1;
           else if (ca !== null && cb === null) cmp = 1;
-          else if (ca !== null && cb !== null)
-            cmp = ca < cb ? -1 : ca > cb ? 1 : 0;
+          else if (ca !== null && cb !== null) {
+            // Both from the same property (see toComparable): numbers, or strings, or
+            // booleans, which < orders alike
+            const a = ca as number,
+              b = cb as number;
+            cmp = a < b ? -1 : a > b ? 1 : 0;
+          }
           if (cmp !== 0) return desc ? -cmp : cmp;
         }
         return 0;
@@ -343,7 +480,12 @@ class ODataService {
   // and a property the client may not set (Core.Computed, sap:creatable or sap:updatable
   // "false") is left to the server. Only `names` are checked: an update can't fail on a
   // value it didn't touch.
-  checkRequired(entityType, row, names, creating) {
+  checkRequired(
+    entityType: EntityType,
+    row: Row,
+    names: string[],
+    creating: boolean,
+  ): void {
     const settable = creating ? "creatable" : "updatable";
     for (const name of names) {
       const p = entityType.properties[name];
@@ -357,8 +499,14 @@ class ODataService {
   // A deep insert is all or nothing: when a related entity fails (a duplicate key, an
   // invalid value), the rows this request already inserted are removed again.
   // draft: a draft may be incomplete until it is activated, so required values aren't checked.
-  create(setName, entityType, body, presetValues = {}, draft = false) {
-    const inserted = [];
+  create(
+    setName: string,
+    entityType: EntityType,
+    body: unknown,
+    presetValues: Row = {},
+    draft = false,
+  ): Row {
+    const inserted: { setName: string; type: EntityType; row: Row }[] = [];
     try {
       return this.insertTree(
         setName,
@@ -376,9 +524,17 @@ class ODataService {
   }
 
   // inserted: collects { setName, type, row } for every row inserted, for create's rollback
-  insertTree(setName, entityType, body, presetValues, inserted, draft) {
+  insertTree(
+    setName: string,
+    entityType: EntityType,
+    body: unknown,
+    presetValues: Row,
+    inserted: { setName: string; type: EntityType; row: Row }[],
+    draft: boolean,
+  ): Row {
     if (!body || typeof body !== "object")
       throw new HttpError(400, "Request body must be a JSON object");
+    const fields = body as Record<string, unknown>;
     const row = this.store.normalize(entityType, { ...body, ...presetValues });
     for (const k of entityType.keys) {
       if (row[k] === null)
@@ -397,12 +553,12 @@ class ODataService {
     // Deep insert: navigation payloads become related entities with the foreign key filled
     // in. V4 sends arrays, V2 either arrays or { results: [...] }.
     for (const nav of Object.values(entityType.navigations)) {
-      const payload = body[nav.name];
+      const payload = fields[nav.name];
       if (!payload) continue;
-      const children = nav.isCollection
+      const children: unknown[] = nav.isCollection
         ? Array.isArray(payload)
           ? payload
-          : payload.results || []
+          : (payload as { results?: unknown[] }).results || []
         : [payload];
       const target = this.entitySet(nav.targetSet);
       const fk = Object.fromEntries(
@@ -417,15 +573,23 @@ class ODataService {
   // PATCH/MERGE merge the given properties; PUT replaces the entity (absent properties
   // become null, or an empty collection). Key properties are immutable either way. Every value is converted before
   // any is written, so an invalid one leaves the entity as it was. draft: as for create.
-  update(setName, entityType, key, body, replace, draft = false) {
+  update(
+    setName: string,
+    entityType: EntityType,
+    key: Key,
+    body: unknown,
+    replace: boolean,
+    draft = false,
+  ): Row {
     const row = this.store.find(setName, entityType, key);
     if (!row) throw new HttpError(404, `${entityType.name} not found`);
     if (!body || typeof body !== "object")
       throw new HttpError(400, "Request body must be a JSON object");
-    const changes = {};
+    const fields = body as Record<string, unknown>;
+    const changes: Row = {};
     for (const p of Object.values(entityType.properties)) {
       if (entityType.keys.includes(p.name)) continue;
-      if (p.name in body) changes[p.name] = propToInternal(body[p.name], p);
+      if (p.name in fields) changes[p.name] = propToInternal(fields[p.name], p);
       else if (replace) changes[p.name] = propToInternal(undefined, p);
     }
     if (!draft)
@@ -435,7 +599,12 @@ class ODataService {
 
   // deleting: the rows this DELETE is already removing. Cascades can lead back to one (a
   // one-to-one link whose ends both cascade), which is then left to the delete in progress.
-  delete(setName, entityType, key, deleting = new Set()) {
+  delete(
+    setName: string,
+    entityType: EntityType,
+    key: Key,
+    deleting = new Set<Row>(),
+  ): void {
     const row = this.store.find(setName, entityType, key);
     if (!row) throw new HttpError(404, `${entityType.name} not found`);
     deleting.add(row);
@@ -451,35 +620,52 @@ class ODataService {
 
   // --- Operations ------------------------------------------------------------------------
 
-  operationImport(name) {
+  operationImport(name: string): Operation | undefined {
     return this.operations.imports[name];
   }
 
   // The operation `name` (qualified or not) bound to `type` or a base type, on an entity
   // or a collection.
-  boundOperation(name, type, onCollection) {
-    const types = new Set();
-    for (let t = type; t; t = this.model.entityTypes[t.baseType])
+  boundOperation(
+    name: string,
+    type: EntityType,
+    onCollection: boolean,
+  ): Operation | undefined {
+    const types = new Set<string>();
+    for (
+      let t: EntityType | undefined = type;
+      t;
+      t = t.baseType ? this.model.entityTypes[t.baseType] : undefined
+    )
       types.add(t.fullName);
+    // A bound operation has a binding parameter (see parseOperations)
     return this.operations.bound.find(
       (op) =>
         (op.fullName === name || op.name === name) &&
-        types.has(op.binding.elementType) &&
-        op.binding.isCollection === onCollection,
+        types.has(op.binding!.elementType) &&
+        op.binding!.isCollection === onCollection,
     );
   }
 
   // Parameters: V4 actions from the JSON body, V4 functions from the path (Fn(a=1,b='x')),
   // V2 from the query string (?a=1&b='x'). Missing ones are null.
-  operationParameters(op, paramText, body, query) {
-    const params = {};
+  operationParameters(
+    op: Operation,
+    paramText: string | undefined,
+    body: unknown,
+    query: Record<string, unknown>,
+  ): Record<string, PropertyValue> {
+    const params: Record<string, PropertyValue> = {};
     if (this.protocol.version === "4.0" && op.kind === "action") {
-      const input = body && typeof body === "object" ? body : {};
+      const input = (body && typeof body === "object" ? body : {}) as Record<
+        string,
+        unknown
+      >;
       for (const p of op.parameters)
         params[p.name] = propToInternal(input[p.name], p);
       return params;
     }
-    let raw = query;
+    let raw: Record<string, unknown> = query;
     if (this.protocol.version === "4.0") {
       raw = {};
       for (const part of splitTopLevel(paramText || "", ",")) {
@@ -490,7 +676,8 @@ class ODataService {
       }
     }
     for (const p of op.parameters) {
-      const text = raw[p.name];
+      // Text from the query string or the path (a repeated query parameter isn't supported)
+      const text = raw[p.name] as string | undefined;
       if (text === undefined) params[p.name] = null;
       else if (text.startsWith("@"))
         throw new HttpError(
@@ -511,7 +698,16 @@ class ODataService {
   // binding: { setName, type, row, rows } a bound operation was called on. A V2 import with
   // bindsTo gets its entity from the key parameters instead. Logs the call, applies the
   // model's rule for the operation if any, and answers per operationResult.
-  callOperation(method, op, binding, paramText, body, query, q, opts) {
+  callOperation(
+    method: string,
+    op: Operation,
+    binding: Binding | undefined,
+    paramText: string | undefined,
+    body: unknown,
+    query: Record<string, unknown>,
+    q: QueryNode,
+    opts: ResponseOptions,
+  ): ODataResponse {
     const expected = op.httpMethod || (op.kind === "action" ? "POST" : "GET");
     if (method !== expected)
       throw new HttpError(
@@ -535,8 +731,10 @@ class ODataService {
       ? ` on ${this.entityUri(binding.setName, binding.type, binding.row)}`
       : "";
     this.log(`${op.kind} ${op.name}${on} ${JSON.stringify(params)}`);
-    const draftKind = binding && draftAction(this.model, binding.setName, op);
-    if (draftKind) {
+    const draftKind = binding
+      ? draftAction(this.model, binding.setName, op)
+      : undefined;
+    if (binding && draftKind) {
       const row = this.drafts.action(draftKind, op, binding, params, body);
       return this.protocol.entity(
         this,
@@ -563,25 +761,31 @@ class ODataService {
   // returns the order); an entity type whose key the parameters carry -> that entity; any
   // other entity type, or a collection of one -> rows of its entity set, query options
   // applied; anything else -> defaultValue.
-  operationResult(op, binding, params, q, opts) {
+  operationResult(
+    op: Operation,
+    binding: Binding | undefined,
+    params: Record<string, PropertyValue>,
+    q: QueryNode,
+    opts: ResponseOptions,
+  ): ODataResponse {
     const rt = op.returnType;
     if (!rt) return { status: 204 };
     if (!rt.entityType)
       return this.protocol.operationValue(this, op, rt, defaultValue(rt), opts);
 
     const type = rt.entityType;
-    let setName, rows;
+    let setName: string, rows: Row[];
     if (binding && binding.type.fullName === type.fullName) {
       setName = binding.setName;
       rows = binding.row ? [binding.row] : binding.rows;
     } else {
-      setName =
+      const found =
         op.entitySet ||
         Object.values(this.model.entitySets).find(
           (es) => es.entityType === type.fullName,
         )?.name;
-      rows = setName ? this.store.rows(setName) : [];
-      setName ||= type.name; // no entity set of that type: only ever an empty result
+      rows = found ? this.store.rows(found) : [];
+      setName = found || type.name; // no entity set of that type: only ever an empty result
     }
     if (rt.isCollection) {
       const { results, count } = this.applyQuery(rows, type, q);
@@ -594,7 +798,7 @@ class ODataService {
         opts,
       );
     }
-    let row = rows[0];
+    let row: Row | undefined = rows[0];
     if (
       !binding &&
       type.keys.length &&
@@ -618,18 +822,30 @@ class ODataService {
 
   // --- Dispatch --------------------------------------------------------------------------
 
-  dispatch(method, path, query = {}, body, headers = {}) {
+  dispatch(
+    method: string,
+    path: string,
+    query: Record<string, unknown> = {},
+    body?: unknown,
+    headers: RequestHeaders = {},
+  ): ODataResponse {
     try {
       return this.handle(method, path, query, body, headers);
     } catch (e) {
       if (e instanceof HttpError)
         return this.protocol.error(e.status, e.message);
       console.error(e);
-      return this.protocol.error(500, e.message);
+      return this.protocol.error(500, (e as Error).message);
     }
   }
 
-  handle(method, path, query, body, headers) {
+  handle(
+    method: string,
+    path: string,
+    query: Record<string, unknown>,
+    body: unknown,
+    headers: RequestHeaders,
+  ): ODataResponse {
     if (!path.startsWith(this.servicePath))
       throw new HttpError(404, `Not found: ${path}`);
     const resourcePath = path
@@ -637,8 +853,8 @@ class ODataService {
       .replace(/^\/+/, "")
       .replace(/\/+$/, "");
     const protocol = this.protocol;
-    const opts = {
-      ieee754: /IEEE754Compatible=true/i.test(headers.accept || ""),
+    const opts: ResponseOptions = {
+      ieee754: /IEEE754Compatible=true/i.test(String(headers.accept || "")),
       prefer: String(headers.prefer || ""),
     };
     const wantsMinimal = /return=minimal/i.test(opts.prefer);
@@ -698,9 +914,12 @@ class ODataService {
     let { set, type } = this.entitySet(first);
     let setName = set.name;
     let rows = this.store.rows(setName);
-    let row = undefined; // defined when the current position is a single entity
-    let key = this.parseKey(segments[0].keyText, type);
-    let parentForCreate = undefined; // { row, type, nav } when POSTing to Parent(key)/Nav
+    let row: Row | undefined = undefined; // defined when the current position is a single entity
+    const key = this.parseKey(segments[0].keyText, type);
+    // When POSTing to Parent(key)/Nav
+    let parentForCreate:
+      { row: Row; type: EntityType; nav: AnyNavigation } | undefined =
+      undefined;
     if (key) {
       row = this.store.find(setName, type, key);
       if (!row) throw new HttpError(404, `${type.name} not found`);
@@ -765,9 +984,10 @@ class ODataService {
       type = related.type;
       rows = related.rows;
       row = undefined;
-      key = this.parseKey(seg.keyText, type);
-      if (key) {
-        row = rows.find((r) => this.store.matchesKey(type, r, key));
+      const segKey = this.parseKey(seg.keyText, type);
+      if (segKey) {
+        const segType = type;
+        row = rows.find((r) => this.store.matchesKey(segType, r, segKey));
         if (!row) throw new HttpError(404, `${type.name} not found`);
       } else if (!nav.isCollection) {
         row = rows[0];
@@ -804,12 +1024,10 @@ class ODataService {
           );
         }
         case "POST": {
-          const preset = parentForCreate
+          const parent = parentForCreate;
+          const preset: Row = parent
             ? Object.fromEntries(
-                parentForCreate.nav.join.map(([src, tgt]) => [
-                  tgt,
-                  parentForCreate.row[src],
-                ]),
+                parent.nav.join.map(([src, tgt]) => [tgt, parent.row[src]]),
               )
             : {};
           const created = this.model.entitySets[setName].draft
