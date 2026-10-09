@@ -7,7 +7,49 @@
 // Precedence goes or < and < not < comparison (eq/ne/gt/ge/lt/le/in) < add/sub < mul/div/mod
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
+import type { Literal, Property, PropertyValue, Row } from "./model.ts";
 import { toComparable, toMillis } from "./types.ts";
+
+// What a protocol module supplies: how its literals are spelled
+export interface LiteralSyntax {
+  typedLiteralPrefixes: Set<string>;
+  parseLiteral(text: string): Literal;
+  // V4 only: GUIDs, dates and times written without a prefix
+  matchBareLiteral?(text: string): (Literal & { length: number }) | undefined;
+}
+
+// A value while evaluating: a property's or a literal's, with its Edm type
+type Value = Literal;
+
+// Reads a property path off a row (the caller knows the entity type and how to follow a
+// navigation); .collection reads a path that ends in a collection, for the lambda operators
+export interface Resolve {
+  (row: Row, path: string): Value;
+  collection(row: Row, path: string): Collection;
+}
+
+// The related rows of a collection navigation, or the items of a collection-valued property
+export type Collection =
+  | { rows: Row[]; resolve: Resolve }
+  | { values: PropertyValue[]; prop?: Property };
+
+type Token =
+  | { kind: "(" | ")" | "," | ":" }
+  | ({ kind: "literal" } & Literal)
+  | { kind: "op"; value: string }
+  | { kind: "func"; value: string }
+  | { kind: "path"; value: string }
+  | { kind: "lambda"; path: string; value: string };
+
+type Node =
+  | { literal: unknown; type: string | null }
+  | { path: string }
+  | { op: string; left: Node; right: Node }
+  | { in: true; left: Node; list: Node[] }
+  | { not: true; expr: Node }
+  | { neg: true; expr: Node }
+  | { func: string; args: Node[] }
+  | { lambda: string; path: string; variable?: string; predicate?: Node };
 
 const KEYWORDS = new Set([
   "eq",
@@ -27,8 +69,8 @@ const KEYWORDS = new Set([
   "mod",
 ]);
 
-function tokenize(input, protocol) {
-  const tokens = [];
+function tokenize(input: string, protocol: LiteralSyntax): Token[] {
+  const tokens: Token[] = [];
   let i = 0;
   while (i < input.length) {
     const c = input[i];
@@ -131,33 +173,35 @@ function tokenize(input, protocol) {
 // (variable and predicate absent for Items/any()).
 // Nothing fancy, just plain objects.
 class Parser {
-  constructor(tokens) {
+  tokens: Token[];
+  pos: number;
+  constructor(tokens: Token[]) {
     this.tokens = tokens;
     this.pos = 0;
   }
-  peek() {
+  peek(): Token | undefined {
     return this.tokens[this.pos];
   }
-  next() {
+  next(): Token | undefined {
     return this.tokens[this.pos++];
   }
-  isOp(...values) {
+  isOp(...values: string[]): boolean {
     const t = this.peek();
-    return t && t.kind === "op" && values.includes(t.value);
+    return t !== undefined && t.kind === "op" && values.includes(t.value);
   }
-  expect(kind) {
+  expect<K extends Token["kind"]>(kind: K): Extract<Token, { kind: K }> {
     const t = this.next();
     if (!t || t.kind !== kind) throw new Error(`Expected ${kind} in $filter`);
-    return t;
+    return t as Extract<Token, { kind: K }>;
   }
 
-  parse() {
+  parse(): Node {
     const expr = this.parseOr();
     if (this.pos < this.tokens.length)
       throw new Error("Unexpected trailing input in $filter");
     return expr;
   }
-  parseOr() {
+  parseOr(): Node {
     let left = this.parseAnd();
     while (this.isOp("or")) {
       this.next();
@@ -165,7 +209,7 @@ class Parser {
     }
     return left;
   }
-  parseAnd() {
+  parseAnd(): Node {
     let left = this.parseNot();
     while (this.isOp("and")) {
       this.next();
@@ -173,23 +217,23 @@ class Parser {
     }
     return left;
   }
-  parseNot() {
+  parseNot(): Node {
     if (this.isOp("not")) {
       this.next();
       return { not: true, expr: this.parseNot() };
     }
     return this.parseComparison();
   }
-  parseComparison() {
-    let left = this.parseAdditive();
+  parseComparison(): Node {
+    let left: Node = this.parseAdditive();
     for (;;) {
       if (this.isOp("in")) {
         this.next();
         this.expect("(");
-        const list = [];
-        if (this.peek() && this.peek().kind !== ")") {
+        const list: Node[] = [];
+        if (this.peek() && this.peek()?.kind !== ")") {
           list.push(this.parseAdditive());
-          while (this.peek() && this.peek().kind === ",") {
+          while (this.peek() && this.peek()?.kind === ",") {
             this.next();
             list.push(this.parseAdditive());
           }
@@ -197,30 +241,30 @@ class Parser {
         this.expect(")");
         left = { in: true, left, list };
       } else if (this.isOp("eq", "ne", "gt", "ge", "lt", "le")) {
-        const op = this.next().value;
+        const op = this.expect("op").value;
         left = { op, left, right: this.parseAdditive() };
       } else {
         return left;
       }
     }
   }
-  parseAdditive() {
+  parseAdditive(): Node {
     let left = this.parseMultiplicative();
     while (this.isOp("add", "sub")) {
-      const op = this.next().value;
+      const op = this.expect("op").value;
       left = { op, left, right: this.parseMultiplicative() };
     }
     return left;
   }
-  parseMultiplicative() {
+  parseMultiplicative(): Node {
     let left = this.parseUnary();
     while (this.isOp("mul", "div", "mod")) {
-      const op = this.next().value;
+      const op = this.expect("op").value;
       left = { op, left, right: this.parseUnary() };
     }
     return left;
   }
-  parseUnary() {
+  parseUnary(): Node {
     const t = this.peek();
     if (t && t.kind === "op" && t.value === "sub") {
       this.next();
@@ -228,7 +272,7 @@ class Parser {
     }
     return this.parsePrimary();
   }
-  parsePrimary() {
+  parsePrimary(): Node {
     const t = this.next();
     if (!t) throw new Error("Unexpected end of $filter");
     if (t.kind === "(") {
@@ -256,10 +300,10 @@ class Parser {
     }
     if (t.kind === "func") {
       this.expect("(");
-      const args = [];
-      if (this.peek() && this.peek().kind !== ")") {
+      const args: Node[] = [];
+      if (this.peek() && this.peek()?.kind !== ")") {
         args.push(this.parseOr());
-        while (this.peek() && this.peek().kind === ",") {
+        while (this.peek() && this.peek()?.kind === ",") {
           this.next();
           args.push(this.parseOr());
         }
@@ -267,37 +311,39 @@ class Parser {
       this.expect(")");
       return { func: t.value, args };
     }
-    throw new Error(`Unexpected token in $filter: ${t.kind} ${t.value ?? ""}`);
+    throw new Error(
+      `Unexpected token in $filter: ${t.kind} ${"value" in t ? t.value : ""}`,
+    );
   }
 }
 
 // Checks the AST against one row. We don't know how to read a property off the row
 // ourselves - that's what `resolve(row, path)` is for, since only the caller knows the
 // entity type and how to "walk" a navigation property to get there.
-function evaluate(node, row, resolve) {
+function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   if ("literal" in node) return { value: node.literal, type: node.type };
   // Before node.path: lambda nodes also have a path (the collection)
-  if (node.lambda)
+  if ("lambda" in node)
     return { value: evaluateLambda(node, row, resolve), type: "Edm.Boolean" };
-  if (node.path) return resolve(row, node.path);
-  if (node.not)
+  if ("path" in node) return resolve(row, node.path);
+  if ("not" in node)
     return {
       value: !truthy(evaluate(node.expr, row, resolve)),
       type: "Edm.Boolean",
     };
-  if (node.neg)
+  if ("neg" in node)
     return {
       value: -num(evaluate(node.expr, row, resolve)),
       type: "Edm.Double",
     };
-  if (node.func)
+  if ("func" in node)
     return callFunction(
       node.func,
       node.args.map((a) => evaluate(a, row, resolve)),
     );
 
   const l = evaluate(node.left, row, resolve);
-  if (node.in) {
+  if ("in" in node) {
     return {
       value: node.list.some(
         (item) => compare(l, evaluate(item, row, resolve)) === 0,
@@ -348,59 +394,70 @@ function evaluate(node, row, resolve) {
 // any: pred holds for at least one item; all: for every item (true when there are none);
 // any(): there is an item. In pred, <variable>/... reads the item (the variable alone is the
 // item, in a primitive collection); $it/... and other paths read the outer entity.
-function evaluateLambda(node, row, resolve) {
+function evaluateLambda(
+  node: Extract<Node, { lambda: string }>,
+  row: Row,
+  resolve: Resolve,
+): boolean {
   const coll = resolve.collection(row, node.path);
-  const items = coll.rows || coll.values;
-  if (!node.variable) return items.length > 0;
+  const items: unknown[] = "rows" in coll ? coll.rows : coll.values;
+  const { variable, predicate } = node;
+  if (!variable || !predicate) return items.length > 0;
+  const prop = "prop" in coll ? coll.prop : undefined;
 
-  const split = (path) => {
+  const split = (path: string) => {
     const [head, ...rest] = path.split("/");
     return { head, rest: rest.join("/") };
   };
   // Value of a collection-valued property's item: the item, or a field of a complex item
-  const itemValue = (item, rest) => {
-    if (!rest) return { value: item, type: coll.prop?.elementType ?? null };
-    const field = coll.prop?.complexType?.properties[rest];
+  const itemValue = (item: unknown, rest: string): Value => {
+    if (!rest) return { value: item, type: prop?.elementType ?? null };
+    const field = prop?.complexType?.properties[rest];
     if (!field)
       throw new Error(`Unknown property ${node.variable}/${rest} in $filter`);
-    return { value: item?.[rest] ?? null, type: field.type };
+    const fields = item as Record<string, unknown> | null | undefined;
+    return { value: fields?.[rest] ?? null, type: field.type };
   };
-  const scoped = (item) => {
-    const inner = (_, path) => {
+  const scoped = (item: unknown): Resolve => {
+    const inner = (_: Row, path: string): Value => {
       const { head, rest } = split(path);
-      if (head === node.variable)
-        return coll.rows ? coll.resolve(item, rest) : itemValue(item, rest);
+      if (head === variable)
+        return "rows" in coll
+          ? coll.resolve(item as Row, rest)
+          : itemValue(item, rest);
       return resolve(row, head === "$it" ? rest : path);
     };
-    inner.collection = (_, path) => {
+    inner.collection = (_: Row, path: string): Collection => {
       const { head, rest } = split(path);
-      if (head === node.variable) {
-        if (!coll.rows)
+      if (head === variable) {
+        if (!("rows" in coll))
           throw new Error(`${path} is not a collection in $filter`);
-        return coll.resolve.collection(item, rest);
+        return coll.resolve.collection(item as Row, rest);
       }
       return resolve.collection(row, head === "$it" ? rest : path);
     };
     return inner;
   };
-  const holds = (item) => truthy(evaluate(node.predicate, item, scoped(item)));
+  // The item reaches its own fields through scoped(item), which ignores the row argument
+  const holds = (item: unknown) =>
+    truthy(evaluate(predicate, item as Row, scoped(item)));
   return node.lambda === "any" ? items.some(holds) : items.every(holds);
 }
 
-function truthy(v) {
+function truthy(v: Value): boolean {
   return v.value === true;
 }
-function num(v) {
+function num(v: Value): number {
   return Number(v.value);
 }
-function str(v) {
+function str(v: Value): string {
   return v.value === null || v.value === undefined ? "" : String(v.value);
 }
 
 // Whichever side is an actual property sets the type - that's what lets us compare
 // a plain string literal against a Decimal or DateTime property, or a bare V4 date against
 // a full timestamp, without the caller having to know or care.
-function compare(l, r) {
+function compare(l: Value, r: Value): number {
   const type = l.type && l.type !== "Edm.String" ? l.type : r.type;
   const a = toComparable(l.value, type);
   const b = toComparable(r.value, type);
@@ -411,13 +468,13 @@ function compare(l, r) {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
-function callFunction(name, args) {
-  const S = (i) => str(args[i]);
-  const N = (i) => num(args[i]);
-  const bool = (value) => ({ value, type: "Edm.Boolean" });
-  const string = (value) => ({ value, type: "Edm.String" });
-  const number = (value) => ({ value, type: "Edm.Int32" });
-  const date = (i) => new Date(toMillis(args[i].value));
+function callFunction(name: string, args: Value[]): Value {
+  const S = (i: number) => str(args[i]);
+  const N = (i: number) => num(args[i]);
+  const bool = (value: boolean): Value => ({ value, type: "Edm.Boolean" });
+  const string = (value: string): Value => ({ value, type: "Edm.String" });
+  const number = (value: number): Value => ({ value, type: "Edm.Int32" });
+  const date = (i: number) => new Date(toMillis(args[i].value as string));
   switch (name) {
     case "substringof":
       return bool(S(1).includes(S(0))); // V2 flipped the args: substringof(needle, haystack)
@@ -482,7 +539,10 @@ function callFunction(name, args) {
 // Caller (the protocol module) needs to give us parseLiteral(text) and a
 // typedLiteralPrefixes set; matchBareLiteral(text) -> { value, type, length } | undefined
 // is optional, only V4 needs it since V2 always types its literals explicitly.
-function compileFilter(text, protocol) {
+function compileFilter(
+  text: string,
+  protocol: LiteralSyntax,
+): (row: Row, resolve: Resolve) => boolean {
   const ast = new Parser(tokenize(text, protocol)).parse();
   return (row, resolve) => truthy(evaluate(ast, row, resolve));
 }
