@@ -2,7 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { start, get } from "./helpers.js";
+import { start, get } from "./helpers.ts";
 
 // The example models under examples/ must keep working: each loads, answers on every entity
 // set in both versions, and has data, from seed files or generated as the server does by

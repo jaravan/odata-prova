@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.js";
+import { start, get, send } from "./helpers.ts";
 
 // Product and ProductDetail share their key (ProductID) with no ReferentialConstraint: a
 // one-to-one link, joined key to key, whose ends both cascade on delete

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { PO_MODEL } from "./helpers.js";
+import { PO_MODEL } from "./helpers.ts";
 
 // In a container the server is PID 1; without a SIGTERM handler Docker and Kubernetes wait out
 // their grace period (10s / 30s) before killing it. It must exit by itself, and cleanly.

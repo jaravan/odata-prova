@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get } from "./helpers.js";
+import { start, get } from "./helpers.ts";
 
 describe("$select is checked against the type", () => {
   let s;

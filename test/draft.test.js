@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { start, get, send, batch, batchResponses } from "./helpers.js";
+import { start, get, send, batch, batchResponses } from "./helpers.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
 // A draft-enabled CAP service, metadata as cds compiles it (see the fixture's README): Books

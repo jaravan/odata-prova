@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, batch, batchResponses } from "./helpers.js";
+import { start, get, batch, batchResponses } from "./helpers.ts";
 
 // Requests the service never gets to see: they must still get an OData error, not Express's
 // HTML page with a stack trace.

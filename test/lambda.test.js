@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get } from "./helpers.js";
+import { start, get } from "./helpers.ts";
 
 const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
 

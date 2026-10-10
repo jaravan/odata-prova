@@ -39,6 +39,19 @@ export default defineConfig(
       "@typescript-eslint/no-unsafe-return": "off",
     },
   },
+  // The tests read response bodies as any (see Reply in test/helpers.ts): their
+  // assertions check the shape at runtime
+  {
+    files: ["test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+    },
+  },
   // The tests and this file are JavaScript, which tsc doesn't check: no type-aware rules
   {
     files: ["**/*.js"],

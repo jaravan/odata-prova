@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send, SALES_MODEL, ORDER, ITEM } from "./helpers.js";
+import { start, get, send, SALES_MODEL, ORDER, ITEM } from "./helpers.ts";
 import { toWire } from "../lib/protocols/v4.ts";
 
 const IEEE = {

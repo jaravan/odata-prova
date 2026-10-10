@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { start, get, send, batch, batchResponses } from "./helpers.js";
+import { start, get, send, batch, batchResponses } from "./helpers.ts";
 
 const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
 const GATEWAY_OPS = path.join(import.meta.dirname, "fixtures", "OperationsV2");

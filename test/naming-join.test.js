@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.js";
+import { start, get, send } from "./helpers.ts";
 
 // Order and Item both keyed by ID, and no ReferentialConstraint: the join comes from naming.
 // Items 1, 2, 3 belong to orders 1, 1, 2 (Item.OrderID). Matching the source's key names alone

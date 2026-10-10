@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PO_MODEL } from "./helpers.js";
+import { PO_MODEL } from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 
 // Seed files as spreadsheets export them: quoted fields, a byte order mark, CRLF

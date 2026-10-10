@@ -1,5 +1,10 @@
 import path from "node:path";
-import { createApp } from "../lib/app.ts";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp, type AppOptions } from "../lib/app.ts";
+
+// A response as the tests read it: the body is parsed JSON, or text
+type Reply = { status: number; headers: Headers; body: any };
 
 // A frozen copy of examples/PurchaseOrderSrv, so the example data can change without
 // breaking assertions on it
@@ -28,7 +33,7 @@ const ITEM = {
 // Starts the app on an ephemeral port with both protocols mounted under /odata/v2/T and
 // /odata/v4/T, and returns small fetch wrappers that parse the response for you. options go
 // to createApp (mockRows).
-async function start(modelDir = PO_MODEL, options = {}) {
+async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
   const built = createApp({
     modelDir,
     v2Path: "/odata/v2/T",
@@ -36,35 +41,43 @@ async function start(modelDir = PO_MODEL, options = {}) {
     log: () => {},
     ...options,
   });
-  const server = await new Promise((resolve) => {
+  const server = await new Promise<Server>((resolve) => {
     const s = built.app.listen(0, () => resolve(s));
   });
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     ...built,
     base,
     v2: `${base}/odata/v2/T`,
     v4: `${base}/odata/v4/T`,
     close: () =>
-      new Promise((resolve) => {
-        server.close(resolve);
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
         server.closeAllConnections();
       }),
   };
 }
 
-async function parse(res) {
+async function parse(res: Response): Promise<any> {
   const text = await res.text();
   const ct = res.headers.get("content-type") || "";
   return ct.includes("json") && text ? JSON.parse(text) : text;
 }
 
-async function get(url, headers = {}) {
+async function get(
+  url: string,
+  headers: Record<string, string> = {},
+): Promise<Reply> {
   const res = await fetch(url, { headers });
   return { status: res.status, headers: res.headers, body: await parse(res) };
 }
 
-async function send(method, url, body, headers = {}) {
+async function send(
+  method: string,
+  url: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<Reply> {
   const res = await fetch(url, {
     method,
     headers: { "content-type": "application/json", ...headers },
@@ -75,8 +88,17 @@ async function send(method, url, body, headers = {}) {
 
 // Builds a multipart $batch body. parts: array of either a request { method, url, body,
 // headers } or a changeset (array of requests).
-function batchBody(parts, boundary = "batch_test") {
-  const http = (r) => {
+type BatchRequest = {
+  method: string;
+  url: string;
+  body?: unknown;
+  headers?: Record<string, string>;
+  contentId?: string;
+};
+type BatchPart = BatchRequest | BatchRequest[];
+
+function batchBody(parts: BatchPart[], boundary = "batch_test") {
+  const http = (r: BatchRequest) => {
     const headers = Object.entries(r.headers || {})
       .map(([k, v]) => `${k}: ${v}\r\n`)
       .join("");
@@ -104,7 +126,7 @@ function batchBody(parts, boundary = "batch_test") {
   };
 }
 
-async function batch(serviceRoot, parts) {
+async function batch(serviceRoot: string, parts: BatchPart[]) {
   const { body, contentType } = batchBody(parts);
   const res = await fetch(`${serviceRoot}/$batch`, {
     method: "POST",
@@ -115,11 +137,12 @@ async function batch(serviceRoot, parts) {
 }
 
 // Pulls the "HTTP/1.1 <status>" lines and JSON bodies out of a multipart batch response.
-function batchResponses(text) {
-  const out = [];
+function batchResponses(text: string) {
+  const out: { status: number; headers: Record<string, string>; body: any }[] =
+    [];
   const re =
     /HTTP\/1\.1 (\d{3})[^\r\n]*\r\n([\s\S]*?)\r\n\r\n([\s\S]*?)(?=\r\n--|$)/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const headers = Object.fromEntries(
       m[2]
@@ -128,7 +151,7 @@ function batchResponses(text) {
         .map((l) => l.split(/:\s*/, 2))
         .map(([k, v]) => [k.toLowerCase(), v]),
     );
-    let body = m[3];
+    let body: any = m[3];
     try {
       body = JSON.parse(body);
     } catch {
@@ -139,6 +162,7 @@ function batchResponses(text) {
   return out;
 }
 
+export type { Reply, BatchPart };
 export {
   PO_MODEL,
   SALES_MODEL,

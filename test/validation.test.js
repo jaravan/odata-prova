@@ -11,7 +11,7 @@ import {
   PO_MODEL,
   ORDER as PO,
   ITEM,
-} from "./helpers.js";
+} from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 

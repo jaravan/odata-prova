@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, batch, batchResponses, ORDER, ITEM } from "./helpers.js";
+import { start, get, batch, batchResponses, ORDER, ITEM } from "./helpers.ts";
 
 describe("$batch", () => {
   let s;

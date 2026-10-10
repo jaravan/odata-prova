@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "../lib/app.ts";
 import { writeMockData } from "../lib/mock-data.ts";
-import { start, get, PO_MODEL } from "./helpers.js";
+import { start, get, PO_MODEL } from "./helpers.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const NORTHWIND_V4 = path.join(FIXTURES, "real", "NorthwindV4");

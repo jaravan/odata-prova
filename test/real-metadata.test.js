@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.js";
+import { start, get, send } from "./helpers.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
