@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { compileFilter } from "../lib/filter.ts";
+import { compileFilter, type LiteralSyntax } from "../lib/filter.ts";
+import type { Row } from "../lib/model.ts";
 import v2 from "../lib/protocols/v2.ts";
 import v4 from "../lib/protocols/v4.ts";
 
-const types = {
+const types: Record<string, string> = {
   Name: "Edm.String",
   Amount: "Edm.Decimal",
   Qty: "Edm.Int32",
@@ -24,11 +25,19 @@ const row = {
   Flag: true,
   Nothing: null,
 };
-const resolve = (r, path) => ({ value: r[path], type: types[path] });
-const run = (protocol, text) => compileFilter(text, protocol)(row, resolve);
+const resolve = (r: Row, path: string) => ({
+  value: r[path],
+  type: types[path],
+});
+// The row has no collections, so no lambda operators here (see lambda.test)
+resolve.collection = () => {
+  throw new Error("No collections in this row");
+};
+const run = (protocol: LiteralSyntax, text: string) =>
+  compileFilter(text, protocol)(row, resolve);
 
 describe("$filter grammar (shared)", () => {
-  const cases = [
+  const cases: [string, boolean][] = [
     ["Name eq 'Acme Ltd'", true],
     ["Name ne 'Acme Ltd'", false],
     ["Amount gt 10000", true],

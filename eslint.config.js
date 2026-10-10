@@ -40,10 +40,12 @@ export default defineConfig(
     },
   },
   // The tests read response bodies as any (see Reply in test/helpers.ts): their
-  // assertions check the shape at runtime
+  // assertions check the shape at runtime. describe() and it() return promises that
+  // node:test awaits itself.
   {
     files: ["test/**/*.ts"],
     rules: {
+      "@typescript-eslint/no-floating-promises": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
