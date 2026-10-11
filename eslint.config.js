@@ -54,7 +54,7 @@ export default defineConfig(
       "@typescript-eslint/no-unsafe-return": "off",
     },
   },
-  // The tests and this file are JavaScript, which tsc doesn't check: no type-aware rules
+  // This file is JavaScript, which tsc doesn't check: no type-aware rules
   {
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],

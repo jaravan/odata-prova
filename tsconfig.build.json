@@ -4,7 +4,6 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "allowJs": false,
     "rootDir": ".",
     "outDir": "dist",
     "declaration": true
