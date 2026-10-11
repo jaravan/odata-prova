@@ -22,7 +22,7 @@ describe(
       child.stdout.on("data", (d) => (output += d));
       child.stderr.on("data", (d) => (output += d));
 
-      const port = await new Promise((resolve, reject) => {
+      const port = await new Promise<string>((resolve, reject) => {
         const timer = setTimeout(
           () => reject(new Error(`server did not start:\n${output}`)),
           10000,
@@ -42,7 +42,9 @@ describe(
 
       const started = Date.now();
       child.kill("SIGTERM");
-      const code = await new Promise((resolve) => child.on("exit", resolve));
+      const code = await new Promise<number | null>((resolve) =>
+        child.on("exit", resolve),
+      );
 
       assert.equal(code, 0, output);
       assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
