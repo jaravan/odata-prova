@@ -1,10 +1,20 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send, ORDER, ITEM, PO_MODEL } from "./helpers.ts";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import {
+  start,
+  get,
+  send,
+  ORDER,
+  ITEM,
+  PO_MODEL,
+  type TestServer,
+} from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 
 describe("both protocols share one store", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
@@ -67,10 +77,10 @@ describe("both protocols share one store", () => {
       log: () => {},
     });
     assert.equal(services.length, 1);
-    const server = await new Promise((resolve) => {
+    const server = await new Promise<Server>((resolve) => {
       const x = app.listen(0, () => resolve(x));
     });
-    const base = `http://127.0.0.1:${server.address().port}`;
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     assert.equal(
       (await get(`${base}/only/v4/PurchaseOrderSet/$count`)).status,
       200,
@@ -79,8 +89,8 @@ describe("both protocols share one store", () => {
       (await get(`${base}/odata/v2/PurchaseOrderSrv/PurchaseOrderSet`)).status,
       404,
     );
-    await new Promise((resolve) => {
-      server.close(resolve);
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
       server.closeAllConnections();
     });
   });
