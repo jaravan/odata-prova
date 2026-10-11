@@ -1,12 +1,12 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 
 // Product and ProductDetail share their key (ProductID) with no ReferentialConstraint: a
 // one-to-one link, joined key to key, whose ends both cascade on delete
 describe("cascading delete over a one-to-one link", () => {
-  let s;
+  let s: TestServer;
   before(
     async () =>
       (s = await start(path.join(import.meta.dirname, "fixtures", "OneToOne"))),
@@ -22,11 +22,15 @@ describe("cascading delete over a one-to-one link", () => {
   it("deletes each row once instead of cascading back and forth", async () => {
     assert.equal((await send("DELETE", `${s.v4}/Products(1)`)).status, 204);
     assert.deepEqual(
-      (await get(`${s.v4}/Products`)).body.value.map((p) => p.ProductID),
+      (await get(`${s.v4}/Products`)).body.value.map(
+        (p: { ProductID: number }) => p.ProductID,
+      ),
       [2],
     );
     assert.deepEqual(
-      (await get(`${s.v4}/ProductDetails`)).body.value.map((d) => d.ProductID),
+      (await get(`${s.v4}/ProductDetails`)).body.value.map(
+        (d: { ProductID: number }) => d.ProductID,
+      ),
       [2],
     );
   });
