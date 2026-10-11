@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { start, get, send, batch, batchResponses } from "./helpers.ts";
+import {
+  start,
+  get,
+  send,
+  batch,
+  batchResponses,
+  type TestServer,
+} from "./helpers.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
 // A draft-enabled CAP service, metadata as cds compiles it (see the fixture's README): Books
@@ -11,6 +18,15 @@ import { parseMetadata } from "../lib/metadata.ts";
 // draft-enabled. The seed files have no draft columns.
 const DRAFT_MODEL = path.join(import.meta.dirname, "fixtures", "DraftSrv");
 const XML = fs.readFileSync(path.join(DRAFT_MODEL, "metadata.xml"), "utf8");
+
+// What the tests read of a Books or Chapters row
+type DraftRow = {
+  title: string;
+  IsActiveEntity: boolean;
+  HasActiveEntity: boolean;
+  HasDraftEntity: boolean;
+  chapters: DraftRow[];
+};
 const BOOK = "b0000000-0000-4000-8000-000000000001";
 const book = (active = true) => `Books(ID=${BOOK},IsActiveEntity=${active})`;
 
@@ -26,7 +42,7 @@ describe("draft: model", () => {
         new: undefined,
       },
     });
-    assert.equal(model.entitySets.Chapters.draft.root, false);
+    assert.equal(model.entitySets.Chapters.draft?.root, false);
     assert.equal(model.entitySets.Authors.draft, undefined);
     // CAP's DraftMessages is a collection, which V2 has no place for
     assert.ok(
@@ -49,7 +65,7 @@ describe("draft: model", () => {
     );
     const model = parseMetadata(inline);
     assert.equal(
-      model.entitySets.Drafts.draft.actions.edit,
+      model.entitySets.Drafts.draft?.actions.edit,
       "CatalogService.draftEdit",
     );
   });
@@ -85,7 +101,7 @@ describe("draft: model", () => {
     assert.deepEqual(books.navigations.author.join, [["author_ID", "ID"]]);
     // The draft navigations stay out of what the emitters and the generator see
     assert.equal(books.navigations.SiblingEntity, undefined);
-    assert.deepEqual(Object.keys(books.draftNavigations), [
+    assert.deepEqual(Object.keys(books.draftNavigations ?? {}), [
       "DraftAdministrativeData",
       "SiblingEntity",
     ]);
@@ -93,7 +109,7 @@ describe("draft: model", () => {
 });
 
 describe("draft: reading active entities (V4)", () => {
-  let s;
+  let s: TestServer;
   before(async () => (s = await start(DRAFT_MODEL)));
   after(() => s.close());
 
@@ -130,7 +146,7 @@ describe("draft: reading active entities (V4)", () => {
     );
     assert.equal(r.status, 200);
     assert.deepEqual(
-      r.body.chapters.map((c) => c.title),
+      r.body.chapters.map((c: DraftRow) => c.title),
       ["Chapter I", "Chapter II"],
     );
     assert.equal(r.body.author.name, "Emily Brontë");
@@ -161,7 +177,7 @@ describe("draft: reading active entities (V4)", () => {
     try {
       const r = await get(`${s.v4}/${book()}/chapters?$select=title`);
       assert.deepEqual(
-        r.body.value.map((c) => c.title),
+        r.body.value.map((c: DraftRow) => c.title),
         ["Chapter I", "Chapter II"],
       );
       const active = await get(
@@ -193,19 +209,18 @@ describe("draft: reading active entities (V4)", () => {
 });
 
 describe("draft: generated rows", () => {
-  let s;
+  let s: TestServer, dir: string;
   before(async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-"));
     fs.copyFileSync(
       path.join(DRAFT_MODEL, "metadata.xml"),
       path.join(dir, "metadata.xml"),
     );
     s = await start(dir, { mockRows: 5 });
-    s.dir = dir;
   });
   after(async () => {
     await s.close();
-    fs.rmSync(s.dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it("are active entities, and the compositions join", async () => {
@@ -216,17 +231,17 @@ describe("draft: generated rows", () => {
       assert.equal(b.HasDraftEntity, false);
       for (const c of b.chapters) assert.equal(c.IsActiveEntity, true);
     }
-    assert.ok(r.body.value.some((b) => b.chapters.length > 0));
+    assert.ok(r.body.value.some((b: DraftRow) => b.chapters.length > 0));
   });
 });
 
 // The requests Fiori Elements V4 sends for Edit, changes, Save and Discard
-const ACTION = (name) => `CatalogService.${name}`;
+const ACTION = (name: string) => `CatalogService.${name}`;
 const LIST_FILTER =
   "$filter=(IsActiveEntity eq false or SiblingEntity/IsActiveEntity eq null)";
 
 describe("draft: edit, change and activate (V4)", () => {
-  let s, newChapter;
+  let s: TestServer, newChapter: string;
   before(async () => (s = await start(DRAFT_MODEL)));
   after(() => s.close());
 
@@ -260,7 +275,7 @@ describe("draft: edit, change and activate (V4)", () => {
       )}/chapters?$select=title,IsActiveEntity,HasActiveEntity`,
     );
     assert.deepEqual(
-      chapters.body.value.map((c) => [
+      chapters.body.value.map((c: DraftRow) => [
         c.title,
         c.IsActiveEntity,
         c.HasActiveEntity,
@@ -290,7 +305,7 @@ describe("draft: edit, change and activate (V4)", () => {
       `${s.v4}/Books?${LIST_FILTER}&$select=title,IsActiveEntity&$orderby=title`,
     );
     assert.deepEqual(
-      list.body.value.map((b) => [b.title, b.IsActiveEntity]),
+      list.body.value.map((b: DraftRow) => [b.title, b.IsActiveEntity]),
       [
         ["Jane Eyre", true],
         ["Wuthering Heights", false],
@@ -358,7 +373,7 @@ describe("draft: edit, change and activate (V4)", () => {
       `${s.v4}/${book(false)}/chapters?$select=title&$orderby=title`,
     );
     assert.deepEqual(
-      chapters.body.value.map((c) => c.title),
+      chapters.body.value.map((c: DraftRow) => c.title),
       ["Chapter I", "Chapter III"],
     );
   });
@@ -386,7 +401,7 @@ describe("draft: edit, change and activate (V4)", () => {
     assert.equal(r.body.HasDraftEntity, false);
     assert.equal(r.body.title, "Wuthering Heights (2nd ed.)");
     assert.deepEqual(
-      r.body.chapters.map((c) => c.title),
+      r.body.chapters.map((c: DraftRow) => c.title),
       ["Chapter I", "Chapter III"],
     );
     assert.equal(r.body.chapters[1].ID, newChapter);
@@ -411,7 +426,9 @@ describe("draft: edit, change and activate (V4)", () => {
       }/${book()}?$expand=DraftAdministrativeData,chapters($select=HasDraftEntity)`,
     );
     assert.equal(active.body.DraftAdministrativeData, null);
-    assert.ok(active.body.chapters.every((c) => c.HasDraftEntity === false));
+    assert.ok(
+      active.body.chapters.every((c: DraftRow) => c.HasDraftEntity === false),
+    );
     assert.equal(
       (await send("POST", `${s.v4}/${book()}/${ACTION("draftActivate")}`, {}))
         .status,
@@ -421,7 +438,7 @@ describe("draft: edit, change and activate (V4)", () => {
 });
 
 describe("draft: discard and delete (V4)", () => {
-  let s;
+  let s: TestServer;
   before(async () => (s = await start(DRAFT_MODEL)));
   after(() => s.close());
 
@@ -483,7 +500,7 @@ describe("draft: discard and delete (V4)", () => {
 });
 
 describe("draft: through $batch and V2", () => {
-  let s;
+  let s: TestServer;
   before(async () => (s = await start(DRAFT_MODEL)));
   after(() => s.close());
 
@@ -532,7 +549,7 @@ describe("draft: through $batch and V2", () => {
 });
 
 describe("draft: creating a new entity (V4)", () => {
-  let s, id;
+  let s: TestServer, id: string;
   before(async () => (s = await start(DRAFT_MODEL)));
   after(() => s.close());
 
@@ -546,7 +563,7 @@ describe("draft: creating a new entity (V4)", () => {
     assert.ok(
       r.headers
         .get("location")
-        .endsWith(`Books(ID=${id},IsActiveEntity=false)`),
+        ?.endsWith(`Books(ID=${id},IsActiveEntity=false)`),
     );
     const admin = await get(
       `${s.v4}/Books(ID=${id},IsActiveEntity=false)/DraftAdministrativeData`,
@@ -634,7 +651,7 @@ describe("draft: creating a new entity (V4)", () => {
 });
 
 describe("draft: NewAction (V4)", () => {
-  let s, dir;
+  let s: TestServer, dir: string;
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-new-"));
     fs.writeFileSync(
@@ -679,13 +696,13 @@ const travel = (active = true) =>
 const JSON_ACCEPT = { accept: "application/json" };
 
 describe("draft: V2 metadata (RAP)", () => {
-  let s;
+  let s: TestServer;
   before(async () => (s = await start(DRAFT_V2_MODEL)));
   after(() => s.close());
 
   it("reads the draft annotations and resolves the draft navigations", () => {
-    assert.equal(s.model.entitySets.Travel.draft.root, true);
-    assert.equal(s.model.entitySets.Booking.draft.root, false);
+    assert.equal(s.model.entitySets.Travel.draft?.root, true);
+    assert.equal(s.model.entitySets.Booking.draft?.root, false);
     assert.deepEqual(s.model.warnings, []);
   });
 
