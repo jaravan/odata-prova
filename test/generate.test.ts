@@ -5,12 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "../lib/app.ts";
 import { writeMockData } from "../lib/mock-data.ts";
-import { start, get, PO_MODEL } from "./helpers.ts";
+import { start, get, PO_MODEL, type TestServer } from "./helpers.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const NORTHWIND_V4 = path.join(FIXTURES, "real", "NorthwindV4");
 
-function load(modelDir, mockRows) {
+function load(modelDir: string, mockRows?: number) {
   return createApp({
     modelDir,
     v2Path: "/v2",
@@ -21,7 +21,7 @@ function load(modelDir, mockRows) {
 }
 
 // A copy of a model in a temporary folder, with only the given seed files
-function modelCopy(from, seedFiles = []) {
+function modelCopy(from: string, seedFiles: string[] = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-"));
   fs.copyFileSync(
     path.join(from, "metadata.xml"),
@@ -74,29 +74,35 @@ describe("mock data", () => {
           `${dir} ${set}: duplicate keys`,
         );
         for (const row of store.rows(set)) {
+          // The facets are strings, as in the XML (MaxLength can be "max")
           for (const p of Object.values(type.properties)) {
             const v = row[p.name];
-            if (p.maxLength > 0 && typeof v === "string")
+            if (Number(p.maxLength) > 0 && typeof v === "string")
               assert.ok(
-                v.length <= p.maxLength,
+                v.length <= Number(p.maxLength),
                 `${dir} ${set}.${p.name}: '${v}' over MaxLength ${p.maxLength}`,
               );
-            if (p.type === "Edm.Decimal" && /^\d+$/.test(p.scale) && v !== null)
+            // A decimal is a string in the store
+            if (
+              p.type === "Edm.Decimal" &&
+              /^\d+$/.test(p.scale ?? "") &&
+              v !== null
+            )
               assert.match(
-                v,
+                v as string,
                 new RegExp(
-                  `^-?\\d+${p.scale > 0 ? `\\.\\d{${p.scale}}` : ""}$`,
+                  `^-?\\d+${Number(p.scale) > 0 ? `\\.\\d{${p.scale}}` : ""}$`,
                 ),
                 `${dir} ${set}.${p.name}`,
               );
             if (
               p.type === "Edm.Decimal" &&
-              /^\d+$/.test(p.precision) &&
+              /^\d+$/.test(p.precision ?? "") &&
               v !== null
             )
               assert.ok(
-                v.replace(/\D/g, "").replace(/^0+(?=\d)/, "").length <=
-                  p.precision,
+                (v as string).replace(/\D/g, "").replace(/^0+(?=\d)/, "")
+                  .length <= Number(p.precision),
                 `${dir} ${set}.${p.name}: ${v}`,
               );
           }
@@ -108,14 +114,14 @@ describe("mock data", () => {
   it("picks values that fit the property's name", () => {
     const { store } = load(path.join(FIXTURES, "cap"), 5);
     for (const row of store.rows("PurchaseOrderSet")) {
-      assert.match(row.Currency, /^[A-Z]{3}$/);
-      assert.match(row.OrderDate, /^2025-\d{2}-\d{2}$/);
+      assert.match(row.Currency as string, /^[A-Z]{3}$/);
+      assert.match(row.OrderDate as string, /^2025-\d{2}-\d{2}$/);
     }
   });
 });
 
 describe("mock data: foreign keys point at real rows", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start(NORTHWIND_V4, { mockRows: 10 });
   });
@@ -136,7 +142,9 @@ describe("mock data: foreign keys point at real rows", () => {
   it("to children, which add up to all the rows of the child set", async () => {
     const orders = (await get(`${s.v4}/Orders?$expand=Order_Details`)).body
       .value;
-    const items = orders.flatMap((o) => o.Order_Details);
+    const items = orders.flatMap(
+      (o: { Order_Details: unknown[] }) => o.Order_Details,
+    );
     assert.equal(items.length, s.store.rows("Order_Details").length);
     for (const o of orders)
       for (const item of o.Order_Details) assert.equal(item.OrderID, o.OrderID);
@@ -144,7 +152,7 @@ describe("mock data: foreign keys point at real rows", () => {
 });
 
 describe("mock data: children of seeded parents", () => {
-  let s;
+  let s: TestServer;
   const dir = modelCopy(PO_MODEL, ["PurchaseOrderSet.csv"]);
   before(async () => {
     s = await start(dir, { mockRows: 30 });
@@ -160,10 +168,12 @@ describe("mock data: children of seeded parents", () => {
     );
     const items = s.store.rows("PurchaseOrderItemSet");
     assert.equal(items.length, 30);
-    const positions = {};
+    // Each order's item positions
+    const positions: Record<string, number[]> = {};
     for (const item of items) {
-      assert.ok(orders.has(item.PurchaseOrderId), item.PurchaseOrderId);
-      (positions[item.PurchaseOrderId] ||= []).push(Number(item.ItemPosition));
+      const order = String(item.PurchaseOrderId);
+      assert.ok(orders.has(item.PurchaseOrderId), order);
+      (positions[order] ||= []).push(Number(item.ItemPosition));
     }
     for (const list of Object.values(positions))
       assert.deepEqual(
@@ -174,14 +184,16 @@ describe("mock data: children of seeded parents", () => {
 });
 
 describe("mock-data.js", () => {
-  for (const [label, from, seeds] of [
+  // label, model folder, seed files to copy
+  const cases: [string, string, string[]][] = [
     ["CSV", PO_MODEL, ["PurchaseOrderSet.csv"]],
     [
       "JSON, for complex values",
       path.join(FIXTURES, "real", "TripPin"),
       ["People.json"],
     ],
-  ]) {
+  ];
+  for (const [label, from, seeds] of cases) {
     it(`writes files (${label}) that load back as the same data`, () => {
       const dir = modelCopy(from, seeds);
       try {
