@@ -11,12 +11,13 @@ import {
   PO_MODEL,
   ORDER as PO,
   ITEM,
+  type TestServer,
 } from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
 // A copy of a model folder with its metadata.xml edited, removed again by the returned cleanup
-function editedModel(modelDir, edit) {
+function editedModel(modelDir: string, edit: (xml: string) => string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "model-"));
   fs.cpSync(modelDir, dir, { recursive: true });
   const file = path.join(dir, "metadata.xml");
@@ -31,7 +32,7 @@ const ORDER = "Orders(11111111-1111-1111-1111-111111111111)";
 
 // A value that doesn't fit its property's type is a 400, not a 500 and not stored as is
 describe("values are checked against their Edm type", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start(SALES_MODEL);
   });
@@ -106,7 +107,7 @@ describe("values are checked against their Edm type", () => {
 
 // Every non-key property of PO_MODEL's order and item is Nullable="false"
 describe('Nullable="false" properties are required', () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
@@ -251,7 +252,7 @@ describe("Core.Computed properties aren't required", () => {
 });
 
 describe("a seed file with an invalid value", () => {
-  let dir;
+  let dir: string;
   before(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "seed-"));
     fs.copyFileSync(
@@ -270,6 +271,8 @@ describe("a seed file with an invalid value", () => {
     assert.throws(
       () => createApp({ modelDir: dir, v4Path: "/v4", log: () => {} }),
       (err) =>
+        err instanceof Error &&
+        "code" in err &&
         err.code === "ESEED" &&
         /Orders\.csv: row 3: Invalid Edm.Decimal value: 12,50/.test(
           err.message,
@@ -280,7 +283,7 @@ describe("a seed file with an invalid value", () => {
 
 // A draft may lack required values, its active entity may not
 describe("draftActivate checks the required values of the whole draft", () => {
-  let s, drafts;
+  let s: TestServer, drafts: ReturnType<typeof editedModel>;
   before(async () => {
     drafts = editedModel(
       path.join(import.meta.dirname, "fixtures", "DraftSrv"),
@@ -294,7 +297,7 @@ describe("draftActivate checks the required values of the whole draft", () => {
     drafts.cleanup();
   });
 
-  const activate = (id) =>
+  const activate = (id: string) =>
     send(
       "POST",
       `${s.v4}/Books(ID=${id},IsActiveEntity=false)/CatalogService.draftActivate`,
