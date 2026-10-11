@@ -2,7 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { start, get } from "./helpers.ts";
+import { start, get, type TestServer } from "./helpers.ts";
 
 // The example models under examples/ must keep working: each loads, answers on every entity
 // set in both versions, and has data, from seed files or generated as the server does by
@@ -19,7 +19,7 @@ const names = fs
 
 for (const name of names) {
   describe(`examples/${name}`, () => {
-    let s;
+    let s: TestServer;
     before(async () => {
       s = await start(path.join(MODELS, name), { mockRows: 20 });
     });
@@ -41,7 +41,7 @@ for (const name of names) {
 }
 
 describe("examples/Northwind links products to categories and suppliers", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start(path.join(MODELS, "Northwind"));
   });
