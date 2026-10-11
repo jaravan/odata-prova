@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.ts";
+import type { Model } from "../lib/model.ts";
 import { PO_MODEL, SALES_MODEL } from "./helpers.ts";
 
 const v2Xml = fs.readFileSync(path.join(PO_MODEL, "metadata.xml"), "utf8");
 const v4Xml = fs.readFileSync(path.join(SALES_MODEL, "metadata.xml"), "utf8");
 
 // The parts of a model that must survive a round trip through the other flavour.
-function shape(model, { withCascade = true, withV2Type = true } = {}) {
-  const types = {};
+function shape(model: Model, { withCascade = true, withV2Type = true } = {}) {
+  const types: Record<string, unknown> = {};
   for (const et of Object.values(model.entityTypes)) {
     types[et.fullName] = {
       keys: et.keys,
