@@ -1,11 +1,21 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send, batch, batchResponses } from "./helpers.ts";
+import {
+  start,
+  get,
+  send,
+  batch,
+  batchResponses,
+  type TestServer,
+} from "./helpers.ts";
+
+// A row of Ms: V is a number, or INF, -INF or NaN as a string
+type M = { V: number | string };
 
 // Edm.Double values INF, -INF and NaN: JSON has no such numbers, so OData spells them as strings
 describe("INF, -INF and NaN", () => {
-  let s;
+  let s: TestServer;
   before(
     async () =>
       (s = await start(
@@ -15,7 +25,9 @@ describe("INF, -INF and NaN", () => {
   after(() => s.close());
 
   const values = async () =>
-    (await get(`${s.v4}/Ms?$select=V&$orderby=ID`)).body.value.map((m) => m.V);
+    (await get(`${s.v4}/Ms?$select=V&$orderby=ID`)).body.value.map(
+      (m: M) => m.V,
+    );
 
   it("are written as strings on V4 and V2", async () => {
     assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
@@ -23,7 +35,7 @@ describe("INF, -INF and NaN", () => {
       accept: "application/json",
     });
     assert.deepEqual(
-      v2.body.d.results.map((m) => m.V),
+      v2.body.d.results.map((m: M) => m.V),
       ["INF", "-INF", "NaN", 1.5],
     );
   });
