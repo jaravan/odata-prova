@@ -1,9 +1,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send, ORDER, ITEM } from "./helpers.ts";
+import { start, get, send, ORDER, ITEM, type TestServer } from "./helpers.ts";
 
 describe("OData V2 protocol", () => {
-  let s, v2;
+  let s: TestServer, v2: string;
   before(async () => {
     s = await start();
     v2 = s.v2;
@@ -19,7 +19,7 @@ describe("OData V2 protocol", () => {
       "PurchaseOrderItemSet",
     ]);
     const md = await get(`${v2}/$metadata`);
-    assert.match(md.headers.get("content-type"), /application\/xml/);
+    assert.match(md.headers.get("content-type") ?? "", /application\/xml/);
     assert.match(md.body, /m:DataServiceVersion="2.0"/);
     assert.match(md.body, /<Association Name="PurchaseOrder_Items">/); // the original file, verbatim
   });
@@ -189,7 +189,8 @@ describe("OData V2 protocol", () => {
   });
 
   it("HEAD is answered like GET, without a body (UI5 uses it for the CSRF token)", async () => {
-    const head = (url, headers) => fetch(url, { method: "HEAD", headers });
+    const head = (url: string, headers?: Record<string, string>) =>
+      fetch(url, { method: "HEAD", headers });
     for (const root of [`${v2}/`, `${s.v4}/`]) {
       const r = await head(root, { "x-csrf-token": "Fetch" });
       assert.equal(r.status, 200);
