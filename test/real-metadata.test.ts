@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
@@ -20,7 +20,7 @@ const SERVICES = [
 
 // Every non-Edm type a $metadata document uses must be defined in it, and every entity type
 // needs a key; otherwise clients such as UI5 reject the document.
-function assertSelfConsistent(xml, label) {
+function assertSelfConsistent(xml: string, label: string) {
   const defined = new Set(
     [
       ...xml.matchAll(/<(?:ComplexType|EnumType|EntityType) Name="([^"]+)"/g),
@@ -31,7 +31,7 @@ function assertSelfConsistent(xml, label) {
     .filter((t) => !t.startsWith("Edm."));
   for (const type of used)
     assert.ok(
-      defined.has(type.split(".").pop()),
+      defined.has(type.split(".").pop()!),
       `${label}: ${type} is used but not defined`,
     );
   assert.doesNotMatch(
@@ -43,7 +43,7 @@ function assertSelfConsistent(xml, label) {
 
 for (const { dir, disabledNavigations } of SERVICES) {
   describe(`real metadata: ${dir}`, () => {
-    let s;
+    let s: TestServer;
     before(async () => {
       s = await start(path.join(FIXTURES, dir));
     });
@@ -77,7 +77,7 @@ for (const { dir, disabledNavigations } of SERVICES) {
 }
 
 describe("complex types, enums and collections on the wire", () => {
-  let trip, gw;
+  let trip: TestServer, gw: TestServer;
   before(async () => {
     trip = await start(path.join(FIXTURES, "real/TripPin"));
     gw = await start(path.join(FIXTURES, "GatewaySrv"));
