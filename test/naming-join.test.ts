@@ -1,14 +1,14 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 
 // Order and Item both keyed by ID, and no ReferentialConstraint: the join comes from naming.
 // Items 1, 2, 3 belong to orders 1, 1, 2 (Item.OrderID). Matching the source's key names alone
 // would join Order.ID to Item.ID; the convention <Source>ID finds the real foreign key.
 for (const version of ["V2", "V4"]) {
   describe(`join by naming, both types keyed by ID (${version} metadata)`, () => {
-    let s;
+    let s: TestServer;
     before(
       async () =>
         (s = await start(
@@ -18,7 +18,7 @@ for (const version of ["V2", "V4"]) {
     after(() => s.close());
 
     it("joins on the foreign key named after the other side, both ways, and logs it", () => {
-      const nav = (type, name) =>
+      const nav = (type: string, name: string) =>
         s.model.entityTypes[`S.${type}`].navigations[name];
       assert.deepEqual(nav("Order", "Items").join, [["ID", "OrderID"]]);
       assert.deepEqual(nav("Item", "Order").join, [["OrderID", "ID"]]);
@@ -31,9 +31,9 @@ for (const version of ["V2", "V4"]) {
     });
 
     it("an order's items are the ones that point at it", async () => {
-      const items = async (order) =>
+      const items = async (order: number) =>
         (await get(`${s.v4}/Orders(${order})/Items?$select=ID`)).body.value.map(
-          (i) => i.ID,
+          (i: { ID: number }) => i.ID,
         );
       assert.deepEqual(await items(1), [1, 2]);
       assert.deepEqual(await items(2), [3]);
