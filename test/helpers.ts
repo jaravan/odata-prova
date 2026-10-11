@@ -162,7 +162,10 @@ function batchResponses(text: string) {
   return out;
 }
 
-export type { Reply, BatchPart };
+// What start() resolves to, for a test's `let s: TestServer`
+type TestServer = Awaited<ReturnType<typeof start>>;
+
+export type { Reply, BatchPart, TestServer };
 export {
   PO_MODEL,
   SALES_MODEL,

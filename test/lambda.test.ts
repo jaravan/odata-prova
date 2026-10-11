@@ -1,23 +1,30 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get } from "./helpers.ts";
+import { start, get, type TestServer } from "./helpers.ts";
 
 const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
+
+// What the tests read of PurchaseOrderSet?$expand=Items
+type Order = {
+  PurchaseOrderId: string;
+  Items: { Material: string; Unit: string }[];
+};
 
 // The lambda operators any/all in $filter. Fiori Elements V4 generates them for filter fields
 // on a to-many navigation, e.g. Items/any(i:i/Material eq 'X').
 describe("$filter lambda operators", () => {
-  let s, orders;
-  const ids = async (filter) => {
+  let s: TestServer, orders: Order[];
+  const ids = async (filter: string): Promise<string[]> => {
     const r = await get(
       `${s.v4}/PurchaseOrderSet?$select=PurchaseOrderId&$filter=${encodeURIComponent(filter)}`,
     );
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    return r.body.value.map((o) => o.PurchaseOrderId);
+    return r.body.value.map((o: Order) => o.PurchaseOrderId);
   };
   // The orders whose items pass `test`, worked out from the data itself
-  const where = (test) => orders.filter(test).map((o) => o.PurchaseOrderId);
+  const where = (test: (o: Order) => boolean) =>
+    orders.filter(test).map((o) => o.PurchaseOrderId);
 
   before(async () => {
     s = await start();
@@ -133,13 +140,13 @@ describe("$filter lambda operators", () => {
 });
 
 describe("$filter lambda operators over collection-valued properties", () => {
-  let s;
-  const users = async (filter) =>
+  let s: TestServer;
+  const users = async (filter: string): Promise<string[]> =>
     (
       await get(
         `${s.v4}/People?$select=UserName&$filter=${encodeURIComponent(filter)}`,
       )
-    ).body.value.map((p) => p.UserName);
+    ).body.value.map((p: { UserName: string }) => p.UserName);
   before(async () => {
     s = await start(TRIPPIN);
   });
