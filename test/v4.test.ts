@@ -1,6 +1,15 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send, SALES_MODEL, ORDER, ITEM } from "./helpers.ts";
+import {
+  start,
+  get,
+  send,
+  SALES_MODEL,
+  ORDER,
+  ITEM,
+  type TestServer,
+} from "./helpers.ts";
+import type { Property } from "../lib/model.ts";
 import { toWire } from "../lib/protocols/v4.ts";
 
 const IEEE = {
@@ -8,7 +17,7 @@ const IEEE = {
 };
 
 describe("OData V4 protocol (model loaded from a V2 document)", () => {
-  let s, v4;
+  let s: TestServer, v4: string;
   before(async () => {
     s = await start();
     v4 = s.v4;
@@ -19,7 +28,10 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     const doc = await get(`${v4}/`);
     assert.equal(doc.status, 200);
     assert.equal(doc.headers.get("odata-version"), "4.0");
-    assert.match(doc.headers.get("content-type"), /odata\.metadata=minimal/);
+    assert.match(
+      doc.headers.get("content-type") ?? "",
+      /odata\.metadata=minimal/,
+    );
     assert.equal(doc.body["@odata.context"], "/odata/v4/T/$metadata");
     assert.deepEqual(doc.body.value[0], {
       name: "PurchaseOrderSet",
@@ -59,7 +71,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
   it("IEEE754Compatible=true keeps Decimal/Int64 as strings (what UI5 asks for)", async () => {
     const r = await get(`${v4}/PurchaseOrderSet('4500000001')`, IEEE);
     assert.equal(r.body.TotalAmount, "12500.00");
-    assert.match(r.headers.get("content-type"), /IEEE754Compatible=true/);
+    assert.match(r.headers.get("content-type") ?? "", /IEEE754Compatible=true/);
     assert.equal(
       r.body["@odata.context"],
       "/odata/v4/T/$metadata#PurchaseOrderSet/$entity",
@@ -223,7 +235,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
 });
 
 describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/TimeOfDay)", () => {
-  let s, v4, v2;
+  let s: TestServer, v4: string, v2: string;
   before(async () => {
     s = await start(SALES_MODEL);
     v4 = s.v4;
@@ -302,8 +314,11 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
 });
 
 describe("V4 wire format: fractional seconds follow the Precision facet", () => {
-  const dto = (precision) => ({ type: "Edm.DateTimeOffset", precision });
-  const tod = (precision) => ({ type: "Edm.TimeOfDay", precision });
+  // A primitive property needs only these for toWire; the other fields stay undefined
+  const dto = (precision?: string) =>
+    ({ type: "Edm.DateTimeOffset", precision }) as Property;
+  const tod = (precision?: string) =>
+    ({ type: "Edm.TimeOfDay", precision }) as Property;
 
   it("drops the fraction when there is no Precision (defaults to 0)", () => {
     assert.equal(
