@@ -1,8 +1,8 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 
-const item = (pos) => ({
+const item = (pos: string) => ({
   ItemPosition: pos,
   Material: "X",
   Description: "x",
@@ -11,7 +11,8 @@ const item = (pos) => ({
   NetPrice: "1.00",
   Currency: "EUR",
 });
-const order = (id, items) => ({
+// V4 sends the items as an array, V2 wraps them in { results }
+const order = (id: string, items: object[] | { results: object[] }) => ({
   PurchaseOrderId: id,
   Supplier: "S",
   CompanyCode: "1000",
@@ -24,7 +25,7 @@ const order = (id, items) => ({
 
 // A deep insert is all or nothing: a related entity that fails leaves no row of the request behind
 describe("a deep insert that fails", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
