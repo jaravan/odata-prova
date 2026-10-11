@@ -4,7 +4,11 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { GenericContainer, Wait } from "testcontainers";
+import {
+  GenericContainer,
+  Wait,
+  type StartedTestContainer,
+} from "testcontainers";
 
 const IMAGE = process.env.IMAGE ?? "odata-prova:test";
 const MODEL = path.join(
@@ -26,7 +30,7 @@ function serve() {
 }
 
 describe("the Docker image", () => {
-  let container, base;
+  let container: StartedTestContainer, base: string;
   before(async () => {
     container = await serve();
     base = `http://${container.getHost()}:${container.getMappedPort(3000)}`;
