@@ -1,11 +1,17 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, batch, batchResponses } from "./helpers.ts";
+import {
+  start,
+  get,
+  batch,
+  batchResponses,
+  type TestServer,
+} from "./helpers.ts";
 
 // Requests the service never gets to see: they must still get an OData error, not Express's
 // HTML page with a stack trace.
 describe("bad requests get an OData error, not an HTML page", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
@@ -14,7 +20,7 @@ describe("bad requests get an OData error, not an HTML page", () => {
   it("a malformed escape in the URL -> 400 in each protocol's error shape", async () => {
     const v4 = await get(`${s.v4}/PurchaseOrderSet%E0%A4%A`);
     assert.equal(v4.status, 400);
-    assert.match(v4.headers.get("content-type"), /json/);
+    assert.match(v4.headers.get("content-type") ?? "", /json/);
     assert.match(v4.body.error.message, /Malformed URL/);
 
     const v2 = await get(`${s.v2}/PurchaseOrderSet%E0%A4%A`);
