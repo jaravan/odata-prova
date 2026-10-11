@@ -8,7 +8,7 @@ import { createApp } from "../lib/app.ts";
 
 // Seed files as spreadsheets export them: quoted fields, a byte order mark, CRLF
 describe("CSV seed files", () => {
-  let dir;
+  let dir: string;
   before(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "csv-"));
     fs.copyFileSync(
@@ -19,7 +19,7 @@ describe("CSV seed files", () => {
   });
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  function load(csv) {
+  function load(csv: string) {
     fs.writeFileSync(path.join(dir, "data", "PurchaseOrderSet.csv"), csv);
     return createApp({
       modelDir: dir,
@@ -67,6 +67,8 @@ describe("CSV seed files", () => {
     assert.throws(
       () => load('PurchaseOrderId,Supplier\n1,ok\n2,"Acme\n'),
       (err) =>
+        err instanceof Error &&
+        "code" in err &&
         err.code === "ESEED" &&
         /PurchaseOrderSet\.csv: line 3: quoted field is never closed/.test(
           err.message,
