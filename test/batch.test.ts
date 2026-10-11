@@ -1,9 +1,17 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, batch, batchResponses, ORDER, ITEM } from "./helpers.ts";
+import {
+  start,
+  get,
+  batch,
+  batchResponses,
+  ORDER,
+  ITEM,
+  type TestServer,
+} from "./helpers.ts";
 
 describe("$batch", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
@@ -33,7 +41,7 @@ describe("$batch", () => {
     ]);
     assert.equal(r.status, 200);
     assert.match(
-      r.headers.get("content-type"),
+      r.headers.get("content-type") ?? "",
       /multipart\/mixed; ?boundary=batchresponse_/,
     );
     assert.equal(r.headers.get("dataserviceversion"), "2.0");
