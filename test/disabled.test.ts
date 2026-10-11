@@ -1,12 +1,12 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get } from "./helpers.ts";
+import { start, get, type TestServer } from "./helpers.ts";
 
 // Real services often declare a few navigations the server cannot join (here a
 // many-to-many link). They are switched off; the rest of the service keeps working.
 describe("navigations the server cannot resolve are disabled, not fatal", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start(path.join(import.meta.dirname, "fixtures", "ManyToMany"));
   });
