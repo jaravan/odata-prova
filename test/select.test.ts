@@ -1,9 +1,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get } from "./helpers.ts";
+import { start, get, type TestServer } from "./helpers.ts";
 
 describe("$select is checked against the type", () => {
-  let s;
+  let s: TestServer;
   before(async () => {
     s = await start();
   });
