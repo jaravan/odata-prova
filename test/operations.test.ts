@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { start, get, send, batch, batchResponses } from "./helpers.ts";
+import {
+  start,
+  get,
+  send,
+  batch,
+  batchResponses,
+  type TestServer,
+} from "./helpers.ts";
 
 const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
 const GATEWAY_OPS = path.join(import.meta.dirname, "fixtures", "OperationsV2");
@@ -12,7 +19,7 @@ const NS = "Microsoft.OData.SampleService.Models.TripPin";
 // The server routes the call, checks the method, reads and logs the parameters, and answers
 // per the return type; it doesn't know what the operation does.
 describe("V4 actions and functions (TripPin)", () => {
-  let s, logs, user;
+  let s: TestServer, logs: string[], user: string;
   before(async () => {
     logs = [];
     s = await start(TRIPPIN, { mockRows: 3, log: (l) => logs.push(l) });
@@ -159,7 +166,7 @@ describe("V4 actions and functions (TripPin)", () => {
 });
 
 describe("V2 function imports (SAP Gateway style)", () => {
-  let s, logs;
+  let s: TestServer, logs: string[];
   before(async () => {
     logs = [];
     s = await start(GATEWAY_OPS, { log: (l) => logs.push(l) });
@@ -193,7 +200,9 @@ describe("V2 function imports (SAP Gateway style)", () => {
     const r = await get(`${s.v2}/GetOpenOrders?$filter=Status eq 'Open'`);
     assert.equal(r.status, 200);
     assert.deepEqual(
-      r.body.d.results.map((o) => o.PurchaseOrderId),
+      r.body.d.results.map(
+        (o: { PurchaseOrderId: string }) => o.PurchaseOrderId,
+      ),
       ["4500000001"],
     );
   });
@@ -256,8 +265,8 @@ describe("V2 function imports (SAP Gateway style)", () => {
 
 describe("config.json rules: what an operation changes", () => {
   // A copy of the V2 fixture with the given config.json, removed after the tests
-  const dirs = [];
-  function modelWith(config) {
+  const dirs: string[] = [];
+  function modelWith(config: object) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ops-"));
     dirs.push(dir);
     fs.cpSync(GATEWAY_OPS, dir, { recursive: true });
