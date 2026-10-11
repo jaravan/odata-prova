@@ -10,7 +10,7 @@ const MODELS = path.join(import.meta.dirname, "..", "examples");
 // MODEL_DIR can name the model itself, or a folder holding exactly one model (how the
 // Kubernetes model image is mounted, so the image alone decides which model is served).
 describe("MODEL_DIR lookup", () => {
-  let single; // a folder holding one model, like the Kubernetes volume
+  let single: string; // a folder holding one model, like the Kubernetes volume
   before(() => {
     single = fs.mkdtempSync(path.join(os.tmpdir(), "models-"));
     fs.mkdirSync(path.join(single, "OnlySrv"));
