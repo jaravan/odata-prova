@@ -30,6 +30,7 @@ import type {
 import type { Qualify, Xml } from "./metadata.ts";
 import type { Store } from "./store.ts";
 import { HttpError } from "./query.ts";
+import { renewETag } from "./etag.ts";
 
 // The draft actions an entity set's annotation can name
 export type DraftKind = keyof DraftInfo["actions"];
@@ -543,6 +544,8 @@ class Drafts {
     delete values[UUID];
     if (active) Object.assign(active, values);
     else this.store.insert(setName, (active = values));
+    // The active entity changed: a client holding its old ETag must read it again
+    renewETag(this.model, setName, type, active);
 
     compositions.forEach((nav, i) => {
       const kept = new Set(

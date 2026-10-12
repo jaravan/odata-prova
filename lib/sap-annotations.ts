@@ -23,6 +23,8 @@
 //               required-in-filter and
 //               filter-restriction
 //               its type's sortable            Capabilities.SortRestrictions
+//               its type's ConcurrencyMode     Core.OptimisticConcurrency (not sap:, but V2's
+//               "Fixed" properties             ETag: see etag.ts)
 //
 // A term the document's own <Annotations> blocks already set on the same target is left
 // out: the block is emitted as it is (see emitV4), and a term may be applied only once.
@@ -250,6 +252,15 @@ class SapAnnotations {
     const sap = es.sap || {};
     const props = Object.values(et.properties);
     const terms: Term[] = [];
+    // Not a sap: attribute, but V2's ETag (ConcurrencyMode="Fixed"), see etag.ts
+    if (es.concurrency)
+      terms.push([
+        "Core",
+        "OptimisticConcurrency",
+        {
+          Collection: es.concurrency.map((name) => ({ PropertyPath: name })),
+        },
+      ]);
     const restriction = (
       term: string,
       property: string,

@@ -1,0 +1,5 @@
+{
+  "operations": {
+    "approve": { "set": { "status": "approved" } }
+  }
+}

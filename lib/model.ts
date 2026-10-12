@@ -93,6 +93,8 @@ export interface Property {
   enumType?: EnumType;
   // Core.Computed: the service fills the value in
   computed?: boolean;
+  // ConcurrencyMode="Fixed" (V2): part of the entity's ETag (see etag.ts)
+  concurrency?: boolean;
   // A collection-valued property, which V2 has no place for
   v2Omit?: boolean;
 }
@@ -168,6 +170,8 @@ export interface EntitySet {
   draft?: DraftInfo;
   // The sap: attributes of a V2 document, without the prefix (creatable, searchable, ...)
   sap?: Record<string, string>;
+  // The properties its entities' ETag is made of, when it has one (see etag.ts)
+  concurrency?: string[];
 }
 
 // Common.DraftRoot / DraftNode (see parseDraftAnnotations): the actions are qualified names,

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="ZETAG_SRV" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="Order" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="OrderID"/>
+        </Key>
+        <Property Name="OrderID" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="Note" Type="Edm.String" MaxLength="40"/>
+        <Property Name="LastChangedAt" Type="Edm.DateTime" Precision="7" ConcurrencyMode="Fixed"/>
+        <Property Name="Version" Type="Edm.Int32" ConcurrencyMode="Fixed"/>
+      </EntityType>
+      <EntityContainer Name="ZETAG_SRV_Entities" m:IsDefaultEntityContainer="true">
+        <EntitySet Name="OrderSet" EntityType="ZETAG_SRV.Order" sap:content-version="1"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

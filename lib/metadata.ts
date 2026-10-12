@@ -16,6 +16,7 @@ import type {
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
 import { SapAnnotations, blocksV4 } from "./sap-annotations.ts";
+import { parseConcurrency } from "./etag.ts";
 import { inlineAnnotations, annotationsV2 } from "./annotations-v2.ts";
 import type { AnnotationsV2 } from "./annotations-v2.ts";
 import {
@@ -287,6 +288,7 @@ function parseMetadata(xml: string): Model {
   }
 
   parseDraftAnnotations(model, schemas, qualify);
+  parseConcurrency(model, schemas, qualify);
   if (isV4) resolveNavigationsV4(model);
   else resolveNavigationsV2(model);
   resolvePartners(model);
@@ -697,6 +699,7 @@ function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
     sap,
     isCollection: false,
     elementType: type,
+    concurrency: p.ConcurrencyMode === "Fixed" || undefined,
   };
 }
 
@@ -1092,7 +1095,8 @@ function propertyV4(
   ];
 }
 
-function propertyV2(p: Property, indent: string): string[] {
+// etag: the property is part of an entity set's ETag (see etag.ts)
+function propertyV2(p: Property, indent: string, etag = false): string[] {
   const a = attrs([
     ["Name", p.name],
     ["Type", p.v2Type],
@@ -1100,6 +1104,7 @@ function propertyV2(p: Property, indent: string): string[] {
     ["MaxLength", p.maxLength],
     ["Precision", p.precision],
     ["Scale", p.scale],
+    ["ConcurrencyMode", etag ? "Fixed" : undefined],
     ["sap:label", p.label],
     ["sap:display-format", p.type === "Edm.Date" ? "Date" : undefined],
   ]);
@@ -1446,8 +1451,14 @@ function emitV2(model: Model): string {
       for (const k of et.keys)
         out.push(`          <PropertyRef Name="${esc(k)}"/>`);
       out.push("        </Key>");
+      // V2 has ETags per type, V4 per entity set: those of every set of the type
+      const etag = new Set(
+        Object.values(model.entitySets)
+          .filter((es) => es.entityType === et.fullName)
+          .flatMap((es) => es.concurrency || []),
+      );
       for (const p of Object.values(et.properties))
-        out.push(...propertyV2(p, "        "));
+        out.push(...propertyV2(p, "        ", etag.has(p.name)));
       for (const nav of Object.values(et.navigations)) {
         const { assoc, fromRole, toRole } =
           navAssoc[`${et.fullName}/${nav.name}`];

@@ -148,8 +148,14 @@ function serialize(
   node: QueryNode,
 ): Record<string, unknown> {
   const uri = svc.entityUri(setName, type, row);
+  const etag = svc.etag(setName, row);
   const out: Record<string, unknown> = {
-    __metadata: { id: uri, uri, type: type.fullName },
+    __metadata: {
+      id: uri,
+      uri,
+      type: type.fullName,
+      ...(etag ? { etag } : {}),
+    },
   };
   const selectAll = !node.select || node.select.has("*");
 
@@ -213,7 +219,12 @@ const v2: Protocol = {
   },
   entity(svc, row, setName, type, node, status = 200, extra) {
     checkSelect(svc, type, node);
-    return json(status, { d: serialize(svc, row, setName, type, node) }, extra);
+    const etag = svc.etag(setName, row);
+    return json(
+      status,
+      { d: serialize(svc, row, setName, type, node) },
+      etag ? { ...extra, ETag: etag } : extra,
+    );
   },
   nullEntity() {
     return json(200, { d: null });

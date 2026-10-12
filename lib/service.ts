@@ -14,6 +14,7 @@ import { compileFilter } from "./filter.ts";
 import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
 import { HttpError, decodeUrl, splitTopLevel } from "./query.ts";
 import { draftMatch, draftAction, Drafts } from "./draft.ts";
+import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
 import type {
   AnyNavigation,
   EntitySet,
@@ -270,6 +271,11 @@ class ODataService {
 
   keyOf(entityType: EntityType, row: Row): Key {
     return Object.fromEntries(entityType.keys.map((k) => [k, row[k]]));
+  }
+
+  // The entity's ETag, for an entity set that has them (see etag.ts)
+  etag(setName: string, row: Row): string | undefined {
+    return etagOf(this.model, setName, row);
   }
 
   entityUri(setName: string, entityType: EntityType, row: Row): string {
@@ -547,6 +553,7 @@ class ODataService {
         `${entityType.name} with this key already exists`,
       );
     }
+    renewETag(this.model, setName, entityType, row);
     this.store.insert(setName, row);
     inserted.push({ setName, type: entityType, row });
 
@@ -697,7 +704,8 @@ class ODataService {
 
   // binding: { setName, type, row, rows } a bound operation was called on. A V2 import with
   // bindsTo gets its entity from the key parameters instead. Logs the call, applies the
-  // model's rule for the operation if any, and answers per operationResult.
+  // model's rule for the operation if any, and answers per operationResult. An If-Match
+  // header is checked against the entity's ETag, but none is required (see etag.ts).
   callOperation(
     method: string,
     op: Operation,
@@ -707,6 +715,7 @@ class ODataService {
     query: Record<string, unknown>,
     q: QueryNode,
     opts: ResponseOptions,
+    headers: RequestHeaders,
   ): ODataResponse {
     const expected = op.httpMethod || (op.kind === "action" ? "POST" : "GET");
     if (method !== expected)
@@ -727,6 +736,8 @@ class ODataService {
         binding = { setName, type, row, rows: [row] };
       }
     }
+    if (binding?.row)
+      checkIfMatch(this.model, binding.setName, binding.row, headers, false);
     const on = binding?.row
       ? ` on ${this.entityUri(binding.setName, binding.type, binding.row)}`
       : "";
@@ -748,12 +759,14 @@ class ODataService {
       );
     }
     const rule = this.rules[op.name];
-    if (rule?.set && binding?.row)
+    if (rule?.set && binding?.row) {
       for (const [name, value] of Object.entries(rule.set))
         binding.row[name] = propToInternal(
           value,
           binding.type.properties[name],
         );
+      renewETag(this.model, binding.setName, binding.type, binding.row);
+    }
     return this.operationResult(op, binding, params, q, opts);
   }
 
@@ -905,6 +918,7 @@ class ODataService {
         query,
         q,
         opts,
+        headers,
       );
     }
     if (!this.model.entitySets[first])
@@ -948,6 +962,7 @@ class ODataService {
           query,
           q,
           opts,
+          headers,
         );
       }
       if (row === undefined)
@@ -1076,6 +1091,7 @@ class ODataService {
       case "PATCH":
       case "MERGE": {
         const draft = this.model.entitySets[setName].draft;
+        checkIfMatch(this.model, setName, row, headers, !draft);
         const updated = this.update(
           setName,
           type,
@@ -1084,6 +1100,7 @@ class ODataService {
           method === "PUT",
           !!draft,
         );
+        renewETag(this.model, setName, type, updated);
         if (draft) this.drafts.afterUpdate(updated);
         if (wantsRepresentation)
           return protocol.entity(
@@ -1096,18 +1113,23 @@ class ODataService {
             { "Preference-Applied": "return=representation" },
             opts,
           );
+        // The new ETag, so the client can send the next change without reading it first
+        const etag = this.etag(setName, updated);
         return {
           status: 204,
-          headers: wantsMinimal
-            ? { "Preference-Applied": "return=minimal" }
-            : undefined,
+          headers: {
+            ...(wantsMinimal ? { "Preference-Applied": "return=minimal" } : {}),
+            ...(etag ? { ETag: etag } : {}),
+          },
         };
       }
-      case "DELETE":
-        if (this.model.entitySets[setName].draft)
-          this.drafts.delete(setName, type, row);
+      case "DELETE": {
+        const draft = this.model.entitySets[setName].draft;
+        checkIfMatch(this.model, setName, row, headers, !draft);
+        if (draft) this.drafts.delete(setName, type, row);
         else this.delete(setName, type, this.keyOf(type, row));
         return { status: 204 };
+      }
       default:
         throw new HttpError(405, `${method} not allowed on an entity`);
     }

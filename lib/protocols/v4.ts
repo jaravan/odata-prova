@@ -221,6 +221,8 @@ function serialize(
   opts?: ResponseOptions,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const etag = svc.etag(setName, row);
+  if (etag) out["@odata.etag"] = etag;
   const selectAll = !node.select || node.select.has("*");
   for (const p of Object.values(type.properties)) {
     if (selectAll || node.select?.has(p.name))
@@ -298,7 +300,8 @@ const v4: Protocol = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}/$entity`,
       ...serialize(svc, row, setName, type, node, opts),
     };
-    return json(status, body, opts, extra);
+    const etag = svc.etag(setName, row);
+    return json(status, body, opts, etag ? { ...extra, ETag: etag } : extra);
   },
   nullEntity() {
     return { status: 204 };
