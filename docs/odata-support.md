@@ -40,6 +40,20 @@ As in SAP Gateway, an entity set with `sap:` attributes but no `sap:searchable="
 
 These annotations only describe the service: the server itself still accepts a `$search`, a filter on a non-filterable property or a create in a non-creatable entity set.
 
+## V4 annotations in the generated V2 metadata
+
+For a V4 `metadata.xml`, the V2 service's `$metadata` carries all of its annotations, which UI5's V2 model reads and puts before anything it derives from `sap:` attributes. They are written the way UI5 reads them:
+
+- Every `<Annotations>` block is in the V4 namespace (`xmlns="http://docs.oasis-open.org/odata/ns/edm"`): UI5 skips blocks in any other.
+- An annotation written inline on an element, such as a property, an entity set or an action, moves into a block targeting that element, since V2 elements can't carry one.
+- Targets use namespaces, not the schema's alias (`SAP__self.Orders` is written `com.example.Orders`): UI5 resolves only the aliases of `<edmx:Reference>`.
+- An action or function is targeted as the function import V2 serves it as (see [Actions and functions](operations.md)): `Ns.Approve(Ns.Order)` becomes `Ns.Container/Approve`, and `Ns.Approve` without a binding becomes every function import of `Approve`. An action import's target becomes its function import's too.
+
+Two `sap:` attributes are written as well, where UI5 reads an attribute and not an annotation:
+
+- `sap:searchable="true"` on every entity set, unless its annotations say `Capabilities.SearchRestrictions/Searchable` false. Without it, UI5 takes an entity set as not searchable, while V4 takes it as searchable.
+- `sap:applicable-path` on a function import whose action has `Core.OperationAvailable` with a path (`_it/CanApprove` becomes `CanApprove`), which enables the action's button in Fiori Elements V2.
+
 ## Query options
 
 Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (including nested V4 options like `$expand=Items($select=Material;$top=2)`), `$count`/`$inlinecount`, `$search`, and `$batch` (with atomic changesets) all work, on both protocols. A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`.
