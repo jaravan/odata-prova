@@ -85,7 +85,7 @@ Creating and editing work the way Fiori Elements drives them, with the actions t
 
 Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`. Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft; `DraftAdministrativeData` says so, and is read-only.
 
-**V2.** SAP Gateway and RAP put the same annotations in V2 metadata, with the actions as function import paths (`Srv.Srv_Entities/TravelEdit`); those are read too. Whichever version the metadata is, the V2 service calls the actions as function imports (`POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`) and the V4 service as bound actions.
+**V2.** SAP Gateway and RAP put the same annotations in V2 metadata, with the actions as function import paths (`Srv.Srv_Entities/TravelEdit`); those are read too. Whichever version the metadata is, the V2 service calls the actions as function imports (`POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`) and the V4 service as bound actions. The V4 service's `$metadata` names them as bound actions too (`EditAction="Srv.TravelEdit"`), since Fiori Elements V4 calls them by that name, and an annotation on a function import targets its bound action (`Srv.TravelEdit(Srv.TravelType)`).
 
 Limits:
 
