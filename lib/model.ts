@@ -22,9 +22,12 @@ export interface Model {
   // As the metadata declares them, and as each protocol serves them (see operationViews)
   operations: OperationView;
   operationViews: Record<ODataVersion, OperationView>;
-  // Kept verbatim for the generated metadata of the other protocol
+  // Kept verbatim for the generated metadata of the other protocol; annotationsXml also has
+  // a block for each element with inline annotations (see inlineAnnotations)
   referencesXml: string[];
   annotationsXml: string[];
+  // The namespace each alias stands for, from <edmx:Include Alias> and <Schema Alias>
+  aliases: Record<string, string>;
 }
 
 export interface Container {
@@ -215,6 +218,8 @@ export interface Operation {
   // A V2 import that acts on an entity, found by the key parameters (sap:action-for)
   bindsTo?: { type: EntityType; setName: string; isCollection: boolean };
   actionFor?: string;
+  // The V4 action or function import a V2 view's import comes from (see v2ViewOfV4)
+  importName?: string;
 }
 
 export interface OperationView {

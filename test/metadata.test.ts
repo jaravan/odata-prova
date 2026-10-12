@@ -161,7 +161,11 @@ describe("EDMX round trips", () => {
     assert.match(v2, /m:DataServiceVersion="2.0"/);
     assert.match(v2, /<Association Name="Orders_Items">/);
     assert.match(v2, /Type="Edm.DateTime" sap:display-format="Date"/);
-    assert.match(v2, /<Annotations Target="SalesSrv.Orders\/OrderNo">/);
+    // In the V4 namespace, the only one UI5 reads blocks in
+    assert.match(
+      v2,
+      /<Annotations Target="SalesSrv.Orders\/OrderNo" xmlns="http:\/\/docs.oasis-open.org\/odata\/ns\/edm">/,
+    );
     assert.match(v2, /<edmx:Reference Uri=/);
     const back = parseMetadata(v2);
     assert.equal(back.sourceVersion, "2.0");

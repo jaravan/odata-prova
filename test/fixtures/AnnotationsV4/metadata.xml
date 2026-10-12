@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="Common"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="com.example.anno" Alias="SAP__self" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Order">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Note" Type="Edm.String">
+          <Annotation Term="Common.Label" String="Note"/>
+        </Property>
+        <Property Name="CanApprove" Type="Edm.Boolean"/>
+        <NavigationProperty Name="Items" Type="Collection(com.example.anno.Item)" Partner="Order">
+          <Annotation Term="Common.Label" String="Order items"/>
+        </NavigationProperty>
+        <Annotation Term="Common.Label" String="Order"/>
+      </EntityType>
+      <EntityType Name="Item">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Order_ID" Type="Edm.Int32"/>
+        <Property Name="Open" Type="Edm.Boolean"/>
+        <NavigationProperty Name="Order" Type="com.example.anno.Order" Partner="Items">
+          <ReferentialConstraint Property="Order_ID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+      </EntityType>
+      <Action Name="Approve" IsBound="true">
+        <Parameter Name="_it" Type="com.example.anno.Order"/>
+        <Parameter Name="Comment" Type="Edm.String">
+          <Annotation Term="Common.Label" String="Comment"/>
+        </Parameter>
+        <Annotation Term="Core.OperationAvailable" Path="_it/CanApprove"/>
+      </Action>
+      <Action Name="Approve" IsBound="true">
+        <Parameter Name="in" Type="com.example.anno.Item"/>
+      </Action>
+      <Action Name="ResetAll"/>
+      <EntityContainer Name="EntityContainer">
+        <EntitySet Name="Orders" EntityType="com.example.anno.Order">
+          <NavigationPropertyBinding Path="Items" Target="Items"/>
+          <Annotation Term="Capabilities.SearchRestrictions">
+            <Record>
+              <PropertyValue Property="Searchable" Bool="false"/>
+            </Record>
+          </Annotation>
+        </EntitySet>
+        <EntitySet Name="Items" EntityType="com.example.anno.Item">
+          <NavigationPropertyBinding Path="Order" Target="Orders"/>
+        </EntitySet>
+        <ActionImport Name="ResetAll" Action="com.example.anno.ResetAll"/>
+      </EntityContainer>
+      <Annotations Target="SAP__self.Approve(SAP__self.Order)">
+        <Annotation Term="Common.SideEffects">
+          <Record>
+            <PropertyValue Property="TargetProperties">
+              <Collection>
+                <String>_it/CanApprove</String>
+              </Collection>
+            </PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="SAP__self.Approve(SAP__self.Item)">
+        <Annotation Term="Core.OperationAvailable">
+          <Path>in/Open</Path>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="SAP__self.Approve">
+        <Annotation Term="Common.IsActionCritical" Bool="true"/>
+      </Annotations>
+      <Annotations Target="SAP__self.EntityContainer/ResetAll">
+        <Annotation Term="Common.Label" String="Reset"/>
+      </Annotations>
+      <Annotations Target="SAP__self.Order/Note">
+        <Annotation Term="Common.QuickInfo" String="A note"/>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

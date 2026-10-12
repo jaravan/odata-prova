@@ -16,6 +16,8 @@ import type {
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
 import { SapAnnotations } from "./sap-annotations.ts";
+import { inlineAnnotations, annotationsV2 } from "./annotations-v2.ts";
+import type { AnnotationsV2 } from "./annotations-v2.ts";
 import {
   parseDraftAnnotations,
   isDraftNavigation,
@@ -257,10 +259,14 @@ function parseMetadata(xml: string): Model {
       "4.0": { bound: [], imports: {} },
     },
     referencesXml: extractBlocks(xml, "edmx:Reference"),
-    annotationsXml: extractBlocks(xml, "Annotations"),
+    annotationsXml: [
+      ...extractBlocks(xml, "Annotations"),
+      ...inlineAnnotations(xml),
+    ],
+    aliases: parseAliases(edmx, schemas),
   };
 
-  const qualify = termQualifier(edmx, schemas);
+  const qualify = termQualifier(model.aliases);
   parseComputed(model, schemas, qualify); // before flattenInheritance: derived types share it
 
   parseOperations(model, schemas, isV4);
@@ -291,16 +297,20 @@ function parseMetadata(xml: string): Model {
 const list = (x: Xml): Xml[] =>
   x === undefined ? [] : Array.isArray(x) ? x : [x];
 
-// A function that resolves a term's alias to its namespace, from the document's
-// <edmx:Include Alias> and <Schema Alias>:
-// "Common.DraftRoot" -> "com.sap.vocabularies.Common.v1.DraftRoot"
-function termQualifier(edmx: Xml, schemas: Xml[]): Qualify {
+// The namespace of each alias in the document's <edmx:Include Alias> and <Schema Alias>
+function parseAliases(edmx: Xml, schemas: Xml[]): Record<string, string> {
   const aliases: Record<string, string> = {};
   for (const ref of list(edmx.Reference))
     for (const inc of list(ref.Include))
       if (inc.Alias) aliases[inc.Alias] = inc.Namespace;
   for (const schema of schemas)
     if (schema.Alias) aliases[schema.Alias] = schema.Namespace;
+  return aliases;
+}
+
+// A function that resolves a term's alias to its namespace:
+// "Common.DraftRoot" -> "com.sap.vocabularies.Common.v1.DraftRoot"
+function termQualifier(aliases: Record<string, string>): Qualify {
   return (name) => {
     if (!name) return name;
     const dot = name.lastIndexOf(".");
@@ -646,6 +656,7 @@ function v2ViewOfV4(model: Model): OperationView {
     imports[name] = {
       ...op,
       name,
+      importName: op.name,
       httpMethod: op.kind === "action" ? "POST" : "GET",
       entitySet: op.entitySet || returnSet(op),
     };
@@ -1149,7 +1160,12 @@ function v2TypeName(p: TypedElement): string {
   return p.isCollection ? `Collection(${element})` : element;
 }
 
-function functionImportsV2(view: OperationView, indent: string): string[] {
+// applicablePaths: sap:applicable-path by import (see annotationsV2)
+function functionImportsV2(
+  view: OperationView,
+  indent: string,
+  applicablePaths: AnnotationsV2["applicablePaths"],
+): string[] {
   const out: string[] = [];
   for (const op of Object.values(view.imports)) {
     const a = attrs([
@@ -1158,6 +1174,7 @@ function functionImportsV2(view: OperationView, indent: string): string[] {
       ["EntitySet", op.entitySet],
       ["m:HttpMethod", op.httpMethod],
       ["sap:action-for", op.actionFor],
+      ["sap:applicable-path", applicablePaths[op.name]],
     ]);
     const params = op.parameters.map(
       (p) =>
@@ -1336,7 +1353,9 @@ interface AssociationOut {
   dependent: { role: string; properties: string[] };
 }
 
+// The document's V4 annotations, as UI5's V2 model reads them (see annotations-v2.ts)
 function emitV2(model: Model): string {
+  const annotations = annotationsV2(model);
   const byType = setsByType(model);
 
   // One Association per navigation pair (a navigation and its partner share it).
@@ -1468,11 +1487,16 @@ function emitV2(model: Model): string {
         )}" m:IsDefaultEntityContainer="true">`,
       );
       for (const es of Object.values(model.entitySets)) {
-        out.push(
-          `        <EntitySet Name="${esc(es.name)}" EntityType="${esc(
-            es.entityType,
-          )}" sap:content-version="1"/>`,
-        );
+        const a = attrs([
+          ["Name", es.name],
+          ["EntityType", es.entityType],
+          [
+            "sap:searchable",
+            annotations.notSearchable.has(es.name) ? undefined : "true",
+          ],
+          ["sap:content-version", "1"],
+        ]);
+        out.push(`        <EntitySet${a}/>`);
       }
       for (const assoc of associations) {
         out.push(
@@ -1488,9 +1512,15 @@ function emitV2(model: Model): string {
           );
         out.push("        </AssociationSet>");
       }
-      out.push(...functionImportsV2(model.operationViews["2.0"], "        "));
+      out.push(
+        ...functionImportsV2(
+          model.operationViews["2.0"],
+          "        ",
+          annotations.applicablePaths,
+        ),
+      );
       out.push("      </EntityContainer>");
-      for (const block of model.annotationsXml) out.push(`      ${block}`);
+      for (const block of annotations.blocks) out.push(`      ${block}`);
     }
     out.push("    </Schema>");
   }
