@@ -15,6 +15,31 @@ Writes are checked against the metadata: a value that doesn't fit its type, or a
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, see [test/fixtures/real](../test/fixtures/real/).
 
+## SAP annotations in the generated V4 metadata
+
+For a V2 `metadata.xml`, the V4 service's `$metadata` carries its `sap:` attributes as the V4 annotations SAP names for them in [SAP Annotations for OData Version 2.0](https://sap.github.io/odata-vocabularies/docs/v2-annotations.html), so a Fiori Elements V4 app gets the same texts, units and restrictions as a V2 app:
+
+| V2                                                                                                                | V4                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `sap:label`, `sap:heading`, `sap:quickinfo`                                                                       | `Common.Label`, `Common.Heading`, `Common.QuickInfo` (`sap:label` on an entity type too)              |
+| `sap:text`                                                                                                        | `Common.Text`                                                                                         |
+| `sap:unit`                                                                                                        | `Measures.ISOCurrency` when it names a `sap:semantics="currency-code"` property, else `Measures.Unit` |
+| `sap:semantics` `currency-code`, `unit-of-measure`                                                                | `Common.IsCurrency`, `Common.IsUnit`                                                                  |
+| `sap:display-format="UpperCase"`                                                                                  | `Common.IsUpperCase`                                                                                  |
+| `sap:field-control`                                                                                               | `Common.FieldControl`                                                                                 |
+| `sap:value-list="fixed-values"`                                                                                   | `Common.ValueListWithFixedValues`                                                                     |
+| `sap:visible="false"`                                                                                             | `UI.Hidden`                                                                                           |
+| `sap:creatable` and `sap:updatable` `"false"` on a property                                                       | `Core.Computed` (both) or `Core.Immutable` (`sap:updatable` only)                                     |
+| `sap:creatable`, `sap:updatable`, `sap:deletable` (or `-path`) on an entity set                                   | `Capabilities.InsertRestrictions`, `UpdateRestrictions`, `DeleteRestrictions`                         |
+| `sap:searchable`                                                                                                  | `Capabilities.SearchRestrictions`                                                                     |
+| `sap:pageable`, `sap:countable`, `sap:addressable` `"false"`                                                      | `Capabilities.TopSupported` and `SkipSupported`, `CountRestrictions`, `IndexableByKey`                |
+| `sap:requires-filter`, and `sap:filterable`, `sap:required-in-filter`, `sap:filter-restriction` on its properties | `Capabilities.FilterRestrictions`                                                                     |
+| `sap:sortable` on its properties                                                                                  | `Capabilities.SortRestrictions`                                                                       |
+
+As in SAP Gateway, an entity set with `sap:` attributes but no `sap:searchable="true"` is not searchable, so a Fiori Elements V4 app shows no search field for it. A term the document's own `<Annotations>` blocks already set on the same target is left out, and the terms use the document's alias for a vocabulary it references.
+
+These annotations only describe the service: the server itself still accepts a `$search`, a filter on a non-filterable property or a create in a non-creatable entity set.
+
 ## Query options
 
 Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (including nested V4 options like `$expand=Items($select=Material;$top=2)`), `$count`/`$inlinecount`, `$search`, and `$batch` (with atomic changesets) all work, on both protocols. A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`.

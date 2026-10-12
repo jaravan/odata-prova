@@ -46,7 +46,7 @@ MySrv/
   config.json          # optional, what operations change (see docs/operations.md)
 ```
 
-The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`. Whichever protocol the `metadata.xml` wasn't written for gets its metadata generated from the other. A data file is named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). Writes are kept in memory until a restart resets them.
+The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`. Whichever protocol the `metadata.xml` wasn't written for gets its metadata generated from the other, with a V2 document's `sap:` attributes as [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata). A data file is named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). Writes are kept in memory until a restart resets them.
 
 Each entity set without a data file gets 20 generated rows that fit the metadata, with foreign keys pointing at real rows so navigation and `$expand` work. `odata-prova-mock-data` writes them to files for you to edit, see [Mock data](docs/mock-data.md).
 
