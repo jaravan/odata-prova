@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="SAP__common"/>
+  </edmx:Reference>
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="ZANNO_SRV" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="Product" sap:label="Product" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false" sap:creatable="false" sap:updatable="false"/>
+        <Property Name="Name" Type="Edm.String" MaxLength="40" sap:label="Name" sap:heading="Product name" sap:quickinfo="The product's name" sap:filter-restriction="multi-value"/>
+        <Property Name="Price" Type="Edm.Decimal" Precision="13" Scale="2" sap:unit="Currency"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="5" sap:semantics="currency-code" sap:display-format="UpperCase" sap:value-list="fixed-values"/>
+        <Property Name="Weight" Type="Edm.Decimal" Precision="13" Scale="3" sap:unit="WeightUnit"/>
+        <Property Name="WeightUnit" Type="Edm.String" MaxLength="3" sap:semantics="unit-of-measure"/>
+        <Property Name="CategoryID" Type="Edm.String" MaxLength="10" sap:text="CategoryName" sap:required-in-filter="true"/>
+        <Property Name="CategoryName" Type="Edm.String" MaxLength="40"/>
+        <Property Name="Note" Type="Edm.String" sap:filterable="false" sap:sortable="false" sap:visible="false"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" sap:updatable="false"/>
+        <Property Name="Status" Type="Edm.String" MaxLength="1" sap:field-control="StatusFC"/>
+        <Property Name="StatusFC" Type="Edm.Byte"/>
+        <Property Name="Editable" Type="Edm.Boolean"/>
+      </EntityType>
+      <EntityType Name="Log" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="Plain">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="ZANNO_SRV_Entities" m:IsDefaultEntityContainer="true">
+        <EntitySet Name="Products" EntityType="ZANNO_SRV.Product" sap:searchable="true" sap:requires-filter="true" sap:deletable="false" sap:updatable-path="Editable" sap:content-version="1"/>
+        <EntitySet Name="Logs" EntityType="ZANNO_SRV.Log" sap:creatable="false" sap:pageable="false" sap:countable="false" sap:addressable="false" sap:content-version="1"/>
+        <EntitySet Name="Plains" EntityType="ZANNO_SRV.Plain"/>
+      </EntityContainer>
+      <Annotations Target="ZANNO_SRV.Product/CategoryID" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="SAP__common.Text" Path="CategoryName">
+          <Annotation Term="com.sap.vocabularies.UI.v1.TextArrangement" EnumMember="com.sap.vocabularies.UI.v1.TextArrangementType/TextFirst"/>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

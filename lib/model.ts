@@ -47,6 +47,8 @@ export interface EntityType {
   disabledNavigations?: Record<string, string>;
   // SiblingEntity and DraftAdministrativeData of a draft-enabled type (see draft.ts)
   draftNavigations?: Record<string, DraftNavigation>;
+  // The sap: attributes of a V2 document, without the prefix (label, ...)
+  sap?: Record<string, string>;
 }
 
 export interface ComplexType {
@@ -161,6 +163,8 @@ export interface EntitySet {
   // V4 NavigationPropertyBinding
   bindings: { path: string; target: string }[];
   draft?: DraftInfo;
+  // The sap: attributes of a V2 document, without the prefix (creatable, searchable, ...)
+  sap?: Record<string, string>;
 }
 
 // Common.DraftRoot / DraftNode (see parseDraftAnnotations): the actions are qualified names,

@@ -15,6 +15,7 @@ import type {
   V4NavigationProperty,
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
+import { SapAnnotations } from "./sap-annotations.ts";
 import {
   parseDraftAnnotations,
   isDraftNavigation,
@@ -146,6 +147,7 @@ function parseMetadata(xml: string): Model {
         ),
         // Resolved after inheritance (see resolveNavigationsV2/V4)
         navigations: {},
+        sap: sapAttributes(et),
       };
     }
 
@@ -218,6 +220,7 @@ function parseMetadata(xml: string): Model {
             path: b.Path,
             target: b.Target,
           })),
+          sap: sapAttributes(es),
         };
       }
       for (const as of c.AssociationSet || []) {
@@ -650,11 +653,17 @@ function v2ViewOfV4(model: Model): OperationView {
   return { bound: [], imports };
 }
 
+// An element's sap: attributes, without the prefix (see parseMetadata)
+function sapAttributes(el: Xml): Record<string, string> {
+  const sap: Record<string, string> = {};
+  for (const [k, v] of Object.entries<string>(el))
+    if (k.startsWith("sap__")) sap[k.slice(5)] = v;
+  return sap;
+}
+
 // isCollection and elementType are set again by resolveTypeRef, once all types are known
 function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
-  const sap: Record<string, string> = {};
-  for (const [k, v] of Object.entries<string>(p))
-    if (k.startsWith("sap__")) sap[k.slice(5)] = v;
+  const sap = sapAttributes(p);
   let type: string = p.Type,
     v2Type: string;
   if (isV4) {
@@ -1050,7 +1059,12 @@ function typesByNamespace(model: Model): Record<string, NamespaceTypes> {
   return out;
 }
 
-function propertyV4(p: Property, indent: string): string[] {
+// annotations: the <Annotation> elements for the property (see SapAnnotations)
+function propertyV4(
+  p: Property,
+  indent: string,
+  annotations: string[],
+): string[] {
   const a = attrs([
     ["Name", p.name],
     ["Type", p.type],
@@ -1059,10 +1073,10 @@ function propertyV4(p: Property, indent: string): string[] {
     ["Precision", p.precision],
     ["Scale", p.scale],
   ]);
-  if (!p.label) return [`${indent}<Property${a}/>`];
+  if (!annotations.length) return [`${indent}<Property${a}/>`];
   return [
     `${indent}<Property${a}>`,
-    `${indent}  <Annotation Term="Common.Label" String="${esc(p.label)}"/>`,
+    ...annotations.map((line) => `${indent}  ${line}`),
     `${indent}</Property>`,
   ];
 }
@@ -1166,28 +1180,13 @@ function functionImportsV2(view: OperationView, indent: string): string[] {
   return out;
 }
 
+// The document's sap: attributes become V4 annotations (see sap-annotations.ts). The body is
+// written first: the vocabulary references it needs are known only then.
 function emitV4(model: Model): string {
+  const sap = new SapAnnotations(model.referencesXml, model.annotationsXml);
   const out: string[] = [];
-  out.push('<?xml version="1.0" encoding="utf-8"?>');
-  out.push(`<edmx:Edmx Version="4.0" xmlns:edmx="${NS.v4.edmx}">`);
-  for (const ref of model.referencesXml) out.push(`  ${ref}`);
-  const hasLabels = Object.values(model.entityTypes).some((et) =>
-    Object.values(et.properties).some((p) => p.label),
-  );
-  if (
-    hasLabels &&
-    !model.referencesXml.some((r) =>
-      r.includes("com.sap.vocabularies.Common.v1"),
-    )
-  ) {
-    out.push(
-      '  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">',
-    );
-    out.push(
-      '    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="Common"/>',
-    );
-    out.push("  </edmx:Reference>");
-  }
+  const indented = (indent: string, lines: string[]) =>
+    lines.map((line) => `${indent}${line}`);
   out.push("  <edmx:DataServices>");
   for (const [ns, types] of Object.entries(typesByNamespace(model))) {
     out.push(`    <Schema Namespace="${esc(ns)}" xmlns="${NS.v4.edm}">`);
@@ -1210,7 +1209,13 @@ function emitV4(model: Model): string {
     for (const ct of types.complexTypes) {
       out.push(`      <ComplexType Name="${esc(ct.name)}">`);
       for (const p of Object.values(ct.properties))
-        out.push(...propertyV4(p, "        "));
+        out.push(
+          ...propertyV4(
+            p,
+            "        ",
+            sap.property(p, ct.properties, `${ct.fullName}/${p.name}`),
+          ),
+        );
       out.push("      </ComplexType>");
     }
     for (const et of types.entityTypes) {
@@ -1220,7 +1225,13 @@ function emitV4(model: Model): string {
         out.push(`          <PropertyRef Name="${esc(k)}"/>`);
       out.push("        </Key>");
       for (const p of Object.values(et.properties))
-        out.push(...propertyV4(p, "        "));
+        out.push(
+          ...propertyV4(
+            p,
+            "        ",
+            sap.property(p, et.properties, `${et.fullName}/${p.name}`),
+          ),
+        );
       for (const nav of Object.values(et.navigations)) {
         const type = nav.isCollection
           ? `Collection(${nav.targetType})`
@@ -1249,6 +1260,7 @@ function emitV4(model: Model): string {
           );
         else out.push(`        <NavigationProperty${a}/>`);
       }
+      out.push(...indented("        ", sap.entityType(et)));
       out.push("      </EntityType>");
     }
     if (ns === model.container.namespace) {
@@ -1257,27 +1269,31 @@ function emitV4(model: Model): string {
       out.push(`      <EntityContainer Name="${esc(model.container.name)}">`);
       for (const es of Object.values(model.entitySets)) {
         const et = model.entityTypes[es.entityType];
-        const navs = Object.values(et.navigations);
-        if (navs.length === 0) {
-          out.push(
-            `        <EntitySet Name="${esc(es.name)}" EntityType="${esc(
-              es.entityType,
-            )}"/>`,
-          );
+        const children = [
+          ...Object.values(et.navigations).map(
+            (nav) =>
+              `<NavigationPropertyBinding Path="${esc(
+                nav.name,
+              )}" Target="${esc(nav.targetSet)}"/>`,
+          ),
+          ...sap.entitySet(
+            es,
+            et,
+            `${model.container.namespace}.${model.container.name}/${es.name}`,
+          ),
+        ];
+        const open = `<EntitySet Name="${esc(es.name)}" EntityType="${esc(
+          es.entityType,
+        )}"`;
+        if (children.length === 0) {
+          out.push(`        ${open}/>`);
           continue;
         }
         out.push(
-          `        <EntitySet Name="${esc(es.name)}" EntityType="${esc(
-            es.entityType,
-          )}">`,
+          `        ${open}>`,
+          ...indented("          ", children),
+          "        </EntitySet>",
         );
-        for (const nav of navs)
-          out.push(
-            `          <NavigationPropertyBinding Path="${esc(
-              nav.name,
-            )}" Target="${esc(nav.targetSet)}"/>`,
-          );
-        out.push("        </EntitySet>");
       }
       for (const op of Object.values(view.imports)) {
         const [tag, attr] =
@@ -1302,7 +1318,15 @@ function emitV4(model: Model): string {
   }
   out.push("  </edmx:DataServices>");
   out.push("</edmx:Edmx>");
-  return out.join("\n") + "\n";
+  return (
+    [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      `<edmx:Edmx Version="4.0" xmlns:edmx="${NS.v4.edmx}">`,
+      ...indented("  ", model.referencesXml),
+      ...indented("  ", sap.references()),
+      ...out,
+    ].join("\n") + "\n"
+  );
 }
 
 interface AssociationOut {
