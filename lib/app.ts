@@ -160,10 +160,15 @@ function createApp({
       "Access-Control-Allow-Methods",
       "GET,HEAD,POST,PUT,MERGE,PATCH,DELETE,OPTIONS",
     );
+    // Whatever headers the preflight asks for: clients send their own (UI5's V2 model sends
+    // sap-cancel-on-close, sap-contextid-accept and MaxDataServiceVersion), and a refused
+    // one fails the request
     res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type,Accept,X-Requested-With,X-CSRF-Token,OData-Version,OData-MaxVersion,Prefer,If-Match,Content-ID",
+      req.headers["access-control-request-headers"] ||
+        "Content-Type,Accept,X-Requested-With,X-CSRF-Token,OData-Version,OData-MaxVersion,Prefer,If-Match,Content-ID",
     );
+    res.vary("Access-Control-Request-Headers");
     res.header(
       "Access-Control-Expose-Headers",
       "X-CSRF-Token,OData-Version,DataServiceVersion,Location,Preference-Applied,ETag",
