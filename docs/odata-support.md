@@ -93,9 +93,19 @@ Limits:
 - A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
 - No validation besides required values on activation, no side effects, and no locks between users.
 
+## ETags
+
+An entity set has ETags when the metadata names the properties they're made of: `Core.OptimisticConcurrency` on the set (V4, as CAP writes it for `@odata.etag`), or `ConcurrencyMode="Fixed"` on properties of its type (V2, as SAP Gateway writes it). The other protocol's `$metadata` says the same in its own terms.
+
+- **Reading.** An entity's ETag is in the `ETag` header of a single-entity response, and in the payload as `@odata.etag` (V4) or `__metadata.etag` (V2), expanded entities included. It is those properties' values, e.g. `W/"2026-01-01T10:00:00.000Z"`.
+- **Writing.** A `PUT`, `PATCH`, `MERGE` or `DELETE` needs the entity's current ETag (or `*`) in `If-Match`: without one it's a `428`, with one the entity has changed since it's a `412`, and nothing changes. A successful update answers with the new ETag. An action on the entity checks `If-Match` when it's sent, and runs without one, which the OData spec leaves to the service. A draft is checked but not required to send one.
+- **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp, so another client's ETag goes stale: a timestamp moves to now, a number counts up, a GUID or string is new. A value the client sends for one is replaced.
+
+UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try a `412` by hand, read an entity, change it from another client (`If-Match: *`), and then change it with the first ETag.
+
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. Not yet: ETags.
+Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 A navigation without a `ReferentialConstraint` (on either side) is joined by naming: on the source's key names when the target has them (an item keyed by `SalesOrder` + `ItemNo` under a sales order keyed by `SalesOrder`), or on a foreign key named after the other side (`Item.OrderID`, `Item.Order_ID`, CAP's `author_ID`). Each such join is logged as `navigation joined by naming: ...`, since it's a guess. A match that would join two types' whole keys to each other (an order's `ID` to its items' `ID`) is only taken for a one-to-one link, never for one with a "many" side or from a type to itself.
 

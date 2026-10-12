@@ -92,8 +92,9 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
+- **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): changes need the entity's current ETag in `If-Match`, and one made since it was read is a `412`. See [ETags](docs/odata-support.md#etags).
 
-Not yet: ETags. `$apply`, `$compute`, `$skiptoken` and `$deltatoken` are rejected with `501`.
+`$apply`, `$compute`, `$skiptoken` and `$deltatoken` are rejected with `501`.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified.
 
