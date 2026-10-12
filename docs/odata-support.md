@@ -45,6 +45,7 @@ These annotations only describe the service: the server itself still accepts a `
 For a V4 `metadata.xml`, the V2 service's `$metadata` carries all of its annotations, which UI5's V2 model reads and puts before anything it derives from `sap:` attributes. They are written the way UI5 reads them:
 
 - Every `<Annotations>` block is in the V4 namespace (`xmlns="http://docs.oasis-open.org/odata/ns/edm"`): UI5 skips blocks in any other.
+- Every `<edmx:Reference>` declares V4's edmx namespace, as SAP Gateway writes them: UI5 resolves a term's alias (`UI.Hidden` to `com.sap.vocabularies.UI.v1.Hidden`) only from references in it.
 - An annotation written inline on an element, such as a property, an entity set or an action, moves into a block targeting that element, since V2 elements can't carry one.
 - Targets use namespaces, not the schema's alias (`SAP__self.Orders` is written `com.example.Orders`): UI5 resolves only the aliases of `<edmx:Reference>`.
 - An action or function is targeted as the function import V2 serves it as (see [Actions and functions](operations.md)): `Ns.Approve(Ns.Order)` becomes `Ns.Container/Approve`, and `Ns.Approve` without a binding becomes every function import of `Approve`. An action import's target becomes its function import's too.
