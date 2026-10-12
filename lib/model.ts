@@ -45,7 +45,7 @@ export interface EntityType {
   navigations: Record<string, Navigation>;
   // Declared navigations the server can't join, with the reason (requests using one get a 501)
   disabledNavigations?: Record<string, string>;
-  // SiblingEntity and DraftAdministrativeData of a draft-enabled type (see draft.js)
+  // SiblingEntity and DraftAdministrativeData of a draft-enabled type (see draft.ts)
   draftNavigations?: Record<string, DraftNavigation>;
 }
 

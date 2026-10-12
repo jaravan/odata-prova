@@ -81,7 +81,7 @@ export interface Protocol extends LiteralSyntax {
   error(status: number, message: string): ODataResponse;
 }
 
-// What operations change, by operation name (config.json, see operationRules in app.js):
+// What operations change, by operation name (config.json, see operationRules in app.ts):
 // { ApprovePurchaseOrder: { set: { Status: "Approved" } } }
 export type Rules = Record<string, { set?: Record<string, unknown> }>;
 
