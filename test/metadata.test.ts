@@ -166,7 +166,10 @@ describe("EDMX round trips", () => {
       v2,
       /<Annotations Target="SalesSrv.Orders\/OrderNo" xmlns="http:\/\/docs.oasis-open.org\/odata\/ns\/edm">/,
     );
-    assert.match(v2, /<edmx:Reference Uri=/);
+    assert.match(
+      v2,
+      /<edmx:Reference xmlns:edmx="http:\/\/docs.oasis-open.org\/odata\/ns\/edmx" Uri=/,
+    );
     const back = parseMetadata(v2);
     assert.equal(back.sourceVersion, "2.0");
     assert.deepEqual(

@@ -1426,7 +1426,7 @@ function emitV2(model: Model): string {
   out.push(
     `<edmx:Edmx Version="1.0" xmlns:edmx="${NS.v2.edmx}" xmlns:m="${NS.v2.m}" xmlns:sap="${NS.v2.sap}">`,
   );
-  for (const ref of model.referencesXml) out.push(`  ${ref}`);
+  for (const ref of annotations.references) out.push(`  ${ref}`);
   out.push('  <edmx:DataServices m:DataServiceVersion="2.0">');
   for (const [ns, types] of Object.entries(typesByNamespace(model))) {
     out.push(`    <Schema Namespace="${esc(ns)}" xmlns="${NS.v2.edm}">`);

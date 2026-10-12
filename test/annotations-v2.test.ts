@@ -45,6 +45,16 @@ describe("emitV2 carries a V4 document's annotations as UI5's V2 model reads the
       assert.equal(b.xmlns, "http://docs.oasis-open.org/odata/ns/edm");
   });
 
+  it("declares V4's edmx namespace on each reference, where UI5 looks for the aliases of terms", () => {
+    const references = children(
+      children(doc, "edmx:Edmx")[0],
+      "edmx:Reference",
+    );
+    assert.equal(references.length, 3);
+    for (const r of references)
+      assert.equal(r["xmlns:edmx"], "http://docs.oasis-open.org/odata/ns/edmx");
+  });
+
   it("moves inline annotations into blocks targeting their element", () => {
     assert.deepEqual(terms("com.example.anno.Order"), ["Common.Label"]);
     assert.deepEqual(terms("com.example.anno.Order/Items"), ["Common.Label"]);

@@ -3,6 +3,9 @@
 // from sap: attributes, so the V2 metadata carries them as they are, except:
 // - each <Annotations> block is put in the V4 namespace: UI5 reads blocks in that namespace
 //   only, and a V4 document's blocks inherit it from their <Schema>, which V2 doesn't have
+// - each <edmx:Reference> declares V4's edmx namespace, as SAP Gateway writes them: in V2
+//   metadata the edmx prefix is V2's, and UI5 resolves a term's alias (UI.Hidden) only
+//   from references in V4's, so the term would be read under its alias
 // - an annotation written inline on an element (a property, an action) moves into a block
 //   targeting the element, since V2 elements can't carry one (see inlineAnnotations)
 // - targets are written as V2 has them: a schema alias resolved (UI5 resolves only those of
@@ -17,6 +20,7 @@
 import type { Model, Operation } from "./model.ts";
 
 const EDM_V4 = "http://docs.oasis-open.org/odata/ns/edm";
+const EDMX_V4 = "http://docs.oasis-open.org/odata/ns/edmx";
 
 // An element's start or end tag (with its attributes), or a comment, processing
 // instruction or CDATA section, which are skipped
@@ -175,6 +179,7 @@ function inlineAnnotations(xml: string): string[] {
 
 // The V2 metadata's blocks, and the sap: attributes taken from them
 export interface AnnotationsV2 {
+  references: string[];
   blocks: string[];
   // Entity sets whose annotations say Searchable false
   notSearchable: Set<string>;
@@ -281,7 +286,12 @@ function annotationsV2(model: Model): AnnotationsV2 {
       }
     }
   }
-  return { blocks, notSearchable, applicablePaths };
+  const references = model.referencesXml.map((ref) =>
+    /^<[^>]*\sxmlns:edmx\s*=/.test(ref)
+      ? ref
+      : ref.replace(/^<edmx:Reference\b/, `$& xmlns:edmx="${EDMX_V4}"`),
+  );
+  return { references, blocks, notSearchable, applicablePaths };
 }
 
 export { inlineAnnotations, annotationsV2 };
