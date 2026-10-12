@@ -27,7 +27,7 @@
 // A term the document's own <Annotations> blocks already set on the same target is left
 // out: the block is emitted as it is (see emitV4), and a term may be applied only once.
 
-import type { EntitySet, EntityType, Property } from "./model.ts";
+import type { EntitySet, EntityType, Model, Property } from "./model.ts";
 
 const VOCABULARIES = {
   Common: {
@@ -348,4 +348,43 @@ class SapAnnotations {
   }
 }
 
-export { SapAnnotations };
+// The document's own <Annotations> blocks, for the V4 metadata. A V2 document names an
+// operation on an entity by its function import (Ns.Container/TravelEdit), which V4 serves
+// as a bound action (see v4ViewOfV2), so:
+// - a block targeting the import (or one of its parameters) targets the action's overload,
+//   Ns.TravelEdit(Ns.TravelType)
+// - an action a draft annotation names (EditAction="Ns.Container/TravelEdit") is named as
+//   the action, Ns.TravelEdit: Fiori Elements V4 calls the draft actions by that name
+function blocksV4(model: Model): string[] {
+  const container = `${model.container.namespace}.${model.container.name}`;
+  const bound = new Map(
+    model.operationViews["4.0"].bound.map((op) => [
+      `${container}/${op.name}`,
+      op,
+    ]),
+  );
+  return model.annotationsXml.map((block) => {
+    const open = block.match(/^<Annotations\b[^>]*>/)?.[0];
+    const target = open && attr(open, "Target");
+    const [, head, rest] = target?.match(/^([^/]+\/[^/]+)(.*)$/) || [];
+    const op = head ? bound.get(head) : undefined;
+    let out =
+      open && op
+        ? open.replace(
+            /\bTarget="[^"]*"/,
+            `Target="${esc(`${op.fullName}(${op.binding!.type})${rest}`)}"`,
+          ) + block.slice(open.length)
+        : block;
+    out = out.replace(/<PropertyValue\b[^>]*>/g, (tag) => {
+      const action = /Action$/.test(attr(tag, "Property") ?? "")
+        ? bound.get(attr(tag, "String") ?? "")
+        : undefined;
+      return action
+        ? tag.replace(/\bString="[^"]*"/, `String="${esc(action.fullName)}"`)
+        : tag;
+    });
+    return out;
+  });
+}
+
+export { SapAnnotations, blocksV4 };

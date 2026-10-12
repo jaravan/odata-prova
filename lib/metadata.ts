@@ -15,7 +15,7 @@ import type {
   V4NavigationProperty,
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
-import { SapAnnotations } from "./sap-annotations.ts";
+import { SapAnnotations, blocksV4 } from "./sap-annotations.ts";
 import { inlineAnnotations, annotationsV2 } from "./annotations-v2.ts";
 import type { AnnotationsV2 } from "./annotations-v2.ts";
 import {
@@ -1200,7 +1200,8 @@ function functionImportsV2(
 // The document's sap: attributes become V4 annotations (see sap-annotations.ts). The body is
 // written first: the vocabulary references it needs are known only then.
 function emitV4(model: Model): string {
-  const sap = new SapAnnotations(model.referencesXml, model.annotationsXml);
+  const blocks = blocksV4(model);
+  const sap = new SapAnnotations(model.referencesXml, blocks);
   const out: string[] = [];
   const indented = (indent: string, lines: string[]) =>
     lines.map((line) => `${indent}${line}`);
@@ -1329,7 +1330,7 @@ function emitV4(model: Model): string {
         out.push(`        <${tag}${a}/>`);
       }
       out.push("      </EntityContainer>");
-      for (const block of model.annotationsXml) out.push(`      ${block}`);
+      for (const block of blocks) out.push(`      ${block}`);
     }
     out.push("    </Schema>");
   }

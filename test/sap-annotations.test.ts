@@ -187,3 +187,55 @@ describe("emitV4 turns a V2 document's sap: attributes into V4 annotations", () 
     );
   });
 });
+
+describe("emitV4 names a V2 document's operations on an entity as the V4 bound actions", () => {
+  // RAP's V2 metadata, plus a block on a function import and one on its parameter
+  const draftXml = fs
+    .readFileSync(
+      path.join(import.meta.dirname, "fixtures", "DraftSrvV2", "metadata.xml"),
+      "utf8",
+    )
+    .replace(
+      "<Annotations ",
+      `<Annotations Target="TravelService.TravelService_Entities/TravelEdit" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.Label" String="Edit"/>
+      </Annotations>
+      <Annotations Target="TravelService.TravelService_Entities/TravelEdit/PreserveChanges" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.Label" String="Keep changes"/>
+      </Annotations>
+      <Annotations `,
+    );
+  const out = emitV4(parseMetadata(draftXml));
+
+  it("in a draft annotation, which Fiori Elements V4 calls the actions by", () => {
+    assert.match(
+      out,
+      /<PropertyValue Property="ActivationAction" String="TravelService.TravelActivate"\/>/,
+    );
+    assert.match(
+      out,
+      /<PropertyValue Property="EditAction" String="TravelService.TravelEdit"\/>/,
+    );
+    assert.match(
+      out,
+      /<PropertyValue Property="PreparationAction" String="TravelService.BookingPrepare"\/>/,
+    );
+    assert.doesNotMatch(out, /String="TravelService.TravelService_Entities\//);
+  });
+
+  it("in a block's target: the action's overload, and its parameter", () => {
+    assert.match(
+      out,
+      /<Annotations Target="TravelService.TravelEdit\(TravelService.TravelType\)" /,
+    );
+    assert.match(
+      out,
+      /<Annotations Target="TravelService.TravelEdit\(TravelService.TravelType\)\/PreserveChanges" /,
+    );
+    // An entity set's target stays as it is
+    assert.match(
+      out,
+      /<Annotations Target="TravelService.TravelService_Entities\/Travel" /,
+    );
+  });
+});
