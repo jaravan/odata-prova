@@ -7,13 +7,13 @@ V4 actions and functions, bound (`People('x')/NS.ShareTrip`) and imported (`GetN
 - applies the model's rule for it, if it has one (see [What an operation changes](#what-an-operation-changes))
 - answers with what the return type allows:
 
-| Return type                                         | Response                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------- |
-| None                                                | `204`                                                          |
-| The entity type it acts on                          | That entity: an Approve on an order returns the order          |
-| An entity type whose key the parameters carry       | That entity (`404` if there is none)                           |
-| Any other entity type, or a collection of one       | Rows of that type's entity set, with the query options applied |
-| A primitive or complex type, or a collection of one | A neutral value: `""`, `0`, `false`, an object of those, `[]`  |
+| Return type                                         | Response                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| None                                                | `204`                                                                                                                 |
+| The entity type it acts on                          | That entity: an Approve on an order returns the order                                                                 |
+| An entity type whose key the parameters carry       | That entity (`404` if there is none)                                                                                  |
+| Any other entity type, or a collection of one       | Rows of that type's entity set, with the query options applied                                                        |
+| A primitive or complex type, or a collection of one | A neutral value: `""`, `0`, `false`, today's date, an all-zero GUID, an enum's first member, an object of those, `[]` |
 
 Parameter aliases (`@p`) and path segments after an operation are rejected with `501`.
 
