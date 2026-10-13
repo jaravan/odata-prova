@@ -52,6 +52,9 @@ export interface EntityType {
   draftNavigations?: Record<string, DraftNavigation>;
   // The sap: attributes of a V2 document, without the prefix (label, ...)
   sap?: Record<string, string>;
+  // Aggregation.CustomAggregate, on the type or one of its entity sets: name -> the Edm type
+  // of its value (see aggregation.ts)
+  customAggregates?: Record<string, string>;
 }
 
 export interface ComplexType {
@@ -271,10 +274,12 @@ export type Transformation =
   | { kind: "groupby"; properties: string[]; aggregates: Aggregate[] }
   | { kind: "aggregate"; aggregates: Aggregate[] };
 
-// An aggregate expression: "TotalAmount with sum as Total", or "$count as Count" (no property)
+// An aggregate expression: "TotalAmount with sum as Total", "$count as Count" (no property),
+// or a custom aggregate, "TotalAmount" or "TotalAmount as Total"
 export interface Aggregate {
   property?: string;
-  method: "sum" | "min" | "max" | "average" | "countdistinct" | "count";
+  method:
+    "sum" | "min" | "max" | "average" | "countdistinct" | "count" | "custom";
   alias: string;
 }
 

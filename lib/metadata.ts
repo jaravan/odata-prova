@@ -16,6 +16,7 @@ import type {
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
 import { parseConcurrency } from "./etag.ts";
+import { parseCustomAggregates } from "./aggregation.ts";
 import { inlineAnnotations } from "./annotations-v2.ts";
 import { parseDraftAnnotations, resolveDraftNavigations } from "./draft.ts";
 import {
@@ -276,6 +277,7 @@ function parseMetadata(
 
   parseDraftAnnotations(model, schemas, qualify);
   parseConcurrency(model, schemas, qualify);
+  parseCustomAggregates(model, schemas, qualify);
   if (isV4) resolveNavigationsV4(model, joins);
   else resolveNavigationsV2(model, joins);
   resolvePartners(model);

@@ -1,0 +1,6 @@
+ID;Country;Amount;Currency;Quantity
+1;Germany;100.10;EUR;3
+2;Germany;200.20;EUR;4
+3;France;50.00;EUR;1
+4;USA;80.00;USD;2
+5;USA;;USD;

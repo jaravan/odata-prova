@@ -1,5 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { start, get, type TestServer } from "./helpers.ts";
 
 // Decimals as strings, as UI5's V4 model asks for them
@@ -105,6 +106,10 @@ describe("$apply", () => {
       ],
       ["$apply=groupby(Currency)", /^Invalid \$apply/],
       [
+        "$apply=aggregate(TotalAmount)",
+        /TotalAmount is not a custom aggregate of PurchaseOrder/,
+      ],
+      [
         "$apply=groupby((Currency))/filter(Status eq 'Open')",
         /^Unknown property Status/,
       ],
@@ -122,7 +127,6 @@ describe("$apply", () => {
 
   it("what isn't supported -> 501, never ignored", async () => {
     for (const query of [
-      "$apply=aggregate(TotalAmount)",
       "$apply=topcount(2,TotalAmount)",
       "$apply=groupby((Currency),filter(Status eq 'Open'))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
@@ -133,5 +137,53 @@ describe("$apply", () => {
       const r = await apply(query);
       assert.equal(r.status, 501, query);
     }
+  });
+});
+
+// Aggregation.CustomAggregate inline on the type (Amount, Currency), and on the set in an
+// <Annotations> block (Quantity); UI5 asks for these with no "with"
+describe("$apply with custom aggregates", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(
+      path.join(import.meta.dirname, "fixtures", "AggregationSrv"),
+    );
+  });
+  after(() => s.close());
+
+  const apply = (query: string) => get(`${s.v4}/Sales?${query}`, IEEE754);
+
+  it("sums a number, and gives the unit the rows share, or null when they differ", async () => {
+    const r = await apply(
+      "$apply=groupby((Country),aggregate(Amount,Currency,Quantity))",
+    );
+    assert.equal(r.status, 200);
+    assert.equal(
+      r.body["@odata.context"],
+      "/odata/v4/T/$metadata#Sales(Country,Amount,Currency,Quantity)",
+    );
+    assert.deepEqual(r.body.value, [
+      { Country: "Germany", Amount: "300.30", Currency: "EUR", Quantity: 7 },
+      { Country: "France", Amount: "50.00", Currency: "EUR", Quantity: 1 },
+      { Country: "USA", Amount: "80.00", Currency: "USD", Quantity: 2 },
+    ]);
+    const total = await apply("$apply=aggregate(Amount,Currency)");
+    assert.deepEqual(total.body.value, [{ Amount: "430.30", Currency: null }]);
+  });
+
+  it("takes an alias, and mixes with the standard methods", async () => {
+    const r = await apply(
+      "$apply=filter(Currency eq 'EUR')/aggregate(Amount as Total,Amount with max as Max)&$filter=Total gt 0",
+    );
+    assert.deepEqual(r.body.value, [{ Total: "350.30", Max: "200.20" }]);
+  });
+
+  it("a property that isn't one -> 400", async () => {
+    const r = await apply("$apply=aggregate(Country)");
+    assert.equal(r.status, 400);
+    assert.match(
+      r.body.error.message,
+      /Country is not a custom aggregate of Sales/,
+    );
   });
 });

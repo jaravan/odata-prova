@@ -8,24 +8,95 @@
 // properties and the aliases, with no key. The query options after $apply refer to those.
 //
 // Supported: filter, groupby (with an aggregate), and aggregate with sum, min, max, average,
-// countdistinct and $count. Other transformations, and custom aggregates (aggregate(Amount),
-// with no "with"), are a 501.
+// countdistinct, $count and custom aggregates. Other transformations are a 501.
+//
+// A custom aggregate (Aggregation.CustomAggregate) is what UI5 asks for with no "with":
+// aggregate(SalesAmount,Currency). The metadata names it and its type but not how it's
+// computed, so the server aggregates the property of the same name: a number is summed, and
+// anything else, such as a currency or unit, is the value all the rows share, or null when
+// they differ, which is what UI5 expects of a unit.
 
 import { applyQuery } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import { HttpError, splitTopLevel } from "./query.ts";
-import { isNumericType, toComparable } from "./types.ts";
+import { isIntegerType, isNumericType, toComparable } from "./types.ts";
 import type {
   Aggregate,
   EntityType,
+  Model,
   PrimitiveValue,
   Property,
   Row,
   Transformation,
 } from "./model.ts";
+import type { Qualify, Xml } from "./metadata.ts";
 
 const METHODS = new Set(["sum", "min", "max", "average", "countdistinct"]);
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CUSTOM_AGGREGATE = "Org.OData.Aggregation.V1.CustomAggregate";
+const DOUBLE = /^Edm\.(Double|Single)$/;
+
+// --- Metadata ------------------------------------------------------------------------------
+
+// The parsed XML elements read here: their attributes, and the elements they hold
+interface ElementXml {
+  Name?: string;
+  Namespace?: string;
+  Target?: string;
+  Term?: string;
+  Qualifier?: string;
+  String?: string;
+  Annotation?: Xml;
+  EntityType?: Xml;
+  EntityContainer?: Xml;
+  EntitySet?: Xml;
+  Annotations?: Xml;
+}
+
+// One element or several, as fast-xml-parser gives them
+function elements(x: Xml): ElementXml[] {
+  if (x === undefined) return [];
+  return Array.isArray(x) ? (x as ElementXml[]) : [x as ElementXml];
+}
+
+// Sets et.customAggregates from Aggregation.CustomAggregate, whose qualifier is the
+// aggregate's name and whose value its type: on an entity type or entity set, inline or in an
+// <Annotations> block targeting it. One on a set is taken as its type's. schemas are the
+// parsed document's; qualify resolves an alias (see termQualifier in metadata.ts).
+function parseCustomAggregates(
+  model: Model,
+  schemas: Xml[],
+  qualify: Qualify,
+): void {
+  const container = `${model.container.namespace}.${model.container.name}`;
+  const annotate = (type: EntityType | undefined, xml: Xml) => {
+    for (const a of elements(xml))
+      if (type && a.Qualifier && qualify(a.Term ?? "") === CUSTOM_AGGREGATE)
+        (type.customAggregates ??= {})[a.Qualifier] = a.String ?? "";
+  };
+  const typeOfSet = (setName: string | undefined) => {
+    const es = setName === undefined ? undefined : model.entitySets[setName];
+    return es && model.entityTypes[es.entityType];
+  };
+  for (const schema of elements(schemas)) {
+    for (const et of elements(schema.EntityType))
+      annotate(
+        model.entityTypes[`${schema.Namespace}.${et.Name}`],
+        et.Annotation,
+      );
+    for (const c of elements(schema.EntityContainer))
+      for (const es of elements(c.EntitySet))
+        annotate(typeOfSet(es.Name), es.Annotation);
+    for (const block of elements(schema.Annotations)) {
+      const [path, setName, ...rest] = String(block.Target).split("/");
+      if (rest.length) continue;
+      if (setName === undefined)
+        annotate(model.entityTypes[qualify(path)], block.Annotation);
+      else if (qualify(path) === container)
+        annotate(typeOfSet(setName), block.Annotation);
+    }
+  }
+}
 
 // --- Parsing -------------------------------------------------------------------------------
 
@@ -83,10 +154,11 @@ function parseAggregates(text: string): Aggregate[] {
         `$apply: unknown aggregation method ${method}`,
       );
     }
-    if (IDENTIFIER.test(expr))
-      throw new HttpError(
-        501,
-        `$apply: aggregate(${expr}) is a custom aggregate, which is not supported`,
+    m = expr.match(/^(\S+?)(?:\s+as\s+(\S+))?$/);
+    if (m && IDENTIFIER.test(m[1]))
+      return checkAlias(
+        { property: m[1], method: "custom", alias: m[2] ?? m[1] },
+        expr,
       );
     throw new HttpError(400, `Invalid $apply aggregate: ${expr}`);
   });
@@ -145,7 +217,7 @@ function applyTransformations(
 interface Aggregated {
   type: EntityType;
   groupBy: string[];
-  aggregates: { agg: Aggregate; input?: Property }[];
+  aggregates: { agg: Aggregate; input?: Property; result: Property }[];
 }
 
 function aggregated(
@@ -169,12 +241,19 @@ function aggregated(
     properties[name] = prop;
   }
   const inputs = aggregates.map((agg) => {
-    if (properties[agg.alias] || type.properties[agg.alias])
+    // A custom aggregate is named after its property, and so is its result by default
+    const ownName = agg.method === "custom" && agg.alias === agg.property;
+    if (properties[agg.alias] || (type.properties[agg.alias] && !ownName))
       throw new HttpError(400, `$apply: alias ${agg.alias} is already in use`);
     const input =
-      agg.property === undefined ? undefined : propertyOf(type, agg.property);
-    properties[agg.alias] = resultProperty(agg, input);
-    return { agg, input };
+      agg.property === undefined
+        ? undefined
+        : agg.method === "custom"
+          ? customInput(type, agg.property)
+          : propertyOf(type, agg.property);
+    const result = resultProperty(agg, input, type);
+    properties[agg.alias] = result;
+    return { agg, input, result };
   });
   return {
     type: {
@@ -189,6 +268,22 @@ function aggregated(
     groupBy,
     aggregates: inputs,
   };
+}
+
+// The property a custom aggregate aggregates: the one of its name
+function customInput(type: EntityType, name: string): Property {
+  if (type.customAggregates?.[name] === undefined)
+    throw new HttpError(
+      400,
+      `$apply: ${name} is not a custom aggregate of ${type.name} (Aggregation.CustomAggregate)`,
+    );
+  const prop = type.properties[name];
+  if (!prop)
+    throw new HttpError(
+      501,
+      `$apply: custom aggregate ${name} has no property of its name to aggregate`,
+    );
+  return prop;
 }
 
 function propertyOf(type: EntityType, name: string): Property {
@@ -206,8 +301,13 @@ function propertyOf(type: EntityType, name: string): Property {
 
 // The alias's property. The types are the ones the Data Aggregation spec gives: a count is
 // an Edm.Decimal, a sum or average of a Double or Single an Edm.Double and of any other
-// number an Edm.Decimal, and a min or max has the type of what it compares.
-function resultProperty(agg: Aggregate, input: Property | undefined): Property {
+// number an Edm.Decimal, and a min or max has the type of what it compares. A custom
+// aggregate has the type its annotation names.
+function resultProperty(
+  agg: Aggregate,
+  input: Property | undefined,
+  type: EntityType,
+): Property {
   const base = {
     name: agg.alias,
     nullable: true,
@@ -227,6 +327,12 @@ function resultProperty(agg: Aggregate, input: Property | undefined): Property {
       `$apply: cannot aggregate ${input.name}, which is not of a primitive type`,
     );
   switch (agg.method) {
+    case "custom": {
+      const declared = type.customAggregates?.[input.name] ?? "";
+      return /^Edm\.\w+$/.test(declared)
+        ? typed(declared)
+        : { ...input, ...base };
+    }
     case "countdistinct":
       return typed("Edm.Decimal");
     case "min":
@@ -238,11 +344,7 @@ function resultProperty(agg: Aggregate, input: Property | undefined): Property {
           400,
           `$apply: ${agg.method} needs a number, and ${input.name} is ${input.type}`,
         );
-      return typed(
-        /^Edm\.(Double|Single)$/.test(input.type)
-          ? "Edm.Double"
-          : "Edm.Decimal",
-      );
+      return typed(DOUBLE.test(input.type) ? "Edm.Double" : "Edm.Decimal");
   }
 }
 
@@ -250,7 +352,7 @@ function resultProperty(agg: Aggregate, input: Property | undefined): Property {
 function aggregateRow(rows: Row[], out: Aggregated): Row {
   const row: Row = {};
   for (const name of out.groupBy) row[name] = rows[0][name];
-  for (const { agg, input } of out.aggregates) {
+  for (const { agg, input, result } of out.aggregates) {
     if (!input) {
       row[agg.alias] = String(rows.length);
       continue;
@@ -259,7 +361,13 @@ function aggregateRow(rows: Row[], out: Aggregated): Row {
     const values = rows
       .map((r) => r[input.name] as PrimitiveValue)
       .filter((v) => v !== null && v !== undefined);
-    row[agg.alias] = aggregateValues(agg.method, values, input);
+    const value = aggregateValues(agg.method, values, input);
+    // A sum is a decimal string; a custom aggregate's type may want a number
+    row[agg.alias] =
+      typeof value === "string" &&
+      (DOUBLE.test(result.type) || isIntegerType(result.type))
+        ? Number(value)
+        : value;
   }
   return row;
 }
@@ -269,8 +377,15 @@ function aggregateValues(
   values: PrimitiveValue[],
   input: Property,
 ): PrimitiveValue {
-  const double = /^Edm\.(Double|Single)$/.test(input.type);
+  const double = DOUBLE.test(input.type);
   switch (method) {
+    case "custom":
+      // A number is summed; anything else is the value the rows share, or null
+      if (isNumericType(input.type))
+        return aggregateValues("sum", values, input);
+      return new Set(values.map((v) => JSON.stringify(v))).size === 1
+        ? values[0]
+        : null;
     case "countdistinct":
       return String(new Set(values.map((v) => JSON.stringify(v))).size);
     case "min":
@@ -320,4 +435,4 @@ function decimalSum(values: PrimitiveValue[]): string {
   return `${negative ? "-" : ""}${whole}${fraction}`;
 }
 
-export { parseApply, applyTransformations };
+export { parseApply, applyTransformations, parseCustomAggregates };
