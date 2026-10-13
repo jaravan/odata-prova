@@ -20,7 +20,6 @@ import type {
   DraftNavigation,
   EntityType,
   JoinPair,
-  Key,
   Model,
   NavigationProperty,
   Operation,
@@ -31,6 +30,8 @@ import type { Qualify, Xml } from "./metadata.ts";
 import type { Store } from "./store.ts";
 import { HttpError } from "./query.ts";
 import { renewETag } from "./etag.ts";
+import { checkRequired, create } from "./writes.ts";
+import type { WriteHost } from "./writes.ts";
 
 // The draft actions an entity set's annotation can name
 export type DraftKind = keyof DraftInfo["actions"];
@@ -41,26 +42,9 @@ interface Related {
   rows: Row[];
 }
 
-// What Drafts uses of the service (the ODataService in service.ts)
-export interface DraftHost {
-  model: Model;
-  store: Store;
-  keyOf(type: EntityType, row: Row): Key;
-  related(row: Row, type: EntityType, nav: AnyNavigation): Related;
-  checkRequired(
-    type: EntityType,
-    row: Row,
-    names: string[],
-    creating: boolean,
-  ): void;
-  create(
-    setName: string,
-    type: EntityType,
-    body: unknown,
-    preset: Row,
-    draft: boolean,
-  ): Row;
-}
+// What Drafts uses of the service (the ODataService in service.ts): what the writes do, since
+// a draft is created through them
+export type DraftHost = WriteHost;
 
 // The entity a POST under Parent(...)/Nav is made under
 interface Parent {
@@ -510,10 +494,10 @@ class Drafts {
 
   // Writes the draft tree over the active one (children deleted in the draft are deleted)
   // and removes the draft. A draft may be incomplete, its active entity may not: the required
-  // values of the whole tree are checked first (see checkRequired in service.ts).
+  // values of the whole tree are checked first (see checkRequired in writes.ts).
   activate(setName: string, type: EntityType, draft: Row): Row {
     for (const n of this.tree(setName, type, draft))
-      this.svc.checkRequired(
+      checkRequired(
         n.type,
         n.row,
         Object.keys(n.type.properties),
@@ -639,7 +623,8 @@ class Drafts {
         string,
         unknown
       >;
-      const row = this.svc.create(
+      const row = create(
+        this.svc,
         setName,
         type,
         { ...input, ...this.newKey(setName, type, input), ...NEW_DRAFT },
