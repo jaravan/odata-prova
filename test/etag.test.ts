@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.ts";
 import {
   start,
@@ -17,9 +18,9 @@ const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const V4_MODEL = path.join(FIXTURES, "ETagSrv");
 const V2_MODEL = path.join(FIXTURES, "ETagSrvV2");
 
-describe("ETags (Core.OptimisticConcurrency, V4 document)", () => {
+describe("ETags (Core.OptimisticConcurrency, V4 document, strict)", () => {
   let s: TestServer;
-  before(async () => (s = await start(V4_MODEL)));
+  before(async () => (s = await start(V4_MODEL, { etags: "strict" })));
   after(() => s.close());
 
   const book = (id: number) => `${s.v4}/Books(${id})`;
@@ -180,9 +181,9 @@ describe("ETags (Core.OptimisticConcurrency, V4 document)", () => {
   });
 });
 
-describe("ETags (ConcurrencyMode=Fixed, V2 document)", () => {
+describe("ETags (ConcurrencyMode=Fixed, V2 document, strict)", () => {
   let s: TestServer;
-  before(async () => (s = await start(V2_MODEL)));
+  before(async () => (s = await start(V2_MODEL, { etags: "strict" })));
   after(() => s.close());
 
   const order = (v: string) => `${v}/OrderSet('4500000001')`;
@@ -213,6 +214,82 @@ describe("ETags (ConcurrencyMode=Fixed, V2 document)", () => {
     const v4 = await get(order(s.v4));
     assert.equal(v4.headers.get("etag"), v2);
     assert.equal(v4.body["@odata.etag"], v2);
+  });
+});
+
+describe("ETags, lenient (the default)", () => {
+  let s: TestServer;
+  before(async () => (s = await start(V4_MODEL)));
+  after(() => s.close());
+
+  const book = (id: number) => `${s.v4}/Books(${id})`;
+
+  it("an update or delete without If-Match goes through, and gives a new ETag", async () => {
+    const before = (await get(book(1))).headers.get("etag");
+    const patch = await send("PATCH", book(1), { title: "Changed" });
+    assert.equal(patch.status, 204);
+    assert.notEqual(patch.headers.get("etag"), before);
+    assert.equal((await send("DELETE", book(2))).status, 204);
+  });
+
+  it("a stale If-Match is still a 412", async () => {
+    const r = await send(
+      "PATCH",
+      book(1),
+      { title: "Lost update" },
+      { "if-match": 'W/"stale"' },
+    );
+    assert.equal(r.status, 412);
+    assert.equal((await get(book(1))).body.title, "Changed");
+  });
+});
+
+describe("ETags, off", () => {
+  let s: TestServer;
+  before(async () => (s = await start(V4_MODEL, { etags: "off" })));
+  after(() => s.close());
+
+  const book = (id: number) => `${s.v4}/Books(${id})`;
+
+  it("If-Match is ignored, stale or missing", async () => {
+    const stale = await send(
+      "PATCH",
+      book(1),
+      { title: "Changed" },
+      { "if-match": 'W/"stale"' },
+    );
+    assert.equal(stale.status, 204);
+    const action = await send(
+      "POST",
+      `${book(2)}/ETagSrv.approve`,
+      {},
+      { "if-match": 'W/"stale"' },
+    );
+    assert.equal(action.status, 200);
+    assert.equal((await send("DELETE", book(2))).status, 204);
+  });
+
+  it("entities still carry their ETags", async () => {
+    const r = await get(book(1));
+    assert.match(r.headers.get("etag") ?? "", /^W\/"/);
+    assert.equal(r.body["@odata.etag"], r.headers.get("etag"));
+  });
+});
+
+describe("ETAGS", () => {
+  it("the server refuses to start with an unknown mode", async () => {
+    const child = spawn(
+      process.execPath,
+      [path.join(import.meta.dirname, "..", "server.ts"), V4_MODEL],
+      { env: { ...process.env, PORT: "0", ETAGS: "loose" } },
+    );
+    let output = "";
+    child.stderr.on("data", (d) => (output += d));
+    const code = await new Promise<number | null>((resolve) =>
+      child.on("exit", resolve),
+    );
+    assert.equal(code, 1);
+    assert.match(output, /ETAGS must be one of lenient, strict, off/);
   });
 });
 

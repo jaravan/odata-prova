@@ -32,7 +32,7 @@ const ITEM = {
 
 // Starts the app on an ephemeral port with both protocols mounted under /odata/v2/T and
 // /odata/v4/T, and returns small fetch wrappers that parse the response for you. options go
-// to createApp (mockRows).
+// to createApp (mockRows, etags).
 async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
   const built = createApp({
     modelDir,

@@ -6,7 +6,8 @@
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Express } from "express";
-import { createApp, findModelDir } from "./lib/app.ts";
+import { createApp, findModelDir, ETAG_MODES } from "./lib/app.ts";
+import type { ETagMode } from "./lib/app.ts";
 
 const PORT = process.env.PORT || 3000;
 // The model to serve: the first argument, else MODEL_DIR (the image sets /models), else the
@@ -46,6 +47,20 @@ if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
     ),
   );
 
+// How strictly If-Match is checked: lenient (a request without one goes through), strict
+// (an update or delete without one is a 428) or off (it's ignored)
+const ETAGS = (process.env.ETAGS || "lenient") as ETagMode;
+if (!ETAG_MODES.includes(ETAGS))
+  exitWithError(
+    "bad ETAGS",
+    Object.assign(
+      new Error(
+        `ETAGS must be one of ${ETAG_MODES.join(", ")}, got '${process.env.ETAGS}'`,
+      ),
+      { code: "EETAGS" },
+    ),
+  );
+
 let app: Express;
 try {
   ({ app } = createApp({
@@ -53,6 +68,7 @@ try {
     v2Path: V2_PATH,
     v4Path: V4_PATH,
     mockRows: MOCK_ROWS,
+    etags: ETAGS,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);

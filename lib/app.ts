@@ -9,6 +9,8 @@ import { ODataService } from "./service.ts";
 import type { Protocol, Rules } from "./service.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
+import { ETAG_MODES } from "./etag.ts";
+import type { ETagMode } from "./etag.ts";
 import { HttpError, decodeUrl } from "./query.ts";
 import v2 from "./protocols/v2.ts";
 import v4 from "./protocols/v4.ts";
@@ -87,6 +89,8 @@ export interface AppOptions {
   log?: (message: string) => void;
   // Rows to generate for each entity set without a seed file (0, the default: none)
   mockRows?: number;
+  // How strictly If-Match is checked (see etag.ts): lenient, the default, strict or off
+  etags?: ETagMode;
 }
 
 function createApp({
@@ -95,6 +99,7 @@ function createApp({
   v4Path,
   log = console.log,
   mockRows = 0,
+  etags = "lenient",
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -146,6 +151,7 @@ function createApp({
         metadataXml: metadata[name],
         log,
         rules,
+        etags,
       }),
     );
   }
@@ -283,4 +289,5 @@ function createApp({
   return { app, model, store, services };
 }
 
-export { createApp, findModelDir };
+export type { ETagMode };
+export { createApp, findModelDir, ETAG_MODES };

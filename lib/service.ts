@@ -15,6 +15,7 @@ import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
 import { HttpError, decodeUrl, splitTopLevel } from "./query.ts";
 import { draftMatch, draftAction, Drafts } from "./draft.ts";
 import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
+import type { ETagMode } from "./etag.ts";
 import type {
   AnyNavigation,
   EntitySet,
@@ -95,6 +96,8 @@ export interface ServiceOptions {
   metadataXml: string;
   log?: (message: string) => void;
   rules?: Rules;
+  // How strictly If-Match is checked (see etag.ts); default lenient
+  etags?: ETagMode;
 }
 
 // The request headers dispatch reads (accept, prefer)
@@ -164,6 +167,7 @@ class ODataService {
   metadataXml: string;
   log: (message: string) => void;
   rules: Rules;
+  etags: ETagMode;
   operations: OperationView;
   drafts: Drafts;
 
@@ -175,6 +179,7 @@ class ODataService {
     metadataXml,
     log = () => {},
     rules = {},
+    etags = "lenient",
   }: ServiceOptions) {
     this.model = model;
     this.store = store;
@@ -183,6 +188,7 @@ class ODataService {
     this.metadataXml = metadataXml;
     this.log = log;
     this.rules = rules;
+    this.etags = etags;
     // The operations as this protocol serves them (see operationViews in metadata.ts)
     this.operations = model.operationViews[protocol.version];
     this.drafts = new Drafts(this);
@@ -705,7 +711,8 @@ class ODataService {
   // binding: { setName, type, row, rows } a bound operation was called on. A V2 import with
   // bindsTo gets its entity from the key parameters instead. Logs the call, applies the
   // model's rule for the operation if any, and answers per operationResult. An If-Match
-  // header is checked against the entity's ETag, but none is required (see etag.ts).
+  // header is checked against the entity's ETag, but none is required, even in strict mode
+  // (see etag.ts).
   callOperation(
     method: string,
     op: Operation,
@@ -737,7 +744,14 @@ class ODataService {
       }
     }
     if (binding?.row)
-      checkIfMatch(this.model, binding.setName, binding.row, headers, false);
+      checkIfMatch(
+        this.model,
+        binding.setName,
+        binding.row,
+        headers,
+        this.etags,
+        false,
+      );
     const on = binding?.row
       ? ` on ${this.entityUri(binding.setName, binding.type, binding.row)}`
       : "";
@@ -1091,7 +1105,7 @@ class ODataService {
       case "PATCH":
       case "MERGE": {
         const draft = this.model.entitySets[setName].draft;
-        checkIfMatch(this.model, setName, row, headers, !draft);
+        checkIfMatch(this.model, setName, row, headers, this.etags, !draft);
         const updated = this.update(
           setName,
           type,
@@ -1125,7 +1139,7 @@ class ODataService {
       }
       case "DELETE": {
         const draft = this.model.entitySets[setName].draft;
-        checkIfMatch(this.model, setName, row, headers, !draft);
+        checkIfMatch(this.model, setName, row, headers, this.etags, !draft);
         if (draft) this.drafts.delete(setName, type, row);
         else this.delete(setName, type, this.keyOf(type, row));
         return { status: 204 };

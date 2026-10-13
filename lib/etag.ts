@@ -12,9 +12,12 @@
 // GUID is new.
 //
 // A request with If-Match is checked against the entity's current ETag (or *): a stale one
-// is a 412. An update or delete without one is a 428, as the OData spec has it for an entity
-// set with Core.OptimisticConcurrency; an action without one runs, which the spec leaves to
-// the service. A draft is checked but not required to send one.
+// is a 412. How strict the checks are is the service's ETagMode:
+//   lenient  (the default) a request without If-Match goes through
+//   strict   an update or delete without one is a 428, as the OData spec has it for an
+//            entity set with Core.OptimisticConcurrency; an action without one runs, which
+//            the spec leaves to the service, and a draft is not required to send one
+//   off      If-Match is ignored; entities still carry their ETags
 
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Xml, Qualify } from "./metadata.ts";
@@ -29,6 +32,10 @@ import type { RequestHeaders } from "./service.ts";
 import { HttpError } from "./query.ts";
 
 const CONCURRENCY = "Org.OData.Core.V1.OptimisticConcurrency";
+
+// How strictly If-Match is checked (see the top of the file)
+const ETAG_MODES = ["lenient", "strict", "off"] as const;
+type ETagMode = (typeof ETAG_MODES)[number];
 
 const list = (x: Xml): Xml[] =>
   x === undefined ? [] : Array.isArray(x) ? x : [x];
@@ -95,20 +102,22 @@ function entityTags(header: string): string[] {
   );
 }
 
-// Checks If-Match on a request that changes the entity (see the top of the file)
+// Checks If-Match on a request that changes the entity (see the top of the file). required:
+// the request needs one in strict mode (an update or delete, not on a draft).
 function checkIfMatch(
   model: Model,
   setName: string,
   row: Row,
   headers: RequestHeaders,
+  mode: ETagMode,
   required: boolean,
 ): void {
-  const etag = etagOf(model, setName, row);
+  const etag = mode === "off" ? undefined : etagOf(model, setName, row);
   if (!etag) return;
   const raw = headers["if-match"];
   const header = Array.isArray(raw) ? raw.join(",") : raw;
   if (!header) {
-    if (required)
+    if (required && mode === "strict")
       throw new HttpError(
         428,
         `${setName} uses optimistic concurrency: send the entity's ETag in If-Match`,
@@ -176,4 +185,5 @@ function renewETag(
       row[name] = nextValue(row[name], type.properties[name]);
 }
 
-export { parseConcurrency, etagOf, checkIfMatch, renewETag };
+export type { ETagMode };
+export { ETAG_MODES, parseConcurrency, etagOf, checkIfMatch, renewETag };
