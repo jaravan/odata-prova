@@ -272,7 +272,13 @@ export interface QueryNode {
 export type Transformation =
   | { kind: "filter"; filter: string }
   | { kind: "groupby"; properties: string[]; aggregates: Aggregate[] }
-  | { kind: "aggregate"; aggregates: Aggregate[] };
+  | { kind: "aggregate"; aggregates: Aggregate[] }
+  | { kind: "search"; search: string }
+  | { kind: "orderby"; orderby: string }
+  | { kind: "skip" | "top"; count: number }
+  | { kind: "identity" }
+  // Each sequence runs on the same input, and their results follow one another
+  | { kind: "concat"; sequences: Transformation[][] };
 
 // An aggregate expression: "TotalAmount with sum as Total", "$count as Count" (no property),
 // or a custom aggregate, "TotalAmount" or "TotalAmount as Total"

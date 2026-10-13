@@ -74,6 +74,7 @@ export interface Protocol extends LiteralSyntax {
     result: { rows: Row[]; count?: number },
     setName: string,
     type: EntityType,
+    select: Set<string> | undefined,
     opts?: ResponseOptions,
   ): ODataResponse;
   // A single-valued navigation or operation result that is empty
@@ -426,10 +427,10 @@ class ODataService {
     if (q.apply) {
       if (method !== "GET" || row !== undefined)
         throw new HttpError(400, "$apply applies to reading a collection only");
-      if (q.select || Object.keys(q.expand).length)
+      if (Object.keys(q.expand).length)
         throw new HttpError(
           501,
-          "$select and $expand together with $apply are not supported",
+          "$expand together with $apply is not supported",
         );
       ({ rows, type } = applyTransformations(this, rows, type, q.apply));
     }
@@ -459,6 +460,7 @@ class ODataService {
               { rows: results, count },
               setName,
               type,
+              q.select,
               opts,
             );
           return protocol.collection(

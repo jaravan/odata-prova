@@ -297,16 +297,27 @@ const v4: Protocol = {
     return json(200, body, opts);
   },
   // Rows of an $apply's result type: no key and so no ETag, and the context lists the
-  // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total)
-  aggregated(svc, { rows, count }, setName, type, opts) {
-    const props = Object.values(type.properties);
+  // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total). Each row has the ones it
+  // holds: a concat's rows come from different sequences. select: the $select, if any
+  aggregated(svc, { rows, count }, setName, type, select, opts) {
+    for (const name of select || [])
+      if (name !== "*" && !type.properties[name])
+        throw new HttpError(
+          400,
+          `${name} is not a property of the $apply result`,
+        );
+    const props = Object.values(type.properties).filter(
+      (p) => !select || select.has("*") || select.has(p.name),
+    );
     const body: Record<string, unknown> = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}(${props.map((p) => p.name).join(",")})`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) =>
       Object.fromEntries(
-        props.map((p) => [p.name, toWire(r[p.name], p, opts)]),
+        props
+          .filter((p) => p.name in r)
+          .map((p) => [p.name, toWire(r[p.name], p, opts)]),
       ),
     );
     return json(200, body, opts);

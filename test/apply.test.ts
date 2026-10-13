@@ -131,7 +131,6 @@ describe("$apply", () => {
       "$apply=groupby((Currency),filter(Status eq 'Open'))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
       "$apply=groupby((Items/Material))",
-      "$apply=groupby((Currency))&$select=Currency",
       "$apply=groupby((Currency))&$expand=Items",
     ]) {
       const r = await apply(query);
@@ -185,5 +184,86 @@ describe("$apply with custom aggregates", () => {
       r.body.error.message,
       /Country is not a custom aggregate of Sales/,
     );
+  });
+});
+
+// What UI5's V4 model sends for an aggregated table (see sap/ui/model/odata/v4/lib/
+// _AggregationHelper.js): the rows it shows, and a concat with rows of their own for the
+// count, min and max, the grand total and the leaves
+describe("$apply as UI5 sends it", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(
+      path.join(import.meta.dirname, "fixtures", "AggregationSrv"),
+    );
+  });
+  after(() => s.close());
+
+  const apply = (query: string) => get(`${s.v4}/Sales?${query}`, IEEE754);
+
+  it("count, min and max in a row of their own, then a page of groups", async () => {
+    const r = await apply(
+      "$apply=groupby((Country),aggregate(Amount,Currency))/orderby(Country)" +
+        "/concat(aggregate(Amount with min as UI5min__Amount,Amount with max as UI5max__Amount," +
+        "$count as UI5__count),skip(1)/top(1))",
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { UI5min__Amount: "50.00", UI5max__Amount: "300.30", UI5__count: "3" },
+      { Country: "Germany", Amount: "300.30", Currency: "EUR" },
+    ]);
+  });
+
+  it("leaves and the grand total before the groups", async () => {
+    const r = await apply(
+      "$apply=concat(groupby((Country))/aggregate($count as UI5__leaves)," +
+        "aggregate(Amount as UI5grand__Amount,Currency)," +
+        "groupby((Country),aggregate(Amount,Currency))/orderby(Amount desc)/top(2))",
+    );
+    assert.deepEqual(r.body.value, [
+      { UI5__leaves: "3" },
+      { UI5grand__Amount: "430.30", Currency: null },
+      { Country: "Germany", Amount: "300.30", Currency: "EUR" },
+      { Country: "USA", Amount: "80.00", Currency: "USD" },
+    ]);
+  });
+
+  it("search and identity: the entities themselves, with $select", async () => {
+    const r = await apply(
+      "$apply=search(Germany)/concat(aggregate($count as UI5__count),identity)" +
+        "&$select=ID,Amount,UI5__count",
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { UI5__count: "2" },
+      { ID: 1, Amount: "100.10" },
+      { ID: 2, Amount: "200.20" },
+    ]);
+    const unknown = await apply("$apply=identity&$select=Nope");
+    assert.equal(unknown.status, 400);
+    assert.match(
+      unknown.body.error.message,
+      /Nope is not a property of the \$apply result/,
+    );
+  });
+
+  it("filtering groups on their aggregated values ($$filterOnAggregate) -> 501", async () => {
+    const r = await apply(
+      "$apply=groupby((Country),filter(Amount gt 100))/groupby((Country),aggregate(Amount))",
+    );
+    assert.equal(r.status, 501);
+    assert.match(r.body.error.message, /aggregated values is not supported/);
+  });
+
+  it("a mistake -> 400", async () => {
+    for (const query of [
+      "$apply=top(-1)",
+      "$apply=skip(x)",
+      "$apply=concat(identity)",
+      "$apply=identity()",
+    ]) {
+      const r = await apply(query);
+      assert.equal(r.status, 400, query);
+    }
   });
 });

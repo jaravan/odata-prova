@@ -7,8 +7,12 @@
 // A groupby or aggregate gives rows of a type of its own (see resultType): the grouping
 // properties and the aliases, with no key. The query options after $apply refer to those.
 //
-// Supported: filter, groupby (with an aggregate), and aggregate with sum, min, max, average,
-// countdistinct, $count and custom aggregates. Other transformations are a 501.
+// Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
+// aggregate), and aggregate with sum, min, max, average, countdistinct, $count and custom
+// aggregates. Other transformations are a 501. UI5 puts what it needs besides the rows in a
+// concat, in rows of their own, such as min and max, the count and the grand total:
+//
+//   concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))
 //
 // A custom aggregate (Aggregation.CustomAggregate) is what UI5 asks for with no "with":
 // aggregate(SalesAmount,Currency). The metadata names it and its type but not how it's
@@ -18,7 +22,7 @@
 
 import { applyQuery } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
-import { HttpError, splitTopLevel } from "./query.ts";
+import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
 import { isIntegerType, isNumericType, toComparable } from "./types.ts";
 import type {
   Aggregate,
@@ -105,12 +109,32 @@ function parseApply(text: string): Transformation[] {
 }
 
 function parseTransformation(text: string): Transformation {
+  if (text === "identity") return { kind: "identity" };
   const m = text.match(/^(\w+)\s*\((.*)\)$/s);
   if (!m) throw new HttpError(400, `Invalid $apply: ${text}`);
   const [, name, args] = m;
   switch (name) {
     case "filter":
       return { kind: "filter", filter: args };
+    case "identity":
+      throw new HttpError(400, `Invalid $apply: ${text} (identity has no ())`);
+    case "search":
+      return { kind: "search", search: args };
+    case "orderby":
+      return { kind: "orderby", orderby: args };
+    case "skip":
+    case "top": {
+      const count = parseInt10(args, `$apply ${name}`);
+      if (count === undefined)
+        throw new HttpError(400, `Invalid $apply: ${text}`);
+      return { kind: name, count };
+    }
+    case "concat": {
+      const sequences = splitTopLevel(args, ",").map(parseApply);
+      if (sequences.length < 2)
+        throw new HttpError(400, `Invalid $apply: ${text} (concat needs two)`);
+      return { kind: "concat", sequences };
+    }
     case "aggregate":
       return { kind: "aggregate", aggregates: parseAggregates(args) };
     case "groupby": {
@@ -119,6 +143,13 @@ function parseTransformation(text: string): Transformation {
       if (!props || more.length)
         throw new HttpError(400, `Invalid $apply: ${text}`);
       const nested = rest?.match(/^aggregate\s*\((.*)\)$/s);
+      // UI5's $$filterOnAggregate sends groupby((...),filter(...)), whose filter is on the
+      // groups' aggregated values, not on the rows
+      if (rest?.startsWith("filter("))
+        throw new HttpError(
+          501,
+          `$apply: filtering groups on their aggregated values is not supported: ${rest}`,
+        );
       if (rest && !nested)
         throw new HttpError(
           501,
@@ -187,6 +218,37 @@ function applyTransformations(
           filter: t.filter,
         }).results;
         break;
+      case "search":
+        rows = applyQuery(svc, rows, type, {
+          expand: {},
+          search: t.search,
+        }).results;
+        break;
+      case "orderby":
+        rows = applyQuery(svc, rows, type, {
+          expand: {},
+          orderby: t.orderby,
+        }).results;
+        break;
+      case "skip":
+        rows = rows.slice(t.count);
+        break;
+      case "top":
+        rows = rows.slice(0, t.count);
+        break;
+      case "identity":
+        break;
+      case "concat": {
+        const results = t.sequences.map((seq) =>
+          applyTransformations(svc, rows, type, seq),
+        );
+        rows = results.flatMap((r) => r.rows);
+        type = unionType(
+          type,
+          results.map((r) => r.type),
+        );
+        break;
+      }
       case "aggregate": {
         const out = aggregated(type, [], t.aggregates);
         rows = [aggregateRow(rows, out)];
@@ -255,19 +317,33 @@ function aggregated(
     properties[agg.alias] = result;
     return { agg, input, result };
   });
+  return { type: resultType(type, properties), groupBy, aggregates: inputs };
+}
+
+// A type of the rows a transformation gives: these properties, and no key or navigation
+function resultType(
+  type: EntityType,
+  properties: Record<string, Property>,
+): EntityType {
   return {
-    type: {
-      ...type,
-      keys: [],
-      properties,
-      navigationProperties: [],
-      navigations: {},
-      disabledNavigations: {},
-      draftNavigations: undefined,
-    },
-    groupBy,
-    aggregates: inputs,
+    ...type,
+    keys: [],
+    properties,
+    navigationProperties: [],
+    navigations: {},
+    disabledNavigations: {},
+    draftNavigations: undefined,
   };
+}
+
+// The type of a concat's rows: the input type when no sequence changed it, else every
+// sequence's properties. Each row has only its own sequence's (see aggregated in v4.ts).
+function unionType(input: EntityType, types: EntityType[]): EntityType {
+  if (types.every((t) => t === input)) return input;
+  const properties: Record<string, Property> = {};
+  for (const t of types)
+    for (const p of Object.values(t.properties)) properties[p.name] ??= p;
+  return resultType(input, properties);
 }
 
 // The property a custom aggregate aggregates: the one of its name
