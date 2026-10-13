@@ -38,6 +38,7 @@ describe("a deep insert that fails", () => {
       order("DI001", [item("0001"), item("0001")]),
     );
     assert.equal(r.status, 409);
+    assert.match(r.body.error.message, /with this key already exists/);
     assert.equal((await get(`${s.v4}/PurchaseOrderSet('DI001')`)).status, 404);
     assert.equal(
       (
