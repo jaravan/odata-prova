@@ -6,8 +6,8 @@
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Express } from "express";
-import { createApp, findModelDir, ETAG_MODES } from "./lib/app.ts";
-import type { ETagMode } from "./lib/app.ts";
+import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
+import type { ETagMode, JoinMode } from "./lib/app.ts";
 
 const PORT = process.env.PORT || 3000;
 // The model to serve: the first argument, else MODEL_DIR (the image sets /models), else the
@@ -47,19 +47,33 @@ if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
     ),
   );
 
+// A setting that takes one of a few values; an unknown one stops the server
+function choice<T extends string>(
+  name: string,
+  values: readonly T[],
+  fallback: T,
+): T {
+  const value = (process.env[name] || fallback) as T;
+  if (!values.includes(value))
+    exitWithError(
+      `bad ${name}`,
+      Object.assign(
+        new Error(
+          `${name} must be one of ${values.join(", ")}, got '${process.env[name]}'`,
+        ),
+        { code: `E${name}` },
+      ),
+    );
+  return value;
+}
+
 // How strictly If-Match is checked: lenient (a request without one goes through), strict
 // (an update or delete without one is a 428) or off (it's ignored)
-const ETAGS = (process.env.ETAGS || "lenient") as ETagMode;
-if (!ETAG_MODES.includes(ETAGS))
-  exitWithError(
-    "bad ETAGS",
-    Object.assign(
-      new Error(
-        `ETAGS must be one of ${ETAG_MODES.join(", ")}, got '${process.env.ETAGS}'`,
-      ),
-      { code: "EETAGS" },
-    ),
-  );
+const ETAGS = choice<ETagMode>("ETAGS", ETAG_MODES, "lenient");
+
+// How a navigation without a ReferentialConstraint is joined: guess (by naming convention)
+// or strict (not at all: the navigation is disabled)
+const JOINS = choice<JoinMode>("JOINS", JOIN_MODES, "guess");
 
 let app: Express;
 try {
@@ -69,6 +83,7 @@ try {
     v4Path: V4_PATH,
     mockRows: MOCK_ROWS,
     etags: ETAGS,
+    joins: JOINS,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);

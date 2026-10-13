@@ -23,6 +23,7 @@ import {
   resolveNavigationsV4,
   resolvePartners,
 } from "./navigations.ts";
+import type { JoinMode } from "./navigations.ts";
 import { v2ViewOfV2, v4ViewOfV2, v2ViewOfV4 } from "./operation-views.ts";
 
 const parser = new XMLParser({
@@ -70,7 +71,11 @@ export type Qualify = (name: string) => string;
 
 // --- Parsing ------------------------------------------------------------------------------
 
-function parseMetadata(xml: string): Model {
+// joins: how a navigation without a ReferentialConstraint is joined (see navigations.ts)
+function parseMetadata(
+  xml: string,
+  { joins = "guess" }: { joins?: JoinMode } = {},
+): Model {
   // removeNSPrefix would turn sap:label into label; keep the SAP attributes recognisable.
   const doc: Xml = parser.parse(
     xml.replace(/(\s)sap:([A-Za-z-]+=)/g, "$1sap__$2"),
@@ -271,8 +276,8 @@ function parseMetadata(xml: string): Model {
 
   parseDraftAnnotations(model, schemas, qualify);
   parseConcurrency(model, schemas, qualify);
-  if (isV4) resolveNavigationsV4(model);
-  else resolveNavigationsV2(model);
+  if (isV4) resolveNavigationsV4(model, joins);
+  else resolveNavigationsV2(model, joins);
   resolvePartners(model);
   resolveDraftNavigations(model);
   return model;

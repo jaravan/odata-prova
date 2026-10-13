@@ -1,7 +1,7 @@
 // Resolves each entity type's navigation properties into navigations (see model.ts): the
 // target entity set, and the join between the two sides' rows. A V2 document says it in
 // associations, a V4 document in referential constraints; without either, the join is
-// guessed from the property names (see joinByNaming).
+// guessed from the property names (see joinByNaming), unless joins are strict.
 
 import type {
   EntityType,
@@ -12,6 +12,13 @@ import type {
   V4NavigationProperty,
 } from "./model.ts";
 import { isDraftNavigation } from "./draft.ts";
+
+// How a navigation without a ReferentialConstraint is joined:
+//   guess   (the default) by naming convention (see joinByNaming), logged as a guess
+//   strict  not at all: the navigation is disabled, like one the server can't join, so a
+//           wrong guess can't show the wrong rows
+const JOIN_MODES = ["guess", "strict"] as const;
+type JoinMode = (typeof JOIN_MODES)[number];
 
 // How a navigation's rows join: which side holds the foreign key, and the property pairs
 interface Join {
@@ -55,7 +62,7 @@ function finishNavigation(
   };
 }
 
-function resolveNavigationsV2(model: Model): void {
+function resolveNavigationsV2(model: Model, joins: JoinMode): void {
   const byType = setsByType(model);
   for (const et of Object.values(model.entityTypes)) {
     et.navigations = {};
@@ -123,6 +130,7 @@ function resolveNavigationsV2(model: Model): void {
             targetType,
             assoc.name,
             fromEnd.multiplicity === "*",
+            joins,
           );
         }
         finishNavigation(et, nav, targetType, targetSet, join, false);
@@ -130,7 +138,7 @@ function resolveNavigationsV2(model: Model): void {
   }
 }
 
-function resolveNavigationsV4(model: Model): void {
+function resolveNavigationsV4(model: Model, joins: JoinMode): void {
   const byType = setsByType(model);
   for (const et of Object.values(model.entityTypes)) {
     et.navigations = {};
@@ -210,6 +218,7 @@ function resolveNavigationsV4(model: Model): void {
               targetType,
               nav.name,
               /^Collection\(/.test(back?.type || ""),
+              joins,
             );
           }
         }
@@ -255,7 +264,8 @@ function disableOnError(
 // one row to one row. That suits a one-to-one link, but not a navigation with a "many" side
 // (an order's ID is not its items' ID) or one from a type to itself, so it is skipped there.
 // sourceIsMany: whether the source's end is "many" (V2's multiplicity, V4's partner).
-// Every join found this way is logged: it's a guess.
+// Every join found this way is logged: it's a guess. With strict joins there is no guess,
+// and the navigation is disabled (see disableOnError).
 function joinByNaming(
   model: Model,
   sourceType: EntityType,
@@ -263,7 +273,13 @@ function joinByNaming(
   targetType: EntityType,
   relationshipName: string,
   sourceIsMany: boolean,
+  joins: JoinMode,
 ): Join {
+  if (joins === "strict")
+    throw new Error(
+      `${sourceType.name}.${nav.name}: no ReferentialConstraint for ${relationshipName}, ` +
+        `and joins are strict (not guessed) - add one to metadata.xml`,
+    );
   const many = nav.isCollection || sourceIsMany || sourceType === targetType;
   // Joins one side's whole key to the other's: the props, all of `type`'s keys
   const isWholeKey = (type: EntityType, props: string[]) =>
@@ -345,7 +361,9 @@ function resolvePartners(model: Model): void {
   }
 }
 
+export type { JoinMode };
 export {
+  JOIN_MODES,
   setsByType,
   resolveNavigationsV2,
   resolveNavigationsV4,

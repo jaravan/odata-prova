@@ -13,6 +13,8 @@ import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { ETAG_MODES } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
+import { JOIN_MODES } from "./navigations.ts";
+import type { JoinMode } from "./navigations.ts";
 import { HttpError, decodeUrl } from "./query.ts";
 import v2 from "./protocols/v2.ts";
 import v4 from "./protocols/v4.ts";
@@ -93,6 +95,9 @@ export interface AppOptions {
   mockRows?: number;
   // How strictly If-Match is checked (see etag.ts): lenient, the default, strict or off
   etags?: ETagMode;
+  // How a navigation without a ReferentialConstraint is joined (see navigations.ts): guess,
+  // the default, or strict
+  joins?: JoinMode;
 }
 
 function createApp({
@@ -102,6 +107,7 @@ function createApp({
   log = console.log,
   mockRows = 0,
   etags = "lenient",
+  joins = "guess",
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -115,7 +121,7 @@ function createApp({
   );
 
   // Parse metadata file info
-  const model = parseMetadata(metadataXml);
+  const model = parseMetadata(metadataXml, { joins });
 
   log(
     `Model ${modelDir} (OData V${model.sourceVersion} document): ${Object.keys(model.entitySets).length} entity sets`,
@@ -291,5 +297,5 @@ function createApp({
   return { app, model, store, services };
 }
 
-export type { ETagMode };
-export { createApp, findModelDir, ETAG_MODES };
+export type { ETagMode, JoinMode };
+export { createApp, findModelDir, ETAG_MODES, JOIN_MODES };
