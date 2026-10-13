@@ -17,7 +17,9 @@ flowchart LR
         REQ(["HTTP request"]) --> APP["app.ts (Express)"]
         APP -- "POST .../$batch" --> BATCH["batch.ts"] --> SVC
         APP -- "everything else" --> SVC["ODataService.dispatch()"]
-        SVC -- "$filter, $orderby, $expand..." --> QF["query.ts + filter.ts"]
+        SVC -- "$filter, $orderby, $expand..." --> QF["query.ts, filter.ts<br/>+ apply-query.ts"]
+        SVC -- "create, update, delete" --> WR["writes.ts"]
+        SVC -- "actions, functions" --> OPS["operations.ts"]
         SVC -- "parse/serialize" --> PROTO["protocol module<br/>(v2.ts or v4.ts)"]
         PROTO --> RES(["HTTP response"])
     end
@@ -26,7 +28,7 @@ flowchart LR
     SVC -- "read/write rows" --> ST
 ```
 
-One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.ts` does the actual URL/key parsing, navigation, and CRUD, protocol-agnostically.
+One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.ts` walks the resource path and follows navigations, protocol-agnostically, handing each part of the work to its own module: the path and its keys to `resource-path.ts`, query options to `apply-query.ts`, creates, updates and deletes to `writes.ts`, actions and functions to `operations.ts`, and drafts to `draft.ts`.
 
 The sources are TypeScript, in `lib/`; `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
