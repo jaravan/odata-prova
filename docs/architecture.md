@@ -50,6 +50,8 @@ const { app } = createApp({
 app.listen(3000);
 ```
 
+That is the package's whole API: `odata-prova` exports `createApp`, `findModelDir`, `ETAG_MODES` and `JOIN_MODES`, and their types (`AppOptions`, `ETagMode`, `JoinMode`). Its other files are internal and may change in any release, so `package.json`'s `exports` doesn't let them be imported: `import ... from "odata-prova/dist/lib/metadata.js"` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
 ## Possible future improvements
 
 - **Draft validation** - drafts are activated as they are: no validation messages, side effects, or locks between users.
