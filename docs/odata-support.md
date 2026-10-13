@@ -61,6 +61,18 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`, over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nested, and with `$it` for the entity outside the lambda.
 
+### Aggregation (`$apply`)
+
+V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals: `$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))`. Transformations are separated by `/` and run in order, before the other query options, which then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
+
+- `filter(...)`: any `$filter` expression.
+- `groupby((A,B))`: one row per distinct combination of `A` and `B`, with an `aggregate(...)` after the properties to aggregate each group.
+- `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out. Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`), and decimals add up exactly.
+
+The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property) is a `400`.
+
+`501`, never ignored: other transformations (`topcount`, `concat`, `search`, ...), custom aggregates (`aggregate(Amount)`, without `with`), grouping or aggregating by a path (`Items/Material`), `$select` or `$expand` with `$apply`, and `$apply` on an operation or in V2, which has none.
+
 ## Drafts
 
 An entity set annotated with `Common.DraftRoot` or `Common.DraftNode`, as CAP and RAP generate them, is served as draft-enabled (the startup log lists them as `draft-enabled: ...`):
@@ -115,7 +127,7 @@ UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply`, `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`: `$apply` in V2 and the parts of it listed under [Aggregation](#aggregation-apply), `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 
