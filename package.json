@@ -28,6 +28,13 @@
   },
   "main": "dist/lib/app.js",
   "types": "dist/lib/app.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib/app.d.ts",
+      "default": "./dist/lib/app.js"
+    },
+    "./package.json": "./package.json"
+  },
   "type": "module",
   "files": [
     "dist/",
