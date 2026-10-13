@@ -132,6 +132,34 @@ function checkIfMatch(
     );
 }
 
+// The range of each integer type: counting past the top starts again at the bottom, so the
+// value stays one the type can hold
+const INTEGER_RANGES: Record<string, [bigint, bigint]> = {
+  "Edm.Byte": [0n, 255n],
+  "Edm.SByte": [-128n, 127n],
+  "Edm.Int16": [-32768n, 32767n],
+  "Edm.Int32": [-2147483648n, 2147483647n],
+  "Edm.Int64": [-9223372036854775808n, 9223372036854775807n],
+};
+
+// The next integer of the type, wrapping at the top of its range
+function nextInteger(value: bigint, type: string): bigint {
+  const [min, max] = INTEGER_RANGES[type];
+  return value >= max ? min : value + 1n;
+}
+
+// The integer part of a decimal's text, plus one. An exponent (1e3) has no BigInt form: its
+// number's integer part is taken instead, which is exact up to 2^53.
+function nextDecimal(text: string): string {
+  if (!/e/i.test(text)) {
+    // ".5" and "-.5" have no digits before the point
+    const whole = text.split(".")[0];
+    return String(BigInt(/\d/.test(whole) ? whole : "0") + 1n);
+  }
+  const n = Math.trunc(Number(text));
+  return String(Number.isFinite(n) ? BigInt(n) + 1n : 1n);
+}
+
 // The property's next value, so the ETag changes (see the top of the file). A type without a
 // next value (a time of day, a boolean) keeps its value.
 function nextValue(value: PropertyValue, p: Property): PropertyValue {
@@ -153,19 +181,23 @@ function nextValue(value: PropertyValue, p: Property): PropertyValue {
     case "Edm.SByte":
     case "Edm.Int16":
     case "Edm.Int32":
-      return Number(value ?? 0) + 1;
+      return Number(nextInteger(BigInt(Number(value ?? 0)), p.type));
     case "Edm.Int64":
+      return String(nextInteger(BigInt(String(value ?? 0)), p.type));
     case "Edm.Decimal":
-      return String(BigInt(String(value ?? 0).split(".")[0]) + 1n);
+      return nextDecimal(String(value ?? 0));
     case "Edm.Guid":
       return randomUUID();
     case "Edm.Binary":
       return randomBytes(8).toString("base64");
     case "Edm.String": {
-      const next = randomUUID().replace(/-/g, "");
-      return p.maxLength && p.maxLength !== "max"
-        ? next.slice(0, Number(p.maxLength))
-        : next;
+      const length =
+        p.maxLength && p.maxLength !== "max" ? Number(p.maxLength) : 32;
+      // A short MaxLength leaves few values: draw again until it's a new one
+      let next: string;
+      do next = randomUUID().replace(/-/g, "").slice(0, length);
+      while (next === value && length > 0);
+      return next;
     }
     default:
       return value;

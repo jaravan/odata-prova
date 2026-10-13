@@ -7,6 +7,8 @@ import { spawn } from "node:child_process";
 import { parseMetadata } from "../lib/metadata.ts";
 import { emitV2 } from "../lib/emit-v2.ts";
 import { emitV4 } from "../lib/emit-v4.ts";
+import { renewETag } from "../lib/etag.ts";
+import type { Row } from "../lib/model.ts";
 import {
   start,
   get,
@@ -389,5 +391,117 @@ describe("ETags on a draft-enabled entity set", () => {
       (await get(active())).headers.get("etag"),
       activate.headers.get("etag"),
     );
+  });
+});
+
+describe("ETag values: a write gives each of the ETag's properties a new one", () => {
+  // An entity set whose ETag is the property V, of the given type
+  const renewed = (type: string, value: unknown, attrs = "") => {
+    const model = parseMetadata(`<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="S" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="T">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="V" Type="${type}" ${attrs}/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Ts" EntityType="S.T">
+          <Annotation Term="Org.OData.Core.V1.OptimisticConcurrency">
+            <Collection><PropertyPath>V</PropertyPath></Collection>
+          </Annotation>
+        </EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`);
+    const row = { ID: 1, V: value } as Row;
+    renewETag(model, "Ts", model.entityTypes["S.T"], row);
+    return row.V;
+  };
+
+  it("a timestamp moves to now, or a second on from a later one", () => {
+    const now = renewed("Edm.DateTimeOffset", "2020-01-01T00:00:00Z");
+    assert.ok(Math.abs(Date.parse(String(now)) - Date.now()) < 5000);
+    assert.equal(
+      renewed("Edm.DateTimeOffset", "2999-01-01T00:00:00.000Z"),
+      "2999-01-01T00:00:01.000Z",
+    );
+  });
+
+  it("with fractional seconds (Precision), a timestamp moves a millisecond", () => {
+    assert.equal(
+      renewed(
+        "Edm.DateTimeOffset",
+        "2999-01-01T00:00:00.000Z",
+        'Precision="3"',
+      ),
+      "2999-01-01T00:00:00.001Z",
+    );
+  });
+
+  it("a date moves to today, or a day on from a later one", () => {
+    assert.equal(
+      renewed("Edm.Date", "2020-01-01"),
+      new Date().toISOString().slice(0, 10),
+    );
+    assert.equal(renewed("Edm.Date", "2999-01-01"), "2999-01-02");
+    assert.equal(
+      renewed("Edm.Date", null),
+      new Date().toISOString().slice(0, 10),
+    );
+  });
+
+  it("an integer counts up, from 0 when it has no value", () => {
+    assert.equal(renewed("Edm.Int32", 41), 42);
+    assert.equal(renewed("Edm.Int16", null), 1);
+    assert.equal(renewed("Edm.Byte", 7), 8);
+    assert.equal(renewed("Edm.Int64", "9007199254740993"), "9007199254740994");
+  });
+
+  it("an integer at the top of its type's range starts again at the bottom", () => {
+    assert.equal(renewed("Edm.Byte", 255), 0);
+    assert.equal(renewed("Edm.SByte", 127), -128);
+    assert.equal(renewed("Edm.Int16", 32767), -32768);
+    assert.equal(renewed("Edm.Int32", 2147483647), -2147483648);
+    assert.equal(
+      renewed("Edm.Int64", "9223372036854775807"),
+      "-9223372036854775808",
+    );
+  });
+
+  it("a decimal's integer part counts up, an exponent included", () => {
+    assert.equal(renewed("Edm.Decimal", "12.75"), "13");
+    assert.equal(renewed("Edm.Decimal", ".5"), "1");
+    assert.equal(renewed("Edm.Decimal", "-.5"), "1");
+    assert.equal(renewed("Edm.Decimal", "1e3"), "1001");
+    assert.equal(renewed("Edm.Decimal", "2.5E-3"), "1");
+    assert.equal(renewed("Edm.Decimal", null), "1");
+  });
+
+  it("a GUID, binary value or string is a new random one", () => {
+    const guid = "00000000-0000-0000-0000-000000000000";
+    const newGuid = renewed("Edm.Guid", guid);
+    assert.match(String(newGuid), /^[0-9a-f]{8}-[0-9a-f]{4}-/);
+    assert.notEqual(newGuid, guid);
+    assert.notEqual(renewed("Edm.Binary", "AAAAAAAAAAA="), "AAAAAAAAAAA=");
+    assert.match(String(renewed("Edm.String", "v1")), /^[0-9a-f]{32}$/);
+  });
+
+  it("a string fits its MaxLength, and is always a new value even when that's short", () => {
+    assert.equal(String(renewed("Edm.String", "x", 'MaxLength="8"')).length, 8);
+    assert.equal(
+      String(renewed("Edm.String", "x", 'MaxLength="max"')).length,
+      32,
+    );
+    // One hex digit has 16 values: a random one alone would repeat 1 time in 16
+    for (let i = 0; i < 200; i++)
+      assert.notEqual(renewed("Edm.String", "a", 'MaxLength="1"'), "a");
+  });
+
+  it("a type without a next value (a boolean, a time of day) keeps its value", () => {
+    assert.equal(renewed("Edm.Boolean", true), true);
+    assert.equal(renewed("Edm.TimeOfDay", "10:00:00"), "10:00:00");
   });
 });
