@@ -247,6 +247,48 @@ describe("$apply as UI5 sends it", () => {
     );
   });
 
+  // As a Fiori Elements V4 analytical table sent them: with no grouping, grouped (with the
+  // leaves, the grand total and subtotals), and one group expanded
+  it("a Fiori Elements analytical table's requests", async () => {
+    const flat = await apply(
+      "$apply=concat(aggregate(Amount,Currency)," +
+        "groupby((Country,Currency,ID),aggregate(Amount))" +
+        "/concat(aggregate($count as UI5__count),top(139)))",
+    );
+    assert.equal(flat.status, 200);
+    assert.deepEqual(flat.body.value.slice(0, 3), [
+      { Amount: "430.30", Currency: null },
+      { UI5__count: "5" },
+      { Country: "Germany", Currency: "EUR", ID: 1, Amount: "100.10" },
+    ]);
+    assert.equal(flat.body.value.length, 7);
+
+    const grouped = await apply(
+      "$apply=concat(groupby((Country,Currency,ID))/aggregate($count as UI5__leaves)," +
+        "aggregate(Amount,Currency)," +
+        "groupby((Country),aggregate(Amount,Currency))" +
+        "/concat(aggregate($count as UI5__count),top(139)))",
+    );
+    assert.deepEqual(grouped.body.value, [
+      { UI5__leaves: "5" },
+      { Amount: "430.30", Currency: null },
+      { UI5__count: "3" },
+      { Country: "Germany", Amount: "300.30", Currency: "EUR" },
+      { Country: "France", Amount: "50.00", Currency: "EUR" },
+      { Country: "USA", Amount: "80.00", Currency: "USD" },
+    ]);
+
+    const group = await apply(
+      "$apply=filter(Country eq 'USA')/groupby((Currency,ID),aggregate(Amount))" +
+        "&$count=true&$skip=0&$top=139",
+    );
+    assert.equal(group.body["@odata.count"], 2);
+    assert.deepEqual(group.body.value, [
+      { Currency: "USD", ID: 4, Amount: "80.00" },
+      { Currency: "USD", ID: 5, Amount: null },
+    ]);
+  });
+
   it("filtering groups on their aggregated values ($$filterOnAggregate) -> 501", async () => {
     const r = await apply(
       "$apply=groupby((Country),filter(Amount gt 100))/groupby((Country),aggregate(Amount))",
