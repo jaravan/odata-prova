@@ -38,7 +38,8 @@ jobs:
 
       - run: yarn build
 
-      - run: yarn test
+      # The tests, with a coverage report that fails below the thresholds in package.json
+      - run: yarn test:coverage
 
   # The Docker image, built from this commit and run as users run it (test/docker)
   image:

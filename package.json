@@ -43,6 +43,7 @@
     "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "prepack": "yarn build",
     "test": "node --test test/*.test.ts",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-lines=95 --test-coverage-branches=85 --test-coverage-functions=90 test/*.test.ts",
     "test:image": "node --test test/docker/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
