@@ -90,7 +90,7 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 ## What's supported
 
 - **Reads and writes**, including deep insert, and `$batch` with atomic changesets.
-- **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search`, and V4's `$apply` with `filter`, `groupby` and `aggregate` ([Aggregation](docs/odata-support.md#aggregation-apply)).
+- **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search`, and V4's `$apply` for UI5's grouped and aggregated tables, totals included ([Aggregation](docs/odata-support.md#aggregation-apply)).
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).

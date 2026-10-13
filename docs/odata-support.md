@@ -65,14 +65,15 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals: `$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))`. Transformations are separated by `/` and run in order, before the other query options, which then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
 
-- `filter(...)`: any `$filter` expression.
+- `filter(...)`, `search(...)`, `orderby(...)`, `skip(n)` and `top(n)`: as the query options of the same names. `identity` leaves the rows as they are.
 - `groupby((A,B))`: one row per distinct combination of `A` and `B`, with an `aggregate(...)` after the properties to aggregate each group.
 - `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out. Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`), and decimals add up exactly.
 - Custom aggregates, which UI5 asks for with no `with` when the metadata declares them (`Aggregation.CustomAggregate`, on the entity type or set): `aggregate(Amount,Currency)`, or `aggregate(Amount as Total)`. The metadata says what type the result is but not how it is computed, so the server aggregates the property of the same name: a number is summed, and anything else, such as a currency or a unit, is the value all the rows share, or `null` when they differ, which is how UI5 shows amounts in mixed currencies.
+- `concat(A,B,...)`: runs each sequence on the same rows and puts their results one after the other. UI5 uses it for the rows it needs besides the ones it shows: `concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))` answers with the minimum and the count in a first row, then a page of rows. Each row has only the properties of its own sequence.
 
-The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare) is a `400`.
+The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. `$select` picks among them, as UI5 sends it with `identity`. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare) is a `400`.
 
-`501`, never ignored: other transformations (`topcount`, `concat`, `search`, ...), a custom aggregate with no property of its name, grouping or aggregating by a path (`Items/Material`), `$select` or `$expand` with `$apply`, and `$apply` on an operation or in V2, which has none.
+`501`, never ignored: other transformations (`topcount`, `compute`, the hierarchy functions, ...), filtering groups on their aggregated values (`groupby((Country),filter(Amount gt 100))`, which UI5 sends for `$$filterOnAggregate`), a custom aggregate with no property of its name, grouping or aggregating by a path (`Items/Material`), `$expand` with `$apply`, and `$apply` on an operation or in V2, which has none.
 
 ## Drafts
 
