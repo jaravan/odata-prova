@@ -42,6 +42,7 @@ const { app } = createApp({
   v2Path: "/odata/v2/MySrv", // a falsy path disables that protocol
   v4Path: "/odata/v4/MySrv",
   mockRows: 20, // default 0: only the data files
+  etags: "strict", // default "lenient", see docs/odata-support.md#etags
 });
 app.listen(3000);
 ```

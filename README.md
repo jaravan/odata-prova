@@ -71,14 +71,15 @@ For a complete setup, see [fiori-devstack](https://github.com/jaravan/fiori-devs
 
 `odata-prova [modelDir]` serves the model in `modelDir`, or in the current directory. Everything else is set through environment variables, all optional:
 
-| Variable       | Default                                        | Purpose                                                                               |
-| -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PORT`         | `3000`                                         | HTTP port                                                                             |
-| `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve when no `modelDir` is given, or a folder holding exactly one model |
-| `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                               |
-| `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                           |
-| `V4_PATH`      | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                           |
-| `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty          |
+| Variable       | Default                                        | Purpose                                                                                                    |
+| -------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `PORT`         | `3000`                                         | HTTP port                                                                                                  |
+| `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve when no `modelDir` is given, or a folder holding exactly one model                      |
+| `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                                                    |
+| `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                |
+| `V4_PATH`      | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                |
+| `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                               |
+| `ETAGS`        | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags) |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
@@ -92,7 +93,7 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
-- **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): changes need the entity's current ETag in `If-Match`, and one made since it was read is a `412`. See [ETags](docs/odata-support.md#etags).
+- **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
 
 `$apply`, `$compute`, `$skiptoken` and `$deltatoken` are rejected with `501`.
 
