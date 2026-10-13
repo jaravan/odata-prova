@@ -165,6 +165,8 @@ function callOperation(
   opts: ResponseOptions,
   headers: RequestHeaders,
 ): ODataResponse {
+  if (q.apply)
+    throw new HttpError(501, `$apply on ${op.name} is not supported`);
   const expected = op.httpMethod || (op.kind === "action" ? "POST" : "GET");
   if (method !== expected)
     throw new HttpError(

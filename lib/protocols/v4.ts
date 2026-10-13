@@ -23,6 +23,7 @@ import {
   parseInt10,
   rejectUnsupported,
 } from "../query.ts";
+import { parseApply } from "../aggregation.ts";
 
 const version = "4.0";
 const headers: Record<string, string> = { "OData-Version": "4.0" };
@@ -209,6 +210,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     search: q.$search,
     select: root.select,
     expand: root.expand,
+    apply: q.$apply ? parseApply(q.$apply) : undefined,
   };
 }
 
@@ -292,6 +294,21 @@ const v4: Protocol = {
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => serialize(svc, r, setName, type, node, opts));
+    return json(200, body, opts);
+  },
+  // Rows of an $apply's result type: no key and so no ETag, and the context lists the
+  // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total)
+  aggregated(svc, { rows, count }, setName, type, opts) {
+    const props = Object.values(type.properties);
+    const body: Record<string, unknown> = {
+      "@odata.context": `${svc.servicePath}/$metadata#${setName}(${props.map((p) => p.name).join(",")})`,
+    };
+    if (count !== undefined) body["@odata.count"] = count;
+    body.value = rows.map((r) =>
+      Object.fromEntries(
+        props.map((p) => [p.name, toWire(r[p.name], p, opts)]),
+      ),
+    );
     return json(200, body, opts);
   },
   entity(svc, row, setName, type, node, status = 200, extra, opts) {

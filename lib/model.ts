@@ -261,6 +261,21 @@ export interface QueryNode {
   skip?: number;
   count?: boolean;
   search?: string;
+  // V4 $apply, run before the options above (see aggregation.ts)
+  apply?: Transformation[];
+}
+
+// One step of $apply, e.g. filter(Status eq 'Open')/groupby((Currency),aggregate(...))
+export type Transformation =
+  | { kind: "filter"; filter: string }
+  | { kind: "groupby"; properties: string[]; aggregates: Aggregate[] }
+  | { kind: "aggregate"; aggregates: Aggregate[] };
+
+// An aggregate expression: "TotalAmount with sum as Total", or "$count as Count" (no property)
+export interface Aggregate {
+  property?: string;
+  method: "sum" | "min" | "max" | "average" | "countdistinct" | "count";
+  alias: string;
 }
 
 // From the request's headers

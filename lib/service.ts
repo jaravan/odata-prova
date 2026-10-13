@@ -15,6 +15,7 @@ import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
+import { applyTransformations } from "./aggregation.ts";
 import { create, update, deleteEntity } from "./writes.ts";
 import {
   operationImport,
@@ -65,6 +66,14 @@ export interface Protocol extends LiteralSyntax {
     node: QueryNode,
     status?: number,
     extra?: Record<string, string>,
+    opts?: ResponseOptions,
+  ): ODataResponse;
+  // The rows of an $apply's result type (see aggregation.ts); V4 only, V2 has no $apply
+  aggregated?(
+    svc: ODataService,
+    result: { rows: Row[]; count?: number },
+    setName: string,
+    type: EntityType,
     opts?: ResponseOptions,
   ): ODataResponse;
   // A single-valued navigation or operation result that is empty
@@ -373,6 +382,11 @@ class ODataService {
             `${seg.name} is not a property or navigation of ${type.name}`,
           );
         if (method !== "GET") throw new HttpError(405, "Method not allowed");
+        if (q.apply)
+          throw new HttpError(
+            400,
+            "$apply applies to reading a collection only",
+          );
         const value = row[prop.name];
         if (wantValue)
           return {
@@ -407,6 +421,19 @@ class ODataService {
       }
     }
 
+    // $apply turns the collection into rows of a type of its own (see aggregation.ts), which
+    // the other query options then work on
+    if (q.apply) {
+      if (method !== "GET" || row !== undefined)
+        throw new HttpError(400, "$apply applies to reading a collection only");
+      if (q.select || Object.keys(q.expand).length)
+        throw new HttpError(
+          501,
+          "$select and $expand together with $apply are not supported",
+        );
+      ({ rows, type } = applyTransformations(this, rows, type, q.apply));
+    }
+
     if (wantCount) {
       if (method !== "GET") throw new HttpError(405, "Method not allowed");
       const { results } = applyQuery(this, rows, type, {
@@ -426,6 +453,14 @@ class ODataService {
       switch (method) {
         case "GET": {
           const { results, count } = applyQuery(this, rows, type, q);
+          if (q.apply)
+            return protocol.aggregated!(
+              this,
+              { rows: results, count },
+              setName,
+              type,
+              opts,
+            );
           return protocol.collection(
             this,
             { rows: results, count },

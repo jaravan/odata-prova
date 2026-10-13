@@ -110,9 +110,10 @@ function splitTopLevel(text: string, sep: string): string[] {
 }
 
 // Query options the server does not implement. Rejecting them with 501
-// instead of silently ignoring them: an $apply=groupby(...) that comes back as the plain
-// collection looks like a working response to the caller and is wrong.
-const UNSUPPORTED_OPTIONS = ["$apply", "$compute", "$skiptoken", "$deltatoken"];
+// instead of silently ignoring them: a $compute that comes back as the plain
+// collection looks like a working response to the caller and is wrong. ($apply is V4's,
+// see aggregation.ts)
+const UNSUPPORTED_OPTIONS = ["$compute", "$skiptoken", "$deltatoken"];
 
 // query: the request's query string, parsed
 function rejectUnsupported(query: Record<string, unknown>): void {
