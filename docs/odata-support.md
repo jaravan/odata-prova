@@ -99,7 +99,7 @@ An entity set has ETags when the metadata names the properties they're made of: 
 
 - **Reading.** An entity's ETag is in the `ETag` header of a single-entity response, and in the payload as `@odata.etag` (V4) or `__metadata.etag` (V2), expanded entities included. It is those properties' values, e.g. `W/"2026-01-01T10:00:00.000Z"`.
 - **Writing.** A `PUT`, `PATCH`, `MERGE` or `DELETE`, or an action on the entity, sent with an `If-Match` that holds neither the entity's current ETag nor `*` is a `412`: the entity has changed since it was read, and nothing changes. A successful update answers with the new ETag.
-- **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp, so another client's ETag goes stale: a timestamp moves to now, a number counts up, a GUID or string is new. A value the client sends for one is replaced.
+- **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp, so another client's ETag goes stale: a timestamp moves to now, a number counts up (an integer at the top of its type's range starts again at the bottom), a GUID or string is new. A boolean or a time of day has no next value and keeps its own. A value the client sends for one is replaced.
 
 `ETAGS` sets how strict the checks are:
 
