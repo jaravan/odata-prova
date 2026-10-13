@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
-import { parseMetadata, emitV2 } from "../lib/metadata.ts";
+import { parseMetadata } from "../lib/metadata.ts";
+import { emitV2 } from "../lib/emit-v2.ts";
 
 const fixtures = path.join(import.meta.dirname, "fixtures");
 const read = (...p: string[]) =>

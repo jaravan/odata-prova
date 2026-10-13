@@ -4,7 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { parseMetadata, emitV2, emitV4 } from "../lib/metadata.ts";
+import { parseMetadata } from "../lib/metadata.ts";
+import { emitV2 } from "../lib/emit-v2.ts";
+import { emitV4 } from "../lib/emit-v4.ts";
 import {
   start,
   get,

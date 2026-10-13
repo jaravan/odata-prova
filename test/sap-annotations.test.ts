@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
-import { parseMetadata, emitV4 } from "../lib/metadata.ts";
+import { parseMetadata } from "../lib/metadata.ts";
+import { emitV4 } from "../lib/emit-v4.ts";
 
 const xml = fs.readFileSync(
   path.join(
