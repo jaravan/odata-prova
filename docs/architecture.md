@@ -45,6 +45,7 @@ const { app } = createApp({
   v4Path: "/odata/v4/MySrv",
   mockRows: 20, // default 0: only the data files
   etags: "strict", // default "lenient", see docs/odata-support.md#etags
+  joins: "strict", // default "guess", see docs/odata-support.md#navigations-without-a-referentialconstraint
 });
 app.listen(3000);
 ```

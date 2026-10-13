@@ -71,15 +71,16 @@ For a complete setup, see [fiori-devstack](https://github.com/jaravan/fiori-devs
 
 `odata-prova [modelDir]` serves the model in `modelDir`, or in the current directory. Everything else is set through environment variables, all optional:
 
-| Variable       | Default                                        | Purpose                                                                                                    |
-| -------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `PORT`         | `3000`                                         | HTTP port                                                                                                  |
-| `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve when no `modelDir` is given, or a folder holding exactly one model                      |
-| `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                                                    |
-| `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                |
-| `V4_PATH`      | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                |
-| `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                               |
-| `ETAGS`        | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags) |
+| Variable       | Default                                        | Purpose                                                                                                                                                                                                                               |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`         | `3000`                                         | HTTP port                                                                                                                                                                                                                             |
+| `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve when no `modelDir` is given, or a folder holding exactly one model                                                                                                                                                 |
+| `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                                                                                                                                                                               |
+| `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                                                                                                                                           |
+| `V4_PATH`      | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                                                                                                                                           |
+| `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                                                                                                                                                          |
+| `ETAGS`        | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                            |
+| `JOINS`        | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to disable it, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
