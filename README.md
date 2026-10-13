@@ -32,7 +32,7 @@ Or with Docker, mounting the folder as `/models/<ServiceName>`:
 docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" ghcr.io/jaravan/odata-prova
 ```
 
-The image is built for amd64 and arm64 and tagged by version (e.g. `0.3.0` and `0.3`) and `latest`.
+The image is built for amd64 and arm64 and tagged by version (`<major>.<minor>.<patch>` and `<major>.<minor>`) and `latest`.
 
 Needs Node.js 22 or later, or Docker. [examples/](examples/) has three services to try: [PurchaseOrderSrv](examples/PurchaseOrderSrv/) (V2, with a function import), [Northwind](examples/Northwind/) (V4) and [TripPin](examples/TripPin/) (V4, with actions and functions).
 
