@@ -5,7 +5,6 @@ import { toInternal, propToInternal } from "./types.ts";
 import { HttpError, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
-import { applyQuery } from "./apply-query.ts";
 import type {
   EntityType,
   ODataResponse,
@@ -165,8 +164,13 @@ function callOperation(
   opts: ResponseOptions,
   headers: RequestHeaders,
 ): ODataResponse {
-  if (q.apply)
-    throw new HttpError(501, `$apply on ${op.name} is not supported`);
+  // Checked before the operation runs: an action's changes would stay otherwise
+  const rt = op.returnType;
+  if (q.apply && !(rt?.entityType && rt.isCollection))
+    throw new HttpError(
+      400,
+      `$apply applies to a collection of entities, which ${op.name} doesn't return`,
+    );
   const expected = op.httpMethod || (op.kind === "action" ? "POST" : "GET");
   if (method !== expected)
     throw new HttpError(
@@ -255,17 +259,8 @@ function operationResult(
     rows = found ? svc.store.rows(found) : [];
     setName = found || type.name; // no entity set of that type: only ever an empty result
   }
-  if (rt.isCollection) {
-    const { results, count } = applyQuery(svc, rows, type, q);
-    return svc.protocol.collection(
-      svc,
-      { rows: results, count },
-      setName,
-      type,
-      q,
-      opts,
-    );
-  }
+  if (rt.isCollection)
+    return svc.collectionResponse(rows, setName, type, q, opts);
   let row: Row | undefined = rows[0];
   if (
     !binding &&

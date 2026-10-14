@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 
 // Decimals as strings, as UI5's V4 model asks for them
 const IEEE754 = { Accept: "application/json;IEEE754Compatible=true" };
@@ -468,5 +468,59 @@ describe("$apply as UI5 sends it", () => {
       const r = await apply(query);
       assert.equal(r.status, 400, query);
     }
+  });
+});
+
+// An operation's result, when it's a collection of entities
+describe("$apply on an operation", () => {
+  let s: TestServer;
+  const logs: string[] = [];
+  before(async () => {
+    s = await start(
+      path.join(import.meta.dirname, "fixtures", "OperationsV2"),
+      {
+        log: (line) => logs.push(line),
+      },
+    );
+  });
+  after(() => s.close());
+
+  it("transforms a function's collection of entities", async () => {
+    const r = await get(
+      `${s.v4}/GetOpenOrders()?$apply=groupby((Status),aggregate(Amount with sum as Total))`,
+      IEEE754,
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { Status: "Open", Total: "1200.00" },
+      { Status: "Approved", Total: "450.50" },
+    ]);
+    const filtered = await get(
+      `${s.v4}/GetOpenOrders()?$apply=filter(Amount gt 1000)&$count=true&$select=PurchaseOrderId`,
+    );
+    assert.equal(filtered.body["@odata.count"], 1);
+    assert.deepEqual(filtered.body.value, [{ PurchaseOrderId: "4500000001" }]);
+  });
+
+  it("on any other result -> 400, before an action runs", async () => {
+    for (const u of [
+      "GetOrderDates()?$apply=identity",
+      "GetStatusText()?$apply=identity",
+    ]) {
+      const r = await get(`${s.v4}/${u}`);
+      assert.equal(r.status, 400, u);
+      assert.match(r.body.error.message, /applies to a collection of entities/);
+    }
+    logs.length = 0;
+    const action = await send(
+      "POST",
+      `${s.v4}/PurchaseOrderSet('4500000001')/ZPO_SRV.ApprovePurchaseOrder?$apply=identity`,
+      {},
+    );
+    assert.equal(action.status, 400);
+    assert.deepEqual(
+      logs.filter((l) => l.includes("ApprovePurchaseOrder")),
+      [],
+    );
   });
 });

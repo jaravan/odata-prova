@@ -240,6 +240,68 @@ class ODataService {
     return type.navigations[name] || type.draftNavigations?.[name];
   }
 
+  // --- Collections -----------------------------------------------------------------------
+
+  // The rows and type $apply gives (see aggregation.ts), or the rows as they are without one.
+  // entities: the rows it ran on, which are still entities where they are left, and so can
+  // be expanded
+  applied(
+    rows: Row[],
+    type: EntityType,
+    q: QueryNode,
+  ): {
+    rows: Row[];
+    type: EntityType;
+    entities: { type: EntityType; rows: Set<Row> };
+  } {
+    const entities = { type, rows: new Set(rows) };
+    if (!q.apply) return { rows, type, entities };
+    for (const name of Object.keys(q.expand)) {
+      if (!holdsEntities(q.apply))
+        throw new HttpError(
+          400,
+          "$expand needs entities in the $apply result, which an aggregate or groupby replaces",
+        );
+      if (!this.navigation(type, name))
+        throw new HttpError(
+          400,
+          `${name} is not a navigation property of ${type.name}`,
+        );
+    }
+    return { ...applyTransformations(this, rows, type, q.apply), entities };
+  }
+
+  // A collection's response: an entity set's, a navigation's or an operation's, after its
+  // query options, $apply first
+  collectionResponse(
+    rows: Row[],
+    setName: string,
+    type: EntityType,
+    q: QueryNode,
+    opts: ResponseOptions,
+  ): ODataResponse {
+    const applied = this.applied(rows, type, q);
+    const { results, count } = applyQuery(this, applied.rows, applied.type, q);
+    if (q.apply)
+      return this.protocol.aggregated!(
+        this,
+        { rows: results, count },
+        setName,
+        applied.type,
+        q,
+        applied.entities,
+        opts,
+      );
+    return this.protocol.collection(
+      this,
+      { rows: results, count },
+      setName,
+      type,
+      q,
+      opts,
+    );
+  }
+
   // --- Dispatch --------------------------------------------------------------------------
 
   dispatch(
@@ -425,30 +487,13 @@ class ODataService {
       }
     }
 
-    // $apply turns the collection into rows of a type of its own (see aggregation.ts), which
-    // the other query options then work on. Those that are still entities can be expanded.
-    const entities = { type, rows: new Set(rows) };
-    if (q.apply) {
-      if (method !== "GET" || row !== undefined)
-        throw new HttpError(400, "$apply applies to reading a collection only");
-      for (const name of Object.keys(q.expand)) {
-        if (!holdsEntities(q.apply))
-          throw new HttpError(
-            400,
-            "$expand needs entities in the $apply result, which an aggregate or groupby replaces",
-          );
-        if (!this.navigation(type, name))
-          throw new HttpError(
-            400,
-            `${name} is not a navigation property of ${type.name}`,
-          );
-      }
-      ({ rows, type } = applyTransformations(this, rows, type, q.apply));
-    }
+    if (q.apply && (method !== "GET" || row !== undefined))
+      throw new HttpError(400, "$apply applies to reading a collection only");
 
     if (wantCount) {
       if (method !== "GET") throw new HttpError(405, "Method not allowed");
-      const { results } = applyQuery(this, rows, type, {
+      const applied = this.applied(rows, type, q);
+      const { results } = applyQuery(this, applied.rows, applied.type, {
         ...q,
         top: undefined,
         skip: undefined,
@@ -463,27 +508,8 @@ class ODataService {
     if (row === undefined) {
       // Collection
       switch (method) {
-        case "GET": {
-          const { results, count } = applyQuery(this, rows, type, q);
-          if (q.apply)
-            return protocol.aggregated!(
-              this,
-              { rows: results, count },
-              setName,
-              type,
-              q,
-              entities,
-              opts,
-            );
-          return protocol.collection(
-            this,
-            { rows: results, count },
-            setName,
-            type,
-            q,
-            opts,
-          );
-        }
+        case "GET":
+          return this.collectionResponse(rows, setName, type, q, opts);
         case "POST": {
           const parent = parentForCreate;
           const preset: Row = parent
