@@ -76,7 +76,15 @@ V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables a
 
 The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. `$select` picks among them, as UI5 sends it with `identity`. A row that is still one of the entities, which `identity`, `filter`, `search`, `orderby`, `skip`, `top` and a groupby's filter pass on, is written as an entity, with its ETag, and `$expand` expands it: `$apply=concat(aggregate($count as UI5__count),identity)&$expand=Items($select=Material)`. `$expand` on a result with no entities left, after an `aggregate` or `groupby`, is a `400`. `$apply` works on an operation's result too, when it's a collection of entities: `GetOpenOrders()?$apply=groupby((Status),aggregate(Amount with sum as Total))`. On any other result it's a `400`, checked before an action runs. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare) is a `400`.
 
-`501`, never ignored: other transformations (`compute` and the hierarchy functions), `topcount` and the others by an expression rather than a property (`topcount(2,Amount mul 2)`), a custom aggregate with no property of its name, a path through a collection navigation (`Items/Material` on an order), and `$apply` in V2, which has none.
+`501`, never ignored: other transformations (`compute`, and the hierarchy functions `descendants` and `ancestors` for now), `topcount` and the others by an expression rather than a property (`topcount(2,Amount mul 2)`), a custom aggregate with no property of its name, a path through a collection navigation (`Items/Material` on an order), and `$apply` in V2, which has none.
+
+### Hierarchies
+
+A recursive hierarchy, as UI5's tree tables show one, is declared on an entity type by two annotations with the same qualifier, which CAP writes for `@hierarchy`: `Aggregation.RecursiveHierarchy`, with the node property and the navigation to a node's parent, and `Hierarchy.RecursiveHierarchy`, with the properties the server fills in for each node it answers with: `DrillState`, `DistanceFromRoot`, `LimitedDescendantCount` and `LimitedRank`.
+
+UI5 asks for the first levels with `TopLevels`: `$apply=com.sap.vocabularies.Hierarchy.v1.TopLevels(HierarchyNodes=$root/Genres,HierarchyQualifier='GenresHierarchy',NodeProperty='ID',Levels=2)`. The answer is the nodes with fewer ancestors than `Levels` (all of them without it) in preorder, siblings in the order of the rows before it (`orderby(name)/TopLevels(...)`). `ExpandLevels=[{"NodeID":"4","Levels":1}]` shows more levels below a node, all of them with `"Levels":null`, or collapses it with `0`. Each node's `DrillState` is `expanded` when its children are in the answer, `collapsed` when it has some that aren't, and `leaf` when it has none. The nodes are still entities, with their key, ETag and `$expand`.
+
+A node whose parent isn't among the rows is a root. Parents that go round in a cycle, as generated rows can have them, are broken at the first node in the rows' order, so every node shows once. `TopLevels`'s `Show`, and hierarchy nodes other than an entity set (`$root/Genres`), are a `501`.
 
 ## Drafts
 
