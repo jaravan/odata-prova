@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A recursive hierarchy as CAP writes it for @hierarchy (Genres, from its bookshop sample) -->
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Aggregation.V1.xml">
+    <edmx:Include Alias="Aggregation" Namespace="Org.OData.Aggregation.V1"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Hierarchy.xml">
+    <edmx:Include Alias="Hierarchy" Namespace="com.sap.vocabularies.Hierarchy.v1"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="HierarchySrv" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityContainer Name="EntityContainer">
+        <EntitySet Name="Genres" EntityType="HierarchySrv.Genres">
+          <NavigationPropertyBinding Path="parent" Target="Genres"/>
+          <NavigationPropertyBinding Path="children" Target="Genres"/>
+        </EntitySet>
+      </EntityContainer>
+      <EntityType Name="Genres">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="name" Type="Edm.String" MaxLength="40"/>
+        <Property Name="parent_ID" Type="Edm.Int32"/>
+        <Property Name="LimitedDescendantCount" Type="Edm.Int64"/>
+        <Property Name="DistanceFromRoot" Type="Edm.Int64"/>
+        <Property Name="DrillState" Type="Edm.String"/>
+        <Property Name="LimitedRank" Type="Edm.Int64"/>
+        <NavigationProperty Name="parent" Type="HierarchySrv.Genres" Partner="children">
+          <ReferentialConstraint Property="parent_ID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+        <NavigationProperty Name="children" Type="Collection(HierarchySrv.Genres)" Partner="parent"/>
+      </EntityType>
+      <Annotations Target="HierarchySrv.Genres">
+        <Annotation Term="Aggregation.RecursiveHierarchy" Qualifier="GenresHierarchy">
+          <Record Type="Aggregation.RecursiveHierarchyType">
+            <PropertyValue Property="NodeProperty" PropertyPath="ID"/>
+            <PropertyValue Property="ParentNavigationProperty" NavigationPropertyPath="parent"/>
+          </Record>
+        </Annotation>
+        <Annotation Term="Hierarchy.RecursiveHierarchy" Qualifier="GenresHierarchy">
+          <Record Type="Hierarchy.RecursiveHierarchyType">
+            <PropertyValue Property="LimitedDescendantCount" Path="LimitedDescendantCount"/>
+            <PropertyValue Property="DistanceFromRoot" Path="DistanceFromRoot"/>
+            <PropertyValue Property="DrillState" Path="DrillState"/>
+            <PropertyValue Property="LimitedRank" Path="LimitedRank"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -16,6 +16,7 @@ import type { ETagMode } from "./etag.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
 import { applyTransformations, holdsEntities } from "./aggregation.ts";
+import { isHierarchyRow } from "./hierarchy.ts";
 import { create, update, deleteEntity } from "./writes.ts";
 import {
   operationImport,
@@ -69,15 +70,15 @@ export interface Protocol extends LiteralSyntax {
     opts?: ResponseOptions,
   ): ODataResponse;
   // The rows of an $apply's result type (see aggregation.ts); V4 only, V2 has no $apply.
-  // entities: the entity type and rows of the collection $apply ran on; a result row that
-  // is one of them is written as an entity, with node's $select and $expand
+  // entities: the entity type of the collection $apply ran on, and whether a result row is
+  // one of its entities, which is written as one, with node's $select and $expand
   aggregated?(
     svc: ODataService,
     result: { rows: Row[]; count?: number },
     setName: string,
     type: EntityType,
     node: QueryNode,
-    entities: { type: EntityType; rows: Set<Row> },
+    entities: { type: EntityType; has(row: Row): boolean },
     opts?: ResponseOptions,
   ): ODataResponse;
   // A single-valued navigation or operation result that is empty
@@ -243,8 +244,8 @@ class ODataService {
   // --- Collections -----------------------------------------------------------------------
 
   // The rows and type $apply gives (see aggregation.ts), or the rows as they are without one.
-  // entities: the rows it ran on, which are still entities where they are left, and so can
-  // be expanded
+  // entities: whether a result row is still one of the entities, which can be expanded: one of
+  // the rows it ran on, or a hierarchy function's copy of one (see hierarchy.ts)
   applied(
     rows: Row[],
     type: EntityType,
@@ -252,9 +253,13 @@ class ODataService {
   ): {
     rows: Row[];
     type: EntityType;
-    entities: { type: EntityType; rows: Set<Row> };
+    entities: { type: EntityType; has(row: Row): boolean };
   } {
-    const entities = { type, rows: new Set(rows) };
+    const input = new Set(rows);
+    const entities = {
+      type,
+      has: (row: Row) => input.has(row) || isHierarchyRow(row),
+    };
     if (!q.apply) return { rows, type, entities };
     for (const name of Object.keys(q.expand)) {
       if (!holdsEntities(q.apply))

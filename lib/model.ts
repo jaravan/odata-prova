@@ -55,6 +55,20 @@ export interface EntityType {
   // Aggregation.CustomAggregate, on the type or one of its entity sets: name -> the Edm type
   // of its value (see aggregation.ts)
   customAggregates?: Record<string, string>;
+  // Aggregation.RecursiveHierarchy with Hierarchy.RecursiveHierarchy, by qualifier (see
+  // hierarchy.ts)
+  hierarchies?: Record<string, Hierarchy>;
+}
+
+// A recursive hierarchy: the property that identifies a node and the navigation to its
+// parent, and the properties a hierarchy's result fills in for each node, when named
+export interface Hierarchy {
+  nodeProperty: string;
+  parentNavigation: string;
+  drillState?: string;
+  distanceFromRoot?: string;
+  limitedDescendantCount?: string;
+  limitedRank?: string;
 }
 
 export interface ComplexType {
@@ -294,6 +308,16 @@ export type Transformation =
       path: string;
     }
   | { kind: "identity" }
+  // com.sap.vocabularies.Hierarchy.v1.TopLevels(...): the first levels of a hierarchy in
+  // preorder, with nodes expanded (levels > 0, or null for all) or collapsed (0)
+  | {
+      kind: "toplevels";
+      set: string;
+      qualifier: string;
+      nodeProperty: string;
+      levels?: number;
+      expandLevels: { nodeId: string; levels: number | null }[];
+    }
   // Each sequence runs on the same input, and their results follow one another
   | { kind: "concat"; sequences: Transformation[][] };
 

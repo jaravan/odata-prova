@@ -351,7 +351,7 @@ const v4: Protocol = {
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => {
-      if (entities.rows.has(r))
+      if (entities.has(r))
         return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
