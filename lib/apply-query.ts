@@ -82,13 +82,16 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
 }
 
 // opts: { filter, orderby, top, skip, count, search } (a parsed query or an $expand node).
+// aggregate: what $these/aggregate(...) in the filter gives, in a groupby's filter in $apply
 function applyQuery(
   svc: QueryHost,
   rows: Row[],
   entityType: EntityType,
   opts: QueryNode,
+  aggregate?: Resolve["aggregate"],
 ): { results: Row[]; count?: number } {
   const resolve = resolver(svc, entityType);
+  resolve.aggregate = aggregate;
   let results = rows;
 
   if (opts.filter) {

@@ -128,7 +128,7 @@ describe("$apply", () => {
   it("what isn't supported -> 501, never ignored", async () => {
     for (const query of [
       "$apply=topcount(2,TotalAmount)",
-      "$apply=groupby((Currency),filter(Status eq 'Open'))",
+      "$apply=groupby((Currency),topcount(1,TotalAmount))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
       "$apply=groupby((Items/Material))",
       "$apply=groupby((Currency))&$expand=Items",
@@ -304,12 +304,63 @@ describe("$apply as UI5 sends it", () => {
     ]);
   });
 
-  it("filtering groups on their aggregated values ($$filterOnAggregate) -> 501", async () => {
+  // $$filterOnAggregate: the countries whose Amount adds up to more than 100, then grouped
+  it("filtering groups on their aggregated values, with $these/aggregate", async () => {
     const r = await apply(
-      "$apply=groupby((Country),filter(Amount gt 100))/groupby((Country),aggregate(Amount))",
+      "$apply=groupby((Country),filter($these/aggregate(Amount) gt 100))" +
+        "/groupby((Country),aggregate(Amount,Currency))",
     );
-    assert.equal(r.status, 501);
-    assert.match(r.body.error.message, /aggregated values is not supported/);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { Country: "Germany", Amount: "300.30", Currency: "EUR" },
+    ]);
+
+    // With a unit's filter on the rows, as UI5 adds one, and a standard method and $count.
+    // USA has two rows, one with no Amount.
+    const mixed = await apply(
+      "$apply=groupby((Country,Currency),filter(Currency eq 'USD' or " +
+        "$these/aggregate(Amount with sum) ge 300 and $these/aggregate($count) eq 2))" +
+        "/groupby((Country),aggregate(Amount))",
+    );
+    assert.deepEqual(mixed.body.value, [
+      { Country: "Germany", Amount: "300.30" },
+      { Country: "USA", Amount: "80.00" },
+    ]);
+
+    // With no $these, the filter is on each group's rows
+    const rows = await apply(
+      "$apply=groupby((Country),filter(Amount gt 100))&$select=ID",
+    );
+    assert.deepEqual(rows.body.value, [{ ID: 1 }, { ID: 2 }]);
+  });
+
+  it("$these/aggregate outside a groupby's filter, or a wrong one -> 400", async () => {
+    for (const [query, message] of [
+      [
+        "$filter=$these/aggregate(Amount) gt 1",
+        /only allowed in a groupby's filter/,
+      ],
+      [
+        "$apply=groupby((Country),filter($these/aggregate(Nope) gt 1))",
+        /Nope is not a custom aggregate/,
+      ],
+      [
+        "$apply=groupby((Country),filter($these/aggregate(Country with sum) gt 1))",
+        /sum needs a number/,
+      ],
+      [
+        "$apply=groupby((Country),filter($these/aggregate(Amount,Quantity) gt 1))",
+        /takes one aggregate/,
+      ],
+      [
+        "$apply=groupby((Country),filter($these/aggregate(Amount gt 1))",
+        /Unterminated \$these\/aggregate/,
+      ],
+    ] as const) {
+      const r = await apply(query);
+      assert.equal(r.status, 400, query);
+      assert.match(r.body.error.message, message, query);
+    }
   });
 
   it("a mistake -> 400", async () => {

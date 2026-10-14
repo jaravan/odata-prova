@@ -22,10 +22,13 @@ export interface LiteralSyntax {
 type Value = Literal;
 
 // Reads a property path off a row (the caller knows the entity type and how to follow a
-// navigation); .collection reads a path that ends in a collection, for the lambda operators
+// navigation); .collection reads a path that ends in a collection, for the lambda operators;
+// .aggregate gives $these/aggregate(<expression>), the aggregate over the rows being
+// filtered, which only a groupby's filter in $apply has (see aggregation.ts)
 export interface Resolve {
   (row: Row, path: string): Value;
   collection(row: Row, path: string): Collection;
+  aggregate?: (expression: string) => Value;
 }
 
 // The related rows of a collection navigation, or the items of a collection-valued property
@@ -39,7 +42,9 @@ type Token =
   | { kind: "op"; value: string }
   | { kind: "func"; value: string }
   | { kind: "path"; value: string }
-  | { kind: "lambda"; path: string; value: string };
+  | { kind: "lambda"; path: string; value: string }
+  // $these/aggregate(Amount with sum): the expression between the parentheses
+  | { kind: "these"; value: string };
 
 type Node =
   | { literal: unknown; type: string | null }
@@ -49,7 +54,8 @@ type Node =
   | { not: true; expr: Node }
   | { neg: true; expr: Node }
   | { func: string; args: Node[] }
-  | { lambda: string; path: string; variable?: string; predicate?: Node };
+  | { lambda: string; path: string; variable?: string; predicate?: Node }
+  | { these: string };
 
 const KEYWORDS = new Set([
   "eq",
@@ -121,6 +127,21 @@ function tokenize(input: string, protocol: LiteralSyntax): Token[] {
     const word = input.slice(i).match(/^\$?[A-Za-z_][A-Za-z0-9_./]*/);
     if (word) {
       const w = word[0];
+      // An aggregate expression isn't a filter expression ("Amount with sum"), so its text
+      // is kept as it is, up to the closing parenthesis
+      if (w === "$these/aggregate" && input[i + w.length] === "(") {
+        const start = i + w.length + 1;
+        let end = start;
+        for (let depth = 1; ; end++) {
+          if (end >= input.length)
+            throw new Error("Unterminated $these/aggregate( in $filter");
+          if (input[end] === "(") depth++;
+          else if (input[end] === ")" && --depth === 0) break;
+        }
+        tokens.push({ kind: "these", value: input.slice(start, end).trim() });
+        i = end + 1;
+        continue;
+      }
       const lambda = w.match(/^(.+)\/(any|all)$/);
       if (lambda && input[i + w.length] === "(") {
         tokens.push({ kind: "lambda", path: lambda[1], value: lambda[2] });
@@ -169,8 +190,8 @@ function tokenize(input: string, protocol: LiteralSyntax): Token[] {
 }
 
 // The parser hands back one of: {literal, type}, {path}, {op, left, right}, {in, left, list},
-// {not, expr}, {neg, expr}, {func, args}, or {lambda, path, variable, predicate}
-// (variable and predicate absent for Items/any()).
+// {not, expr}, {neg, expr}, {func, args}, {lambda, path, variable, predicate}
+// (variable and predicate absent for Items/any()), or {these} ($these/aggregate(...)).
 // Nothing fancy, just plain objects.
 class Parser {
   tokens: Token[];
@@ -282,6 +303,7 @@ class Parser {
     }
     if (t.kind === "literal") return { literal: t.value, type: t.type };
     if (t.kind === "path") return { path: t.value };
+    if (t.kind === "these") return { these: t.value };
     if (t.kind === "lambda") {
       this.expect("(");
       if (this.peek()?.kind === ")") {
@@ -326,6 +348,13 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   if ("lambda" in node)
     return { value: evaluateLambda(node, row, resolve), type: "Edm.Boolean" };
   if ("path" in node) return resolve(row, node.path);
+  if ("these" in node) {
+    if (!resolve.aggregate)
+      throw new Error(
+        "$these/aggregate(...) is only allowed in a groupby's filter in $apply",
+      );
+    return resolve.aggregate(node.these);
+  }
   if ("not" in node)
     return {
       value: !truthy(evaluate(node.expr, row, resolve)),
@@ -436,6 +465,7 @@ function evaluateLambda(
       }
       return resolve.collection(row, head === "$it" ? rest : path);
     };
+    inner.aggregate = resolve.aggregate;
     return inner;
   };
   // The item reaches its own fields through scoped(item), which ignores the row argument

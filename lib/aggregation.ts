@@ -8,8 +8,14 @@
 // properties and the aliases, with no key. The query options after $apply refer to those.
 //
 // Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
-// aggregate), and aggregate with sum, min, max, average, countdistinct, $count and custom
-// aggregates. Other transformations are a 501. UI5 puts what it needs besides the rows in a
+// aggregate or a filter), and aggregate with sum, min, max, average, countdistinct, $count
+// and custom aggregates. Other transformations are a 501. A groupby's filter is how UI5
+// filters groups on their aggregated values ($$filterOnAggregate): $these is the group, so
+//
+//   groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),...)
+//
+// keeps the rows of the countries whose Amount adds up to more than 1000. UI5 puts what it
+// needs besides the rows in a
 // concat, in rows of their own, such as min and max, the count and the grand total:
 //
 //   concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))
@@ -27,6 +33,7 @@ import { isIntegerType, isNumericType, toComparable } from "./types.ts";
 import type {
   Aggregate,
   EntityType,
+  Literal,
   Model,
   PrimitiveValue,
   Property,
@@ -144,16 +151,18 @@ function parseTransformation(text: string): Transformation {
         throw new HttpError(400, `Invalid $apply: ${text}`);
       const nested = rest?.match(/^aggregate\s*\((.*)\)$/s);
       // UI5's $$filterOnAggregate sends groupby((...),filter(...)), whose filter is on the
-      // groups' aggregated values, not on the rows
-      if (rest?.startsWith("filter("))
-        throw new HttpError(
-          501,
-          `$apply: filtering groups on their aggregated values is not supported: ${rest}`,
-        );
+      // groups' aggregated values: $these/aggregate(Amount) gt 1000
+      const filter = rest?.match(/^filter\s*\((.*)\)$/s);
+      if (filter)
+        return {
+          kind: "groupfilter",
+          properties: splitTopLevel(props[1], ","),
+          filter: filter[1],
+        };
       if (rest && !nested)
         throw new HttpError(
           501,
-          `$apply: groupby supports only an aggregate after its properties: ${rest}`,
+          `$apply: groupby supports only an aggregate or a filter after its properties: ${rest}`,
         );
       return {
         kind: "groupby",
@@ -257,21 +266,69 @@ function applyTransformations(
       }
       case "groupby": {
         const out = aggregated(type, t.properties, t.aggregates);
-        // One row per distinct combination of the grouping values, in the order first seen
-        const groups = new Map<string, Row[]>();
-        for (const row of rows) {
-          const k = JSON.stringify(t.properties.map((p) => row[p]));
-          const group = groups.get(k);
-          if (group) group.push(row);
-          else groups.set(k, [row]);
-        }
-        rows = [...groups.values()].map((group) => aggregateRow(group, out));
+        rows = groupsOf(rows, t.properties).map((g) => aggregateRow(g, out));
         type = out.type;
+        break;
+      }
+      case "groupfilter": {
+        aggregated(type, t.properties, []); // checks the grouping properties
+        const input = type;
+        rows = groupsOf(rows, t.properties).flatMap(
+          (group) =>
+            applyQuery(
+              svc,
+              group,
+              input,
+              { expand: {}, filter: t.filter },
+              aggregateOf(input, group),
+            ).results,
+        );
         break;
       }
     }
   }
   return { rows, type };
+}
+
+// The rows of each distinct combination of the grouping values, in the order first seen
+function groupsOf(rows: Row[], properties: string[]): Row[][] {
+  const groups = new Map<string, Row[]>();
+  for (const row of rows) {
+    const k = JSON.stringify(properties.map((p) => row[p]));
+    const group = groups.get(k);
+    if (group) group.push(row);
+    else groups.set(k, [row]);
+  }
+  return [...groups.values()];
+}
+
+// $these/aggregate(<expression>) over a group's rows, worked out once per expression: a
+// custom aggregate (Amount), "Amount with sum" or "$count"
+function aggregateOf(
+  type: EntityType,
+  rows: Row[],
+): (expression: string) => Literal {
+  const values = new Map<string, Literal>();
+  return (expression) => {
+    let value = values.get(expression);
+    if (!value) {
+      const [agg, ...more] = parseAggregates(
+        IDENTIFIER.test(expression) ? expression : `${expression} as these__`,
+      );
+      if (more.length)
+        throw new HttpError(
+          400,
+          `$apply: $these/aggregate takes one aggregate: ${expression}`,
+        );
+      const out = aggregated(type, [], [agg]);
+      value = {
+        value: aggregateRow(rows, out)[agg.alias],
+        type: out.aggregates[0].result.type,
+      };
+      values.set(expression, value);
+    }
+    return value;
+  };
 }
 
 // What a groupby or aggregate gives, worked out from the input type before any row is read,

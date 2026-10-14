@@ -272,6 +272,9 @@ export interface QueryNode {
 export type Transformation =
   | { kind: "filter"; filter: string }
   | { kind: "groupby"; properties: string[]; aggregates: Aggregate[] }
+  // groupby((Country),filter($these/aggregate(Amount) gt 1000)): the rows of each group that
+  // pass the filter, in which $these is the group
+  | { kind: "groupfilter"; properties: string[]; filter: string }
   | { kind: "aggregate"; aggregates: Aggregate[] }
   | { kind: "search"; search: string }
   | { kind: "orderby"; orderby: string }
