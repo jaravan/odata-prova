@@ -4,13 +4,27 @@
 [![npm](https://img.shields.io/npm/v/odata-prova)](https://www.npmjs.com/package/odata-prova)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-![npx odata-prova starts on a folder that holds only a metadata.xml, generates data for its two entity sets and serves them as V2 and V4; a V4 request returns a purchase order with its items, and a V2 request returns the same order](img/hero.gif)
+![In a terminal, npx odata-prova starts on a folder holding a metadata.xml and a CSV file for each of its two entity sets, loads their rows and prints the V2 and V4 URLs. In VS Code, the SAP Fiori generator connects to the V4 URL and generates a List Report app on PurchaseOrderSet. The app then runs in the browser, showing the purchase orders and the object page of one with its items](img/hero.gif)
 
 A mock OData V2 and V4 server generated from your service's `metadata.xml`. Point it at the file, and it serves the service as V2 and V4 at once, with mock data or your own CSV files. No project, no code and no SAP system needed.
 
 > `prova (πρόβα)`: Greek for rehearsal
 
 Not affiliated with or endorsed by SAP.
+
+## Who is it for?
+
+Anyone whose work depends on an SAP OData service they can't always reach: Fiori and UI5 developers, UX designers, web, mobile and integration developers, test and DevOps engineers, and consultants giving demos.
+
+Where it helps:
+
+- **Before the backend exists:** the service's `metadata.xml` is enough.
+- **Without the SAP system:** no VPN, missing authorizations or a system that's down. The app keeps its paths through the `fiori-tools-proxy` (see [Your app](#your-app)).
+- **In CI:** a Docker image with the same data on every run, for OPA5 and other browser tests.
+- **Moving from V2 to V4:** one `metadata.xml` serves both, side by side on the same data.
+- **In demos:** data you choose, for people without access to the system.
+
+It's not a backend: no business logic beyond required values and `config.json` rules, and writes last until a restart.
 
 ## Quick start
 
