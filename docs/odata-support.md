@@ -67,6 +67,7 @@ V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables a
 
 - `filter(...)`, `search(...)`, `orderby(...)`, `skip(n)` and `top(n)`: as the query options of the same names. `identity` leaves the rows as they are.
 - `groupby((A,B))`: one row per distinct combination of `A` and `B`, with an `aggregate(...)` after the properties to aggregate each group.
+- Paths through single-valued navigations, to group or aggregate by a related entity's property, as UI5 groups by a text it reaches through a navigation: on order items, `groupby((PurchaseOrder/Status),aggregate(NetPrice with sum as Total))`. The response nests the path, `{"PurchaseOrder":{"Status":"Open"},"Total":"38.20"}`, and the other query options use it as it is: `$orderby=PurchaseOrder/Status`. A navigation that leads nowhere gives `null`.
 - `groupby((A,B),filter(...))`: the rows of each group that pass the filter, in which `$these/aggregate(...)` is an aggregate over the group's rows. That's how UI5 filters groups on their totals (`$$filterOnAggregate`): `groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),aggregate(Amount))` gives the countries whose amounts add up to more than 1000. `$these/aggregate` takes a custom aggregate (`Amount`), `Amount with sum` (or any other method), or `$count`.
 - `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out. Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`), and decimals add up exactly. So does their average, rounded when it doesn't end: 16 digits more than the values have.
 - Custom aggregates, which UI5 asks for with no `with` when the metadata declares them (`Aggregation.CustomAggregate`, on the entity type or set): `aggregate(Amount,Currency)`, or `aggregate(Amount as Total)`. The metadata says what type the result is but not how it is computed, so the server aggregates the property of the same name: a number is summed, and anything else, such as a currency or a unit, is the value all the rows share, or `null` when they differ, which is how UI5 shows amounts in mixed currencies.
@@ -74,7 +75,7 @@ V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables a
 
 The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. `$select` picks among them, as UI5 sends it with `identity`. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare) is a `400`.
 
-`501`, never ignored: other transformations (`topcount`, `compute`, the hierarchy functions, ...), a custom aggregate with no property of its name, grouping or aggregating by a path (`Items/Material`), `$expand` with `$apply`, and `$apply` on an operation or in V2, which has none.
+`501`, never ignored: other transformations (`topcount`, `compute`, the hierarchy functions, ...), a custom aggregate with no property of its name, a path through a collection navigation (`Items/Material` on an order), `$expand` with `$apply`, and `$apply` on an operation or in V2, which has none.
 
 ## Drafts
 
