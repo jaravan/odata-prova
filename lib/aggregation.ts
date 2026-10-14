@@ -6,6 +6,9 @@
 //
 // A groupby or aggregate gives rows of a type of its own (see resultType): the grouping
 // properties and the aliases, with no key. The query options after $apply refer to those.
+// Grouping or aggregating by a path through single-valued navigations, groupby((Supplier/
+// Name)), works on a property of that name holding the value it leads to (see withPaths),
+// which the response nests: {"Supplier":{"Name":"..."}}.
 //
 // Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
 // aggregate or a filter), and aggregate with sum, min, max, average, countdistinct, $count
@@ -26,7 +29,7 @@
 // anything else, such as a currency or unit, is the value all the rows share, or null when
 // they differ, which is what UI5 expects of a unit.
 
-import { applyQuery } from "./apply-query.ts";
+import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
 import { isIntegerType, isNumericType, toComparable } from "./types.ts";
@@ -36,6 +39,7 @@ import type {
   Literal,
   Model,
   PrimitiveValue,
+  PropertyValue,
   Property,
   Row,
   Transformation,
@@ -259,18 +263,27 @@ function applyTransformations(
         break;
       }
       case "aggregate": {
+        ({ rows, type } = withPaths(svc, rows, type, [], t.aggregates));
         const out = aggregated(type, [], t.aggregates);
         rows = [aggregateRow(rows, out)];
         type = out.type;
         break;
       }
       case "groupby": {
+        ({ rows, type } = withPaths(
+          svc,
+          rows,
+          type,
+          t.properties,
+          t.aggregates,
+        ));
         const out = aggregated(type, t.properties, t.aggregates);
         rows = groupsOf(rows, t.properties).map((g) => aggregateRow(g, out));
         type = out.type;
         break;
       }
       case "groupfilter": {
+        ({ rows, type } = withPaths(svc, rows, type, t.properties, []));
         aggregated(type, t.properties, []); // checks the grouping properties
         const input = type;
         rows = groupsOf(rows, t.properties).flatMap(
@@ -288,6 +301,62 @@ function applyTransformations(
     }
   }
   return { rows, type };
+}
+
+// The rows, and their type, with a property for each path among the grouping properties and
+// the aggregated ones ("Supplier/Name") holding the value it leads to, or null when a
+// navigation on the way leads nowhere
+function withPaths(
+  svc: QueryHost,
+  rows: Row[],
+  type: EntityType,
+  groupBy: string[],
+  aggregates: Aggregate[],
+): { rows: Row[]; type: EntityType } {
+  const paths = [...groupBy, ...aggregates.map((a) => a.property ?? "")].filter(
+    (name) => name.includes("/") && !type.properties[name],
+  );
+  if (!paths.length) return { rows, type };
+  const properties = { ...type.properties };
+  for (const path of paths) properties[path] = pathProperty(svc, type, path);
+  const resolve = resolver(svc, type);
+  return {
+    rows: rows.map((row) => {
+      const out = { ...row };
+      for (const path of paths)
+        out[path] = resolve(row, path).value as PropertyValue;
+      return out;
+    }),
+    type: { ...type, properties },
+  };
+}
+
+// The property at the end of a path through single-valued navigations, named after the path
+function pathProperty(
+  svc: QueryHost,
+  type: EntityType,
+  path: string,
+): Property {
+  const parts = path.split("/");
+  let current = type;
+  for (const part of parts.slice(0, -1)) {
+    const nav = svc.navigation(current, part);
+    if (!nav)
+      throw new HttpError(
+        400,
+        `$apply: ${part} in ${path} is not a navigation of ${current.name}`,
+      );
+    if (nav.isCollection)
+      throw new HttpError(
+        501,
+        `$apply: a path through a collection navigation (${path}) is not supported`,
+      );
+    current = svc.model.entityTypes[nav.targetType];
+  }
+  const prop = current.properties[parts[parts.length - 1]];
+  if (!prop)
+    throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
+  return { ...prop, name: path };
 }
 
 // The rows of each distinct combination of the grouping values, in the order first seen
@@ -346,11 +415,6 @@ function aggregated(
 ): Aggregated {
   const properties: Record<string, Property> = {};
   for (const name of groupBy) {
-    if (name.includes("/"))
-      throw new HttpError(
-        501,
-        `$apply: grouping by a path (${name}) is not supported`,
-      );
     const prop = propertyOf(type, name);
     if (prop.complexType || prop.isCollection)
       throw new HttpError(
@@ -421,14 +485,8 @@ function customInput(type: EntityType, name: string): Property {
 
 function propertyOf(type: EntityType, name: string): Property {
   const prop = type.properties[name];
-  if (!prop) {
-    if (name.includes("/"))
-      throw new HttpError(
-        501,
-        `$apply: aggregating a path (${name}) is not supported`,
-      );
+  if (!prop)
     throw new HttpError(400, `Unknown property ${name} on ${type.name}`);
-  }
   return prop;
 }
 

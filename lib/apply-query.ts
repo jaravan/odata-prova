@@ -9,6 +9,7 @@ import type {
   AnyNavigation,
   EntityType,
   Literal,
+  Model,
   PropertyValue,
   QueryNode,
   Row,
@@ -16,6 +17,7 @@ import type {
 
 // What the query options use of the service (the ODataService in service.ts)
 export interface QueryHost {
+  model: Model;
   protocol: LiteralSyntax;
   navigation(type: EntityType, name: string): AnyNavigation | undefined;
   related(
@@ -50,6 +52,9 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
     return { row: currentRow, type: currentType };
   };
   const resolve = (row: Row, path: string): Literal => {
+    // A path that is a property of its own: $apply's result for a groupby on a path
+    const own = entityType.properties[path.replace(/^\$it\//, "")];
+    if (own) return { value: row[own.name], type: own.type };
     const parts = path.replace(/^\$it\//, "").split("/");
     const at = walk(row, parts.slice(0, -1), path);
     if (!at) return { value: null, type: null };
@@ -159,4 +164,4 @@ function applyQuery(
   return { results, count };
 }
 
-export { applyQuery };
+export { applyQuery, resolver };

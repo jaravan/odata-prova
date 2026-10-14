@@ -254,6 +254,31 @@ function serialize(
   return out;
 }
 
+// ["Supplier/Name", "Supplier/City", "Total"] -> "Supplier(Name,City),Total"
+function contextList(paths: string[]): string {
+  const nested = new Map<string, string[]>();
+  for (const path of paths) {
+    const [head, ...rest] = path.split("/");
+    const tails = nested.get(head) ?? [];
+    if (rest.length) tails.push(rest.join("/"));
+    nested.set(head, tails);
+  }
+  return [...nested]
+    .map(([head, tails]) =>
+      tails.length ? `${head}(${contextList(tails)})` : head,
+    )
+    .join(",");
+}
+
+// Sets out.Supplier.Name for "Supplier/Name"
+function setPath(out: Record<string, unknown>, path: string, value: unknown) {
+  const parts = path.split("/");
+  let at = out;
+  for (const part of parts.slice(0, -1))
+    at = (at[part] ??= {}) as Record<string, unknown>;
+  at[parts[parts.length - 1]] = value;
+}
+
 function json(
   status: number,
   body: unknown,
@@ -298,28 +323,33 @@ const v4: Protocol = {
   },
   // Rows of an $apply's result type: no key and so no ETag, and the context lists the
   // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total). Each row has the ones it
-  // holds: a concat's rows come from different sequences. select: the $select, if any
+  // holds: a concat's rows come from different sequences. A path a groupby grouped by is
+  // nested, as the navigations it follows: "Supplier/Name" is {"Supplier":{"Name":...}},
+  // and Supplier(Name) in the context. select: the $select, if any
   aggregated(svc, { rows, count }, setName, type, select, opts) {
+    const names = Object.keys(type.properties);
+    // A $select of a navigation (Supplier) picks the paths through it
+    const selected = (name: string) =>
+      !select || select.has("*") || select.has(name.split("/")[0]);
     for (const name of select || [])
-      if (name !== "*" && !type.properties[name])
+      if (name !== "*" && !names.some((n) => n.split("/")[0] === name))
         throw new HttpError(
           400,
           `${name} is not a property of the $apply result`,
         );
-    const props = Object.values(type.properties).filter(
-      (p) => !select || select.has("*") || select.has(p.name),
+    const props = Object.values(type.properties).filter((p) =>
+      selected(p.name),
     );
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}(${props.map((p) => p.name).join(",")})`,
+      "@odata.context": `${svc.servicePath}/$metadata#${setName}(${contextList(props.map((p) => p.name))})`,
     };
     if (count !== undefined) body["@odata.count"] = count;
-    body.value = rows.map((r) =>
-      Object.fromEntries(
-        props
-          .filter((p) => p.name in r)
-          .map((p) => [p.name, toWire(r[p.name], p, opts)]),
-      ),
-    );
+    body.value = rows.map((r) => {
+      const out: Record<string, unknown> = {};
+      for (const p of props)
+        if (p.name in r) setPath(out, p.name, toWire(r[p.name], p, opts));
+      return out;
+    });
     return json(200, body, opts);
   },
   entity(svc, row, setName, type, node, status = 200, extra, opts) {

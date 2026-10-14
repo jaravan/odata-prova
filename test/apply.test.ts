@@ -89,6 +89,55 @@ describe("$apply", () => {
     assert.equal(c.body, "2");
   });
 
+  // A path through single-valued navigations: the order of each item. The response nests it
+  it("groups and aggregates by a path, nested in the response", async () => {
+    const r = await apply(
+      "$apply=groupby((PurchaseOrder/Status),aggregate(NetPrice with sum as Total,$count as Count))" +
+        "&$orderby=PurchaseOrder/Status desc&$top=2",
+      "PurchaseOrderItemSet",
+    );
+    assert.equal(r.status, 200);
+    assert.equal(
+      r.body["@odata.context"],
+      "/odata/v4/T/$metadata#PurchaseOrderItemSet(PurchaseOrder(Status),Total,Count)",
+    );
+    assert.deepEqual(r.body.value, [
+      { PurchaseOrder: { Status: "Open" }, Total: "38.20", Count: "3" },
+      { PurchaseOrder: { Status: "Completed" }, Total: "408.49", Count: "2" },
+    ]);
+
+    const filtered = await apply(
+      "$apply=groupby((PurchaseOrder/Currency,Unit))" +
+        "&$filter=PurchaseOrder/Currency eq 'EUR'&$select=PurchaseOrder,Unit",
+      "PurchaseOrderItemSet",
+    );
+    assert.deepEqual(filtered.body.value, [
+      { PurchaseOrder: { Currency: "EUR" }, Unit: "EA" },
+      { PurchaseOrder: { Currency: "EUR" }, Unit: "TO" },
+    ]);
+
+    const max = await apply(
+      "$apply=aggregate(PurchaseOrder/TotalAmount with max as Max)",
+      "PurchaseOrderItemSet",
+    );
+    assert.deepEqual(max.body.value, [{ Max: "45200.50" }]);
+
+    for (const [query, message] of [
+      [
+        "$apply=groupby((PurchaseOrder/Nope))",
+        /Unknown property PurchaseOrder\/Nope/,
+      ],
+      [
+        "$apply=groupby((Nope/Status))",
+        /Nope in Nope\/Status is not a navigation/,
+      ],
+    ] as const) {
+      const bad = await apply(query, "PurchaseOrderItemSet");
+      assert.equal(bad.status, 400, query);
+      assert.match(bad.body.error.message, message, query);
+    }
+  });
+
   it("a mistake -> 400", async () => {
     for (const [query, message] of [
       ["$apply=groupby((Nope))", /^Unknown property Nope on PurchaseOrder$/],
