@@ -318,6 +318,18 @@ export type Transformation =
       levels?: number;
       expandLevels: { nodeId: string; levels: number | null }[];
     }
+  // ancestors(...) and descendants(...): the rows that are ancestors or descendants of those
+  // the transformations give (the start nodes), within distance levels, and with the start
+  // nodes when keepStart
+  | {
+      kind: "ancestors" | "descendants";
+      set: string;
+      qualifier: string;
+      nodeProperty: string;
+      transformations: Transformation[];
+      distance?: number;
+      keepStart: boolean;
+    }
   // Each sequence runs on the same input, and their results follow one another
   | { kind: "concat"; sequences: Transformation[][] };
 

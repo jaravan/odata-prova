@@ -13,8 +13,8 @@
 // Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
 // aggregate or a filter), aggregate with sum, min, max, average, countdistinct, $count and
 // custom aggregates, and topcount, bottomcount, topsum, bottomsum, toppercent and
-// bottompercent, and the hierarchy function TopLevels (see hierarchy.ts). Other
-// transformations are a 501. A groupby's filter is how UI5
+// bottompercent, and the hierarchy functions TopLevels, ancestors and descendants (see
+// hierarchy.ts). Other transformations are a 501. A groupby's filter is how UI5
 // filters groups on their aggregated values ($$filterOnAggregate): $these is the group, so
 //
 //   groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),...)
@@ -34,7 +34,12 @@
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
-import { parseTopLevels, topLevels } from "./hierarchy.ts";
+import {
+  parseTopLevels,
+  parseRelatives,
+  topLevels,
+  relatives,
+} from "./hierarchy.ts";
 import { isIntegerType, isNumericType, toComparable } from "./types.ts";
 import type {
   Aggregate,
@@ -129,6 +134,8 @@ function parseTransformation(text: string): Transformation {
   const [, name, args] = m;
   // A function of the Hierarchy vocabulary, by its namespace or its alias
   if (/^(?:[\w.]+\.)?TopLevels$/.test(name)) return parseTopLevels(args, text);
+  if (name === "ancestors" || name === "descendants")
+    return parseRelatives(name, args, text, parseApply);
   switch (name) {
     case "filter":
       return { kind: "filter", filter: args };
@@ -293,6 +300,12 @@ function applyTransformations(
         break;
       case "toplevels":
         rows = topLevels(svc, rows, type, t);
+        break;
+      case "ancestors":
+      case "descendants":
+        rows = relatives(svc, rows, type, t, (input, seq) =>
+          applyTransformations(svc, input, type, seq),
+        );
         break;
       case "concat": {
         const results = t.sequences.map((seq) =>

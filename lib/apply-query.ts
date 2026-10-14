@@ -18,6 +18,8 @@ import type {
 // What the query options use of the service (the ODataService in service.ts)
 export interface QueryHost {
   model: Model;
+  // An entity set's rows, which a hierarchy's nodes are (see hierarchy.ts)
+  store: { rows(setName: string): Row[] };
   protocol: LiteralSyntax;
   navigation(type: EntityType, name: string): AnyNavigation | undefined;
   related(

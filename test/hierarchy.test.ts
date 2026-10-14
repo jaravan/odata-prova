@@ -189,6 +189,98 @@ describe("TopLevels", () => {
   });
 });
 
+// What UI5 sends to expand a node (its children), and to search or filter (the matches and
+// their ancestors, then TopLevels)
+describe("ancestors and descendants", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+  });
+  after(() => s.close());
+
+  const H = "$root/Genres,GenresHierarchy,ID";
+  const ids = async (transformations: string, select = "ID") => {
+    const r = await get(
+      `${s.v4}/Genres?$apply=${encodeURIComponent(transformations)}&$select=${select}`,
+    );
+    assert.equal(r.status, 200, transformations);
+    return r.body.value;
+  };
+
+  it("descendants: a node's children, or all below it, with the start node when kept", async () => {
+    assert.deepEqual(
+      await ids(
+        `descendants(${H},filter(ID eq 1),1)`,
+        "ID,DrillState,DistanceFromRoot",
+      ),
+      [
+        { ID: 2, DrillState: "leaf", DistanceFromRoot: 1 },
+        { ID: 3, DrillState: "leaf", DistanceFromRoot: 1 },
+        { ID: 4, DrillState: "collapsed", DistanceFromRoot: 1 },
+      ],
+    );
+    assert.deepEqual(
+      await ids(
+        `descendants(${H},filter(ID eq 1))`,
+        "ID,DrillState,LimitedDescendantCount",
+      ),
+      [
+        { ID: 2, DrillState: "leaf", LimitedDescendantCount: 0 },
+        { ID: 3, DrillState: "leaf", LimitedDescendantCount: 0 },
+        { ID: 4, DrillState: "expanded", LimitedDescendantCount: 1 },
+        { ID: 5, DrillState: "leaf", LimitedDescendantCount: 0 },
+      ],
+    );
+    assert.deepEqual(
+      await ids(`descendants(${H},filter(ID eq 6),1,keep start)`),
+      [{ ID: 6 }, { ID: 7 }],
+    );
+  });
+
+  it("ancestors, then TopLevels: the matches with their ancestors, expanded down to them", async () => {
+    const all =
+      "com.sap.vocabularies.Hierarchy.v1.TopLevels(HierarchyNodes=$root/Genres," +
+      "HierarchyQualifier='GenresHierarchy',NodeProperty='ID')";
+    assert.deepEqual(
+      await ids(
+        `ancestors(${H},search(Auto),keep start)/${all}`,
+        "ID,DrillState,DistanceFromRoot",
+      ),
+      [
+        { ID: 6, DrillState: "expanded", DistanceFromRoot: 0 },
+        { ID: 7, DrillState: "expanded", DistanceFromRoot: 1 },
+        { ID: 8, DrillState: "leaf", DistanceFromRoot: 2 },
+      ],
+    );
+    // Two matches share an ancestor, which shows once
+    assert.deepEqual(
+      await ids(`ancestors(${H},filter(ID eq 2 or ID eq 5),keep start)/${all}`),
+      [{ ID: 1 }, { ID: 2 }, { ID: 4 }, { ID: 5 }],
+    );
+    assert.deepEqual(await ids(`ancestors(${H},filter(ID eq 8),1)`), [
+      { ID: 7 },
+    ]);
+    assert.deepEqual(await ids(`ancestors(${H},filter(ID eq 1))`), []);
+  });
+
+  it("a mistake -> 400", async () => {
+    for (const transformations of [
+      `descendants(${H})`,
+      `descendants(${H},filter(ID eq 1),0)`,
+      `descendants(${H},filter(ID eq 1),keep)`,
+      `descendants(${H},filter(ID eq 1),1,1)`,
+      "descendants($root/Genres,Nope,ID,filter(ID eq 1))",
+      "descendants($root/Genres,GenresHierarchy,name,filter(ID eq 1))",
+      `ancestors(${H},filter(Nope eq 1))`,
+    ]) {
+      const r = await get(
+        `${s.v4}/Genres?$apply=${encodeURIComponent(transformations)}`,
+      );
+      assert.equal(r.status, 400, transformations);
+    }
+  });
+});
+
 // Generated rows point at random parents, which can go round in a cycle: every node still
 // shows, once
 describe("TopLevels on generated rows", () => {

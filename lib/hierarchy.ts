@@ -13,6 +13,12 @@
 //     HierarchyQualifier='GenresHierarchy',NodeProperty='ID',Levels=2,
 //     ExpandLevels=[{"NodeID":"4","Levels":1}])
 //
+// To expand a node, UI5 asks for its children with descendants, and to search or filter, for
+// the matching nodes and their ancestors with ancestors, before TopLevels:
+//
+//   descendants($root/Genres,GenresHierarchy,ID,filter(ID eq 4),1)
+//   ancestors($root/Genres,GenresHierarchy,ID,search(Epic),keep start)/TopLevels(...)
+//
 // The rows a hierarchy function answers with are copies of the entities with those
 // properties filled in, and still entities: they keep their key, ETag and navigations.
 
@@ -29,6 +35,7 @@ import type {
 import type { Qualify, Xml } from "./metadata.ts";
 
 type TopLevels = Extract<Transformation, { kind: "toplevels" }>;
+type Relatives = Extract<Transformation, { kind: "ancestors" | "descendants" }>;
 
 const AGGREGATION_HIERARCHY = "Org.OData.Aggregation.V1.RecursiveHierarchy";
 const HIERARCHY_HIERARCHY =
@@ -207,6 +214,38 @@ function parseTopLevels(args: string, text: string): TopLevels {
   };
 }
 
+// ancestors(H,Q,p,T[,d][,keep start]): the hierarchy nodes ($root/Genres), its qualifier,
+// the node property, the transformations that give the start nodes, the greatest distance
+// (1 or more), and whether the start nodes are kept
+function parseRelatives(
+  kind: Relatives["kind"],
+  args: string,
+  text: string,
+  parseApply: (text: string) => Transformation[],
+): Relatives {
+  const [nodes, qualifier, nodeProperty, transformations, ...rest] =
+    splitArgs(args);
+  if (!transformations || !/^[A-Za-z_]\w*$/.test(qualifier))
+    throw new HttpError(400, `Invalid $apply: ${text}`);
+  let distance: number | undefined;
+  let keepStart = false;
+  for (const option of rest) {
+    if (option === "keep start" && !keepStart) keepStart = true;
+    else if (/^\d+$/.test(option) && Number(option) >= 1 && !distance)
+      distance = Number(option);
+    else throw new HttpError(400, `Invalid $apply: ${text}`);
+  }
+  return {
+    kind,
+    set: rootSet(nodes, kind),
+    qualifier,
+    nodeProperty,
+    transformations: parseApply(transformations),
+    distance,
+    keepStart,
+  };
+}
+
 // [{"NodeID":"4","Levels":1}]: Levels is a number, 0 to collapse, or null for all
 function parseExpandLevels(
   text: string | undefined,
@@ -347,6 +386,68 @@ function topLevels(
   return withDerived(type, h, limited, forest);
 }
 
+// ancestors and descendants: the rows that are, in the whole hierarchy, ancestors or
+// descendants of the start nodes (within the distance), in the rows' order, with the start
+// nodes among them when keepStart. run gives the start nodes: the transformations applied to
+// the rows.
+function relatives(
+  svc: QueryHost,
+  rows: Row[],
+  type: EntityType,
+  t: Relatives,
+  run: (rows: Row[], transformations: Transformation[]) => { rows: Row[] },
+): Row[] {
+  const h = hierarchyOf(svc, type, t);
+  const id = (row: Row) => String(row[h.nodeProperty]);
+  const start = new Set(run(rows, t.transformations).rows.map(id));
+  // Each node's parent in the whole hierarchy
+  const nav = svc.navigation(type, h.parentNavigation)!;
+  const parentOf = new Map<string, string>();
+  for (const row of svc.store.rows(t.set)) {
+    const parent = svc.related(row, type, nav).rows[0];
+    if (parent) parentOf.set(id(row), id(parent));
+  }
+  // A node's ancestors, nearest first, up to the distance; a cycle ends the walk
+  const ancestors = (node: string): string[] => {
+    const found: string[] = [];
+    for (
+      let at = parentOf.get(node);
+      at !== undefined && !found.includes(at) && at !== node;
+      at = parentOf.get(at)
+    ) {
+      if (found.length === (t.distance ?? Infinity)) break;
+      found.push(at);
+    }
+    return found;
+  };
+  const keep =
+    t.kind === "ancestors"
+      ? (() => {
+          const wanted = new Set([...start].flatMap(ancestors));
+          return (node: string) => wanted.has(node);
+        })()
+      : (node: string) => ancestors(node).some((a) => start.has(a));
+  const result = rows.filter(
+    (row) => keep(id(row)) || (t.keepStart && start.has(id(row))),
+  );
+  // Filled in relative to the result, with the rows as the whole hierarchy
+  const forest = forestOf(svc, rows, type, h);
+  const inResult = new Set(result);
+  const depth = new Map<Row, number>();
+  const measure = (node: Row, d: number) => {
+    depth.set(node, d);
+    for (const kid of forest.children.get(node)!) measure(kid, d + 1);
+  };
+  forest.roots.forEach((r) => measure(r, 0));
+  const shown = new Map(
+    result.map((node) => [
+      node,
+      forest.children.get(node)!.filter((kid) => inResult.has(kid)),
+    ]),
+  );
+  return withDerived(type, h, { order: result, shown, depth }, forest);
+}
+
 // The nodes a hierarchy function answers with (the limited hierarchy): in order, the
 // children shown under each, and how many ancestors each has among them
 interface Limited {
@@ -403,4 +504,11 @@ function withDerived(
   });
 }
 
-export { parseHierarchies, parseTopLevels, topLevels, isHierarchyRow };
+export {
+  parseHierarchies,
+  parseTopLevels,
+  parseRelatives,
+  topLevels,
+  relatives,
+  isHierarchyRow,
+};
