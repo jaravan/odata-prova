@@ -89,6 +89,53 @@ describe("$apply", () => {
     assert.equal(c.body, "2");
   });
 
+  // UI5's leaf rows: the entities themselves (identity), with a count in a row of its own
+  it("expands the entities in the result, with their own options", async () => {
+    const r = await apply(
+      "$apply=filter(Status eq 'Open')/concat(aggregate($count as UI5__count),identity)" +
+        "&$expand=Items($select=Material)&$select=PurchaseOrderId,TotalAmount,UI5__count",
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { UI5__count: "2" },
+      {
+        PurchaseOrderId: "4500000001",
+        TotalAmount: "12500.00",
+        Items: [{ Material: "MAT-1001" }, { Material: "MAT-1002" }],
+      },
+      {
+        PurchaseOrderId: "4500000004",
+        TotalAmount: "2100.00",
+        Items: [{ Material: "MAT-4001" }],
+      },
+    ]);
+
+    // A groupby's filter passes the entities on too
+    const filtered = await apply(
+      "$apply=groupby((Currency),filter($these/aggregate(TotalAmount with sum) gt 50000))" +
+        "&$expand=Items($top=1;$select=ItemPosition)&$select=PurchaseOrderId&$top=1",
+    );
+    assert.deepEqual(filtered.body.value, [
+      { PurchaseOrderId: "4500000001", Items: [{ ItemPosition: "0001" }] },
+    ]);
+
+    for (const [query, message] of [
+      [
+        "$apply=groupby((Currency))&$expand=Items",
+        /\$expand needs entities in the \$apply result/,
+      ],
+      [
+        "$apply=concat(aggregate($count as C),groupby((Currency)))&$expand=Items",
+        /\$expand needs entities/,
+      ],
+      ["$apply=identity&$expand=Nope", /Nope is not a navigation property/],
+    ] as const) {
+      const bad = await apply(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(bad.body.error.message, message, query);
+    }
+  });
+
   // A path through single-valued navigations: the order of each item. The response nests it
   it("groups and aggregates by a path, nested in the response", async () => {
     const r = await apply(
@@ -180,7 +227,6 @@ describe("$apply", () => {
       "$apply=groupby((Currency),topcount(1,TotalAmount))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
       "$apply=groupby((Items/Material))",
-      "$apply=groupby((Currency))&$expand=Items",
     ]) {
       const r = await apply(query);
       assert.equal(r.status, 501, query);

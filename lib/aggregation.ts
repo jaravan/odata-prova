@@ -283,18 +283,18 @@ function applyTransformations(
         break;
       }
       case "groupfilter": {
-        ({ rows, type } = withPaths(svc, rows, type, t.properties, []));
-        aggregated(type, t.properties, []); // checks the grouping properties
-        const input = type;
-        rows = groupsOf(rows, t.properties).flatMap(
-          (group) =>
-            applyQuery(
-              svc,
-              group,
-              input,
-              { expand: {}, filter: t.filter },
-              aggregateOf(input, group),
-            ).results,
+        // The rows that pass are the entities themselves, not the copies withPaths makes
+        const paths = withPaths(svc, rows, type, t.properties, []);
+        const original = new Map(paths.rows.map((r, i) => [r, rows[i]]));
+        aggregated(paths.type, t.properties, []); // checks the grouping properties
+        rows = groupsOf(paths.rows, t.properties).flatMap((group) =>
+          applyQuery(
+            svc,
+            group,
+            paths.type,
+            { expand: {}, filter: t.filter },
+            aggregateOf(paths.type, group),
+          ).results.map((r) => original.get(r)!),
         );
         break;
       }
@@ -357,6 +357,19 @@ function pathProperty(
   if (!prop)
     throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
   return { ...prop, name: path };
+}
+
+// Whether a sequence's result can hold entities of the input, not only aggregated rows:
+// what a filter, search, orderby, skip, top, identity or groupby's filter passes on, and
+// what a concat has from any of its sequences. Only those can be expanded.
+function holdsEntities(transformations: Transformation[]): boolean {
+  let entities = true;
+  for (const t of transformations) {
+    if (t.kind === "aggregate" || t.kind === "groupby") entities = false;
+    else if (t.kind === "concat")
+      entities = entities && t.sequences.some(holdsEntities);
+  }
+  return entities;
 }
 
 // The rows of each distinct combination of the grouping values, in the order first seen
@@ -663,4 +676,9 @@ function decimalText(units: bigint, scale: number): string {
   return `${negative ? "-" : ""}${whole}${fraction}`;
 }
 
-export { parseApply, applyTransformations, parseCustomAggregates };
+export {
+  parseApply,
+  applyTransformations,
+  holdsEntities,
+  parseCustomAggregates,
+};

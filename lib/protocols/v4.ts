@@ -325,14 +325,20 @@ const v4: Protocol = {
   // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total). Each row has the ones it
   // holds: a concat's rows come from different sequences. A path a groupby grouped by is
   // nested, as the navigations it follows: "Supplier/Name" is {"Supplier":{"Name":...}},
-  // and Supplier(Name) in the context. select: the $select, if any
-  aggregated(svc, { rows, count }, setName, type, select, opts) {
+  // and Supplier(Name) in the context. A row that is one of the entities is written as one,
+  // with its ETag and node's $select and $expand (see the Protocol interface).
+  aggregated(svc, { rows, count }, setName, type, node, entities, opts) {
+    const select = node.select;
     const names = Object.keys(type.properties);
     // A $select of a navigation (Supplier) picks the paths through it
     const selected = (name: string) =>
       !select || select.has("*") || select.has(name.split("/")[0]);
     for (const name of select || [])
-      if (name !== "*" && !names.some((n) => n.split("/")[0] === name))
+      if (
+        name !== "*" &&
+        !names.some((n) => n.split("/")[0] === name) &&
+        !svc.navigation(entities.type, name)
+      )
         throw new HttpError(
           400,
           `${name} is not a property of the $apply result`,
@@ -345,6 +351,8 @@ const v4: Protocol = {
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => {
+      if (entities.rows.has(r))
+        return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
         if (p.name in r) setPath(out, p.name, toWire(r[p.name], p, opts));

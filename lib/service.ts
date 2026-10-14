@@ -15,7 +15,7 @@ import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
-import { applyTransformations } from "./aggregation.ts";
+import { applyTransformations, holdsEntities } from "./aggregation.ts";
 import { create, update, deleteEntity } from "./writes.ts";
 import {
   operationImport,
@@ -68,13 +68,16 @@ export interface Protocol extends LiteralSyntax {
     extra?: Record<string, string>,
     opts?: ResponseOptions,
   ): ODataResponse;
-  // The rows of an $apply's result type (see aggregation.ts); V4 only, V2 has no $apply
+  // The rows of an $apply's result type (see aggregation.ts); V4 only, V2 has no $apply.
+  // entities: the entity type and rows of the collection $apply ran on; a result row that
+  // is one of them is written as an entity, with node's $select and $expand
   aggregated?(
     svc: ODataService,
     result: { rows: Row[]; count?: number },
     setName: string,
     type: EntityType,
-    select: Set<string> | undefined,
+    node: QueryNode,
+    entities: { type: EntityType; rows: Set<Row> },
     opts?: ResponseOptions,
   ): ODataResponse;
   // A single-valued navigation or operation result that is empty
@@ -423,15 +426,23 @@ class ODataService {
     }
 
     // $apply turns the collection into rows of a type of its own (see aggregation.ts), which
-    // the other query options then work on
+    // the other query options then work on. Those that are still entities can be expanded.
+    const entities = { type, rows: new Set(rows) };
     if (q.apply) {
       if (method !== "GET" || row !== undefined)
         throw new HttpError(400, "$apply applies to reading a collection only");
-      if (Object.keys(q.expand).length)
-        throw new HttpError(
-          501,
-          "$expand together with $apply is not supported",
-        );
+      for (const name of Object.keys(q.expand)) {
+        if (!holdsEntities(q.apply))
+          throw new HttpError(
+            400,
+            "$expand needs entities in the $apply result, which an aggregate or groupby replaces",
+          );
+        if (!this.navigation(type, name))
+          throw new HttpError(
+            400,
+            `${name} is not a navigation property of ${type.name}`,
+          );
+      }
       ({ rows, type } = applyTransformations(this, rows, type, q.apply));
     }
 
@@ -460,7 +471,8 @@ class ODataService {
               { rows: results, count },
               setName,
               type,
-              q.select,
+              q,
+              entities,
               opts,
             );
           return protocol.collection(
