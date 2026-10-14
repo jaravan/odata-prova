@@ -481,8 +481,8 @@ function aggregateValues(
         : decimalSum(values);
     case "average": {
       if (!values.length) return null;
-      const sum = values.reduce<number>((s, v) => s + Number(v), 0);
-      return double ? sum / values.length : String(sum / values.length);
+      if (!double) return decimalAverage(values);
+      return values.reduce<number>((s, v) => s + Number(v), 0) / values.length;
     }
     default:
       throw new Error(`unexpected aggregation method ${method}`);
@@ -492,9 +492,37 @@ function aggregateValues(
 // The exact sum of integers and decimals (kept as strings, see toInternal), as a decimal
 // string: "0.10" + "0.20" is "0.30", not 0.30000000000000004
 function decimalSum(values: PrimitiveValue[]): string {
+  const sum = exactSum(values);
+  return sum ? decimalText(sum.total, sum.scale) : sumOfNumbers(values);
+}
+
+// Their average, from the exact sum, rounded half away from zero to AVERAGE_DIGITS digits
+// more than the values have, without trailing zeros: 300.30 and 0 give "150.15", 10, 0 and 0
+// give "3.3333333333333333"
+const AVERAGE_DIGITS = 16;
+
+function decimalAverage(values: PrimitiveValue[]): string {
+  const sum = exactSum(values);
+  if (!sum) return String(Number(sumOfNumbers(values)) / values.length);
+  const count = BigInt(values.length);
+  const negative = sum.total < 0n;
+  const scaled =
+    (negative ? -sum.total : sum.total) * 10n ** BigInt(AVERAGE_DIGITS);
+  let quotient = scaled / count;
+  if ((scaled % count) * 2n >= count) quotient += 1n;
+  return decimalText(
+    negative ? -quotient : quotient,
+    sum.scale + AVERAGE_DIGITS,
+  ).replace(/\.?0+$/, "");
+}
+
+// The sum as a whole number of units of 10^-scale, or undefined when a value is in exponent
+// notation, which is then added up as numbers
+function exactSum(
+  values: PrimitiveValue[],
+): { total: bigint; scale: number } | undefined {
   const texts = values.map(String);
-  if (texts.some((t) => /e/i.test(t)))
-    return String(texts.reduce((s, t) => s + Number(t), 0));
+  if (texts.some((t) => /e/i.test(t))) return undefined;
   const scale = Math.max(...texts.map((t) => t.split(".")[1]?.length ?? 0));
   let total = 0n;
   for (const t of texts) {
@@ -502,8 +530,17 @@ function decimalSum(values: PrimitiveValue[]): string {
     const units = BigInt(whole + fraction.padEnd(scale, "0"));
     total += t.startsWith("-") ? -units : units;
   }
-  const negative = total < 0n;
-  const digits = (negative ? -total : total)
+  return { total, scale };
+}
+
+function sumOfNumbers(values: PrimitiveValue[]): string {
+  return String(values.reduce<number>((s, v) => s + Number(v), 0));
+}
+
+// units of 10^-scale as a decimal string: 15015n with scale 2 is "150.15"
+function decimalText(units: bigint, scale: number): string {
+  const negative = units < 0n;
+  const digits = (negative ? -units : units)
     .toString()
     .padStart(scale + 1, "0");
   const whole = digits.slice(0, digits.length - scale);

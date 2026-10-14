@@ -170,6 +170,21 @@ describe("$apply with custom aggregates", () => {
     assert.deepEqual(total.body.value, [{ Amount: "430.30", Currency: null }]);
   });
 
+  it("averages decimals exactly, rounding one that doesn't end", async () => {
+    const r = await apply(
+      "$apply=groupby((Country),aggregate(Amount with average as Avg,Quantity with average as Qty))",
+    );
+    assert.deepEqual(r.body.value, [
+      { Country: "Germany", Avg: "150.15", Qty: "3.5" },
+      { Country: "France", Avg: "50", Qty: "1" },
+      { Country: "USA", Avg: "80", Qty: "2" },
+    ]);
+    const thirds = await apply(
+      "$apply=filter(Country ne 'USA')/aggregate(Amount with average as Avg)",
+    );
+    assert.deepEqual(thirds.body.value, [{ Avg: "116.766666666666666667" }]);
+  });
+
   it("takes an alias, and mixes with the standard methods", async () => {
     const r = await apply(
       "$apply=filter(Currency eq 'EUR')/aggregate(Amount as Total,Amount with max as Max)&$filter=Total gt 0",
