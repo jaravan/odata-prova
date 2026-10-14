@@ -136,6 +136,65 @@ describe("$apply", () => {
     }
   });
 
+  // Order amounts: 12500.00, 45200.50, 8899.99, 2100.00 and 560.75, 69261.24 in all
+  it("topcount, bottomcount, topsum, bottomsum, toppercent and bottompercent", async () => {
+    const ids = async (transformation: string) => {
+      const r = await apply(`$apply=${transformation}&$select=PurchaseOrderId`);
+      assert.equal(r.status, 200, transformation);
+      return r.body.value.map((o: { PurchaseOrderId: string }) =>
+        o.PurchaseOrderId.slice(-1),
+      );
+    };
+    assert.deepEqual(await ids("topcount(2,TotalAmount)"), ["2", "1"]);
+    assert.deepEqual(await ids("bottomcount(1,TotalAmount)"), ["5"]);
+    // 45200.50 is less than 50000, and 45200.50 + 12500.00 isn't
+    assert.deepEqual(await ids("topsum(50000,TotalAmount)"), ["2", "1"]);
+    assert.deepEqual(await ids("bottomsum(3000,TotalAmount)"), ["5", "4", "3"]);
+    assert.deepEqual(await ids("topsum(0,TotalAmount)"), []);
+    // 60% of the total is 41556.74; 10% is 6926.12
+    assert.deepEqual(await ids("toppercent(60,TotalAmount)"), ["2"]);
+    assert.deepEqual(await ids("bottompercent(10,TotalAmount)"), [
+      "5",
+      "4",
+      "3",
+    ]);
+    assert.deepEqual(
+      await ids("filter(Currency eq 'USD')/topcount(5,TotalAmount)"),
+      ["3", "5"],
+    );
+
+    // By an alias, after a groupby, and by a path
+    const byAlias = await apply(
+      "$apply=groupby((Currency),aggregate(TotalAmount with sum as Total))/topcount(1,Total)",
+    );
+    assert.deepEqual(byAlias.body.value, [
+      { Currency: "EUR", Total: "59800.50" },
+    ]);
+    const byPath = await apply(
+      "$apply=bottomcount(1,PurchaseOrder/TotalAmount)&$select=PurchaseOrderId,ItemPosition",
+      "PurchaseOrderItemSet",
+    );
+    assert.deepEqual(byPath.body.value, [
+      { PurchaseOrderId: "4500000005", ItemPosition: "0001" },
+    ]);
+
+    for (const [query, message] of [
+      [
+        "$apply=topcount(1,Supplier)",
+        /topcount needs a number, and Supplier is Edm.String/,
+      ],
+      ["$apply=topcount(1,Nope)", /Unknown property Nope/],
+      ["$apply=topcount(-1,TotalAmount)", /Invalid \$apply/],
+      ["$apply=topcount(1.5,TotalAmount)", /Invalid \$apply/],
+      ["$apply=toppercent(101,TotalAmount)", /a percentage is 0 to 100/],
+      ["$apply=topsum(10)", /Invalid \$apply/],
+    ] as const) {
+      const r = await apply(query);
+      assert.equal(r.status, 400, query);
+      assert.match(r.body.error.message, message, query);
+    }
+  });
+
   // A path through single-valued navigations: the order of each item. The response nests it
   it("groups and aggregates by a path, nested in the response", async () => {
     const r = await apply(
@@ -223,7 +282,8 @@ describe("$apply", () => {
 
   it("what isn't supported -> 501, never ignored", async () => {
     for (const query of [
-      "$apply=topcount(2,TotalAmount)",
+      "$apply=compute(TotalAmount mul 2 as Double)",
+      "$apply=topcount(2,TotalAmount mul 2)",
       "$apply=groupby((Currency),topcount(1,TotalAmount))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
       "$apply=groupby((Items/Material))",

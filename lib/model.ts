@@ -279,6 +279,20 @@ export type Transformation =
   | { kind: "search"; search: string }
   | { kind: "orderby"; orderby: string }
   | { kind: "skip" | "top"; count: number }
+  // topcount(2,Amount): the rows with the highest or lowest values of a number (path), as
+  // many as a count, as add up to a sum, or as add up to a percentage of the total
+  | {
+      kind: "rank";
+      method:
+        | "topcount"
+        | "bottomcount"
+        | "topsum"
+        | "bottomsum"
+        | "toppercent"
+        | "bottompercent";
+      value: number;
+      path: string;
+    }
   | { kind: "identity" }
   // Each sequence runs on the same input, and their results follow one another
   | { kind: "concat"; sequences: Transformation[][] };

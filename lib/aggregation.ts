@@ -11,8 +11,9 @@
 // which the response nests: {"Supplier":{"Name":"..."}}.
 //
 // Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
-// aggregate or a filter), and aggregate with sum, min, max, average, countdistinct, $count
-// and custom aggregates. Other transformations are a 501. A groupby's filter is how UI5
+// aggregate or a filter), aggregate with sum, min, max, average, countdistinct, $count and
+// custom aggregates, and topcount, bottomcount, topsum, bottomsum, toppercent and
+// bottompercent. Other transformations are a 501. A groupby's filter is how UI5
 // filters groups on their aggregated values ($$filterOnAggregate): $these is the group, so
 //
 //   groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),...)
@@ -140,6 +141,13 @@ function parseTransformation(text: string): Transformation {
         throw new HttpError(400, `Invalid $apply: ${text}`);
       return { kind: name, count };
     }
+    case "topcount":
+    case "bottomcount":
+    case "topsum":
+    case "bottomsum":
+    case "toppercent":
+    case "bottompercent":
+      return parseRank(name, args, text);
     case "concat": {
       const sequences = splitTopLevel(args, ",").map(parseApply);
       if (sequences.length < 2)
@@ -177,6 +185,31 @@ function parseTransformation(text: string): Transformation {
     default:
       throw new HttpError(501, `$apply: ${name} is not supported`);
   }
+}
+
+// topcount(2,Amount): a count (a whole number), a sum, or a percentage (0 to 100), and the
+// property, alias or path whose values rank the rows
+function parseRank(
+  method: Extract<Transformation, { kind: "rank" }>["method"],
+  args: string,
+  text: string,
+): Transformation {
+  const [first, path, ...more] = splitTopLevel(args, ",");
+  const number = method.endsWith("count") ? /^\d+$/ : /^-?\d+(\.\d+)?$/;
+  if (!first || !path || more.length || !number.test(first))
+    throw new HttpError(400, `Invalid $apply: ${text}`);
+  const value = Number(first);
+  if (method.endsWith("percent") && value > 100)
+    throw new HttpError(
+      400,
+      `Invalid $apply: ${text} (a percentage is 0 to 100)`,
+    );
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(\/[A-Za-z_][A-Za-z0-9_]*)*$/.test(path))
+    throw new HttpError(
+      501,
+      `$apply: ${method} by an expression (${path}) is not supported, only by a property`,
+    );
+  return { kind: "rank", method, value, path };
 }
 
 // "TotalAmount with sum as Total,$count as Count"
@@ -250,6 +283,9 @@ function applyTransformations(
         rows = rows.slice(0, t.count);
         break;
       case "identity":
+        break;
+      case "rank":
+        rows = ranked(svc, rows, type, t);
         break;
       case "concat": {
         const results = t.sequences.map((seq) =>
@@ -357,6 +393,46 @@ function pathProperty(
   if (!prop)
     throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
   return { ...prop, name: path };
+}
+
+// The rows topcount and the others keep: the highest values first (top...) or the lowest
+// (bottom...), as many as the count, or until they add up to the sum or to the percentage of
+// the total. Rows whose value is null are left out.
+function ranked(
+  svc: QueryHost,
+  rows: Row[],
+  type: EntityType,
+  t: Extract<Transformation, { kind: "rank" }>,
+): Row[] {
+  const prop = t.path.includes("/")
+    ? pathProperty(svc, type, t.path)
+    : propertyOf(type, t.path);
+  if (!isNumericType(prop.type))
+    throw new HttpError(
+      400,
+      `$apply: ${t.method} needs a number, and ${t.path} is ${prop.type}`,
+    );
+  const resolve = resolver(svc, type);
+  const sign = t.method.startsWith("top") ? -1 : 1;
+  const valued = rows
+    .map((row) => ({ row, value: resolve(row, t.path).value }))
+    .filter((r) => r.value !== null && r.value !== undefined)
+    .map((r) => ({ row: r.row, value: Number(r.value) }))
+    .sort((a, b) => sign * (a.value - b.value));
+  if (t.method.endsWith("count"))
+    return valued.slice(0, t.value).map((r) => r.row);
+  const target = t.method.endsWith("percent")
+    ? (valued.reduce((s, r) => s + r.value, 0) * t.value) / 100
+    : t.value;
+  // The fewest rows from the start whose values add up to the target: none for 0
+  const kept: Row[] = [];
+  let sum = 0;
+  for (const r of valued) {
+    if (sum >= target) break;
+    kept.push(r.row);
+    sum += r.value;
+  }
+  return kept;
 }
 
 // Whether a sequence's result can hold entities of the input, not only aggregated rows:
