@@ -15,8 +15,8 @@
 //   groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),...)
 //
 // keeps the rows of the countries whose Amount adds up to more than 1000. UI5 puts what it
-// needs besides the rows in a
-// concat, in rows of their own, such as min and max, the count and the grand total:
+// needs besides the rows in a concat, in rows of their own, such as min and max, the count
+// and the grand total:
 //
 //   concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))
 //
