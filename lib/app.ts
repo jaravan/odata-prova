@@ -98,6 +98,9 @@ export interface AppOptions {
   // How a navigation without a ReferentialConstraint is joined (see navigations.ts): guess,
   // the default, or strict
   joins?: JoinMode;
+  // The most rows a collection's response holds, with a next link to the rest (server-driven
+  // paging, see service.ts); 0, the default: every row
+  pageSize?: number;
 }
 
 function createApp({
@@ -108,6 +111,7 @@ function createApp({
   mockRows = 0,
   etags = "lenient",
   joins = "guess",
+  pageSize = 0,
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -160,6 +164,7 @@ function createApp({
         log,
         rules,
         etags,
+        pageSize,
       }),
     );
   }

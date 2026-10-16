@@ -18,9 +18,9 @@ describe("unsupported query options are rejected, not ignored", () => {
     );
   });
 
-  it("$skiptoken and $compute -> 501; $format=json is fine, $format=xml is not", async () => {
+  it("$deltatoken and $compute -> 501; $format=json is fine, $format=xml is not", async () => {
     assert.equal(
-      (await get(`${s.v2}/PurchaseOrderSet?$skiptoken=abc`)).status,
+      (await get(`${s.v2}/PurchaseOrderSet?$deltatoken=abc`)).status,
       501,
     );
     assert.equal(

@@ -42,6 +42,14 @@ import type {
 } from "./model.ts";
 import type { Store } from "./store.ts";
 
+// A collection's rows after its query options, the count $count asks for, and the next
+// page's URL when server-driven paging leaves rows out
+export interface CollectionResult {
+  rows: Row[];
+  count?: number;
+  nextLink?: string;
+}
+
 // What a protocol module supplies (protocols/v2 and v4): how literals are read and keys
 // written, and what each kind of response looks like
 export interface Protocol extends LiteralSyntax {
@@ -51,9 +59,10 @@ export interface Protocol extends LiteralSyntax {
   keyLiteral(value: PropertyValue, prop: Property): string;
   parseQueryOptions(query: Record<string, unknown>): QueryNode;
   serviceDocument(svc: ODataService): ODataResponse;
+  // result.nextLink: the next page's URL, when server-driven paging leaves rows out
   collection(
     svc: ODataService,
-    result: { rows: Row[]; count?: number },
+    result: CollectionResult,
     setName: string,
     type: EntityType,
     node: QueryNode,
@@ -74,7 +83,7 @@ export interface Protocol extends LiteralSyntax {
   // one of its entities, which is written as one, with node's $select and $expand
   aggregated?(
     svc: ODataService,
-    result: { rows: Row[]; count?: number },
+    result: CollectionResult,
     setName: string,
     type: EntityType,
     node: QueryNode,
@@ -116,10 +125,45 @@ export interface ServiceOptions {
   rules?: Rules;
   // How strictly If-Match is checked (see etag.ts); default lenient
   etags?: ETagMode;
+  // The most rows a collection's response holds (see paging); 0, the default: every row
+  pageSize?: number;
 }
 
 // The request headers dispatch reads (accept, prefer)
 export type RequestHeaders = Record<string, string | string[] | undefined>;
+
+// Server-driven paging: a response holds at most a page of the rows the query options
+// leave, and links to the next page with a $skiptoken, the offset where it starts among
+// those rows. The token is the client's to send back as it is, in the link; $skip and $top
+// stay as they were, so the pages add up to what the query asks for. A $skiptoken also
+// works without paging: the rows from that offset on.
+function paging(
+  rows: Row[],
+  q: QueryNode,
+  opts: ResponseOptions,
+): { rows: Row[]; nextLink?: string } {
+  const start = q.skiptoken ?? 0;
+  if (!opts.page) return { rows: rows.slice(start) };
+  const end = start + opts.page.size;
+  return {
+    rows: rows.slice(start, end),
+    nextLink: end < rows.length ? opts.page.link(end) : undefined,
+  };
+}
+
+// The request's URL with a $skiptoken: its path from the root, and its query options as
+// they came, which are kept readable ($, commas, slashes and colons unescaped)
+function pageLink(
+  path: string,
+  query: Record<string, unknown>,
+  skiptoken: number,
+): string {
+  const options = Object.entries({ ...query, $skiptoken: skiptoken }).map(
+    ([name, value]) =>
+      `${name}=${encodeURIComponent(String(value)).replace(/%(24|2C|2F|3A)/g, (e) => decodeURIComponent(e))}`,
+  );
+  return `${encodeURI(path)}?${options.join("&")}`;
+}
 
 class ODataService {
   model: Model;
@@ -130,6 +174,7 @@ class ODataService {
   log: (message: string) => void;
   rules: Rules;
   etags: ETagMode;
+  pageSize: number;
   operations: OperationView;
   drafts: Drafts;
 
@@ -142,6 +187,7 @@ class ODataService {
     log = () => {},
     rules = {},
     etags = "lenient",
+    pageSize = 0,
   }: ServiceOptions) {
     this.model = model;
     this.store = store;
@@ -151,6 +197,7 @@ class ODataService {
     this.log = log;
     this.rules = rules;
     this.etags = etags;
+    this.pageSize = pageSize;
     // The operations as this protocol serves them (see operationViews in metadata.ts)
     this.operations = model.operationViews[protocol.version];
     this.drafts = new Drafts(this);
@@ -287,24 +334,31 @@ class ODataService {
   ): ODataResponse {
     const applied = this.applied(rows, type, q);
     const { results, count } = applyQuery(this, applied.rows, applied.type, q);
+    const result = { ...paging(results, q, opts), count };
     if (q.apply)
       return this.protocol.aggregated!(
         this,
-        { rows: results, count },
+        result,
         setName,
         applied.type,
         q,
         applied.entities,
         opts,
       );
-    return this.protocol.collection(
-      this,
-      { rows: results, count },
-      setName,
-      type,
-      q,
-      opts,
-    );
+    return this.protocol.collection(this, result, setName, type, q, opts);
+  }
+
+  // The page size of a GET (see paging): the server's, or the smaller one a V4 client asks
+  // for with Prefer: odata.maxpagesize=N. applied: the client's is the one used, which the
+  // response confirms in Preference-Applied.
+  pageSizeFor(prefer: string): { size: number; applied: boolean } {
+    const asked =
+      this.protocol.version === "4.0"
+        ? Number(/odata\.maxpagesize=(\d+)/i.exec(prefer)?.[1] || 0)
+        : 0;
+    if (asked && (!this.pageSize || asked < this.pageSize))
+      return { size: asked, applied: true };
+    return { size: this.pageSize, applied: false };
   }
 
   // --- Dispatch --------------------------------------------------------------------------
@@ -344,6 +398,12 @@ class ODataService {
       ieee754: /IEEE754Compatible=true/i.test(String(headers.accept || "")),
       prefer: String(headers.prefer || ""),
     };
+    const pageSize = this.pageSizeFor(opts.prefer);
+    if (method === "GET" && pageSize.size)
+      opts.page = {
+        size: pageSize.size,
+        link: (skiptoken) => pageLink(path, query, skiptoken),
+      };
     const wantsMinimal = /return=minimal/i.test(opts.prefer);
     const wantsRepresentation = /return=representation/i.test(opts.prefer);
 
@@ -513,8 +573,21 @@ class ODataService {
     if (row === undefined) {
       // Collection
       switch (method) {
-        case "GET":
-          return this.collectionResponse(rows, setName, type, q, opts);
+        case "GET": {
+          const response = this.collectionResponse(
+            rows,
+            setName,
+            type,
+            q,
+            opts,
+          );
+          if (pageSize.applied)
+            response.headers = {
+              ...response.headers,
+              "Preference-Applied": `odata.maxpagesize=${pageSize.size}`,
+            };
+          return response;
+        }
         case "POST": {
           const parent = parentForCreate;
           const preset: Row = parent

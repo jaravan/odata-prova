@@ -206,6 +206,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     orderby: q.$orderby,
     top: parseInt10(q.$top, "$top"),
     skip: parseInt10(q.$skip, "$skip"),
+    skiptoken: parseInt10(q.$skiptoken, "$skiptoken"),
     count: q.$count === "true",
     search: q.$search,
     select: root.select,
@@ -312,13 +313,14 @@ const v4: Protocol = {
       })),
     });
   },
-  collection(svc, { rows, count }, setName, type, node, opts) {
+  collection(svc, { rows, count, nextLink }, setName, type, node, opts) {
     checkSelect(svc, type, node);
     const body: Record<string, unknown> = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => serialize(svc, r, setName, type, node, opts));
+    if (nextLink) body["@odata.nextLink"] = nextLink;
     return json(200, body, opts);
   },
   // Rows of an $apply's result type: no key and so no ETag, and the context lists the
@@ -327,7 +329,15 @@ const v4: Protocol = {
   // nested, as the navigations it follows: "Supplier/Name" is {"Supplier":{"Name":...}},
   // and Supplier(Name) in the context. A row that is one of the entities is written as one,
   // with its ETag and node's $select and $expand (see the Protocol interface).
-  aggregated(svc, { rows, count }, setName, type, node, entities, opts) {
+  aggregated(
+    svc,
+    { rows, count, nextLink },
+    setName,
+    type,
+    node,
+    entities,
+    opts,
+  ) {
     const select = node.select;
     const names = Object.keys(type.properties);
     // A $select of a navigation (Supplier) picks the paths through it
@@ -358,6 +368,7 @@ const v4: Protocol = {
         if (p.name in r) setPath(out, p.name, toWire(r[p.name], p, opts));
       return out;
     });
+    if (nextLink) body["@odata.nextLink"] = nextLink;
     return json(200, body, opts);
   },
   entity(svc, row, setName, type, node, status = 200, extra, opts) {

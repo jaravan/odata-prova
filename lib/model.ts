@@ -280,6 +280,9 @@ export interface QueryNode {
   search?: string;
   // V4 $apply, run before the options above (see aggregation.ts)
   apply?: Transformation[];
+  // Where a page of server-driven paging starts, within the rows $skip and $top leave (see
+  // paging in service.ts)
+  skiptoken?: number;
 }
 
 // One step of $apply, e.g. filter(Status eq 'Open')/groupby((Currency),aggregate(...))
@@ -347,6 +350,9 @@ export interface ResponseOptions {
   // Accept: ...;IEEE754Compatible=true: Int64 and Decimal as strings
   ieee754: boolean;
   prefer: string;
+  // Server-driven paging, on a GET (see paging in service.ts): the most rows a page holds,
+  // and the URL of the page that starts at a $skiptoken
+  page?: { size: number; link(skiptoken: number): string };
 }
 
 // What a service answers, for Express or for a $batch part

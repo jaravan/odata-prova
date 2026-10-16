@@ -135,6 +135,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     orderby: q.$orderby,
     top: parseInt10(q.$top, "$top"),
     skip: parseInt10(q.$skip, "$skip"),
+    skiptoken: parseInt10(q.$skiptoken, "$skiptoken"),
     count: q.$inlinecount === "allpages",
     search: undefined,
     select: root.select,
@@ -211,12 +212,13 @@ const v2: Protocol = {
   serviceDocument(svc) {
     return json(200, { d: { EntitySets: Object.keys(svc.model.entitySets) } });
   },
-  collection(svc, { rows, count }, setName, type, node) {
+  collection(svc, { rows, count, nextLink }, setName, type, node) {
     checkSelect(svc, type, node);
     const d: Record<string, unknown> = {
       results: rows.map((r) => serialize(svc, r, setName, type, node)),
     };
     if (count !== undefined) d.__count = String(count);
+    if (nextLink) d.__next = nextLink;
     return json(200, { d });
   },
   entity(svc, row, setName, type, node, status = 200, extra) {

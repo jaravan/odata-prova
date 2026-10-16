@@ -33,19 +33,26 @@ const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
 const V2_PATH = process.env.V2_PATH ?? `/odata/v2/${SERVICE_NAME}`;
 const V4_PATH = process.env.V4_PATH ?? `/odata/v4/${SERVICE_NAME}`;
 
-// Rows generated for each entity set that has no seed file; 0 leaves those sets empty
-const MOCK_ROWS = Number(process.env.MOCK_ROWS ?? 20);
-if (!Number.isInteger(MOCK_ROWS) || MOCK_ROWS < 0)
-  exitWithError(
-    "bad MOCK_ROWS",
-    // a code: a plain message, not a stack trace
-    Object.assign(
-      new Error(
-        `MOCK_ROWS must be a whole number, got '${process.env.MOCK_ROWS}'`,
+// A setting that takes a whole number; anything else stops the server
+function wholeNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 0)
+    exitWithError(
+      `bad ${name}`,
+      // a code: a plain message, not a stack trace
+      Object.assign(
+        new Error(`${name} must be a whole number, got '${process.env[name]}'`),
+        { code: `E${name.replace("_", "")}` },
       ),
-      { code: "EMOCKROWS" },
-    ),
-  );
+    );
+  return value;
+}
+
+// Rows generated for each entity set that has no seed file; 0 leaves those sets empty
+const MOCK_ROWS = wholeNumber("MOCK_ROWS", 20);
+
+// The most rows a collection's response holds, with a next link to the rest; 0 sends every row
+const PAGE_SIZE = wholeNumber("PAGE_SIZE", 0);
 
 // A setting that takes one of a few values; an unknown one stops the server
 function choice<T extends string>(
@@ -84,6 +91,7 @@ try {
     mockRows: MOCK_ROWS,
     etags: ETAGS,
     joins: JOINS,
+    pageSize: PAGE_SIZE,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);
