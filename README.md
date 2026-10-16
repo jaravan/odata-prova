@@ -96,6 +96,7 @@ The server serves only the service and its `$metadata`. Annotations your app loa
 | `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                                                                                                                                                          |
 | `ETAGS`        | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                            |
 | `JOINS`        | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to disable it, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
+| `PAGE_SIZE`    | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                               |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
@@ -105,13 +106,13 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 ## What's supported
 
 - **Reads and writes**, including deep insert, and `$batch` with atomic changesets.
-- **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search`, and V4's `$apply` for UI5's grouped and aggregated tables, totals included ([Aggregation](docs/odata-support.md#aggregation-apply)).
+- **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search`, server-driven paging with `$skiptoken` ([`PAGE_SIZE`](docs/odata-support.md#server-driven-paging)), and V4's `$apply` for UI5's grouped and aggregated tables, totals included ([Aggregation](docs/odata-support.md#aggregation-apply)).
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
 - **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
 
-`$compute`, `$skiptoken`, `$deltatoken` and the rest of `$apply` are rejected with `501`.
+`$compute`, `$deltatoken` and the rest of `$apply` are rejected with `501`.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified.
 

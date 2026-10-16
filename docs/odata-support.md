@@ -61,6 +61,21 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`, over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nested, and with `$it` for the entity outside the lambda.
 
+### Server-driven paging
+
+With `PAGE_SIZE` set (`createApp`'s `pageSize` option), a collection's response holds at most that many rows, and a link to the next page: `@odata.nextLink` in V4, `d.__next` in V2. Following the links gives every row the query asks for, `$skip` and `$top` included. The count from `$count=true` or `$inlinecount=allpages` stays the total on every page. That's how SAP Gateway and CAP answer a large collection, so an app can be tried against a backend that pages.
+
+```
+GET /odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate      (PAGE_SIZE=2)
+
+{ "value": [ ...2 orders... ],
+  "@odata.nextLink": "/odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate&$skiptoken=2" }
+```
+
+The link is the request with a `$skiptoken`: where the next page starts among the rows the query options leave. A client sends it back as it is; a `$skiptoken` also works without paging. UI5's V2 and V4 models don't follow the link: they take it as a sign that there are more rows, and read the next ones with `$skip` and `$top`, which works as before.
+
+A V4 client can ask for smaller pages with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not. Paging applies to an entity set, a navigation's collection, a function's result and an `$apply` result, not to collections in an `$expand`. It's off by default, as a client that ignores the links would see only the first page.
+
 ### Aggregation (`$apply`)
 
 V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals: `$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))`. Transformations are separated by `/` and run in order, before the other query options, which then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
@@ -147,7 +162,7 @@ UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply` in V2 and the parts of it listed under [Aggregation](#aggregation-apply), `$compute`, `$skiptoken`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`: `$apply` in V2 and the parts of it listed under [Aggregation](#aggregation-apply), `$compute`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 

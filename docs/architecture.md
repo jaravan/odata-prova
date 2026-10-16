@@ -46,6 +46,7 @@ const { app } = createApp({
   mockRows: 20, // default 0: only the data files
   etags: "strict", // default "lenient", see docs/odata-support.md#etags
   joins: "strict", // default "guess", see docs/odata-support.md#navigations-without-a-referentialconstraint
+  pageSize: 100, // default 0: every row, see docs/odata-support.md#server-driven-paging
 });
 app.listen(3000);
 ```
@@ -57,7 +58,7 @@ That is the package's whole API: `odata-prova` exports `createApp`, `findModelDi
 - **Draft validation** - drafts are activated as they are: no validation messages, side effects, or locks between users.
 - **Richer operation rules** - rules can only set fixed values; conditions, computed values or creating entities would need more.
 - **The rest of `$apply`** - it covers what UI5 sends for grouped tables, totals and tree tables, but `compute` and `traverse` are rejected with 501.
-- **Server-driven paging and `$compute`** - `$skiptoken`, `$deltatoken` and `$compute` are rejected with 501; a response holds every row the query asks for.
+- **`$compute` and `$deltatoken`** - both are rejected with 501.
 - **Navigations without foreign keys** - a navigation is a join between property values, so one the metadata gives no columns for is disabled: a single-valued link with no foreign key (TripPin's `Person.Photo`), a many-to-many link (`Person.Friends`), or a contained target (`ContainsTarget`, `Person.Trips`). Hidden foreign-key properties, filled from a seed column such as `Photo_Id`, would turn the first into an ordinary join; containment would also need an internal entity set keyed by the parent, exposed in V2 as a regular set, and many-to-many a link set between the two sides.
 - **Persistent storage** - swap the in-memory `Store` for a real database.
 
