@@ -280,9 +280,17 @@ export interface QueryNode {
   search?: string;
   // V4 $apply, run before the options above (see aggregation.ts)
   apply?: Transformation[];
+  // V4 $compute: properties computed for each row (see compute.ts)
+  compute?: Computation[];
   // Where a page of server-driven paging starts, within the rows $skip and $top leave (see
   // paging in service.ts)
   skiptoken?: number;
+}
+
+// One of $compute's properties: "NetPrice mul Quantity as LineTotal"
+export interface Computation {
+  expression: string;
+  alias: string;
 }
 
 // One step of $apply, e.g. filter(Status eq 'Open')/groupby((Currency),aggregate(...))

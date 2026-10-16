@@ -24,6 +24,7 @@ import {
   rejectUnsupported,
 } from "../query.ts";
 import { parseApply } from "../aggregation.ts";
+import { parseCompute } from "../compute.ts";
 
 const version = "4.0";
 const headers: Record<string, string> = { "OData-Version": "4.0" };
@@ -187,6 +188,9 @@ function applyNestedOptions(node: QueryNode, text: string): void {
       case "$search":
         node.search = value;
         break;
+      case "$compute":
+        node.compute = parseCompute(value);
+        break;
       default:
         throw new HttpError(400, `Unsupported $expand option: ${name}`);
     }
@@ -212,6 +216,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     select: root.select,
     expand: root.expand,
     apply: q.$apply ? parseApply(q.$apply) : undefined,
+    compute: q.$compute ? parseCompute(q.$compute) : undefined,
   };
 }
 

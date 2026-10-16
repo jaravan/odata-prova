@@ -15,6 +15,7 @@ import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
+import { applyCompute } from "./compute.ts";
 import { applyTransformations, holdsEntities } from "./aggregation.ts";
 import { isHierarchyRow } from "./hierarchy.ts";
 import { create, update, deleteEntity } from "./writes.ts";
@@ -267,7 +268,10 @@ class ODataService {
     nav: AnyNavigation,
     node: QueryNode,
   ): { rows: Row[]; count?: number; type: EntityType } {
-    const { rows, type } = this.related(row, entityType, nav);
+    const { rows, type } = this.computed(
+      this.related(row, entityType, nav),
+      node,
+    );
     const { results, count } = applyQuery(this, rows, type, {
       ...node,
       count: node.count,
@@ -323,6 +327,18 @@ class ODataService {
     return { ...applyTransformations(this, rows, type, q.apply), entities };
   }
 
+  // The rows and type with $compute's properties (see compute.ts), or as they are without
+  // one. $apply has a compute of its own, which isn't supported, so the two don't mix.
+  computed(
+    { rows, type }: { rows: Row[]; type: EntityType },
+    q: QueryNode,
+  ): { rows: Row[]; type: EntityType } {
+    if (!q.compute) return { rows, type };
+    if (q.apply)
+      throw new HttpError(501, "$compute with $apply is not supported");
+    return applyCompute(this, rows, type, q.compute);
+  }
+
   // A collection's response: an entity set's, a navigation's or an operation's, after its
   // query options, $apply first
   collectionResponse(
@@ -332,6 +348,7 @@ class ODataService {
     q: QueryNode,
     opts: ResponseOptions,
   ): ODataResponse {
+    ({ rows, type } = this.computed({ rows, type }, q));
     const applied = this.applied(rows, type, q);
     const { results, count } = applyQuery(this, applied.rows, applied.type, q);
     const result = { ...paging(results, q, opts), count };
@@ -557,6 +574,7 @@ class ODataService {
 
     if (wantCount) {
       if (method !== "GET") throw new HttpError(405, "Method not allowed");
+      ({ rows, type } = this.computed({ rows, type }, q));
       const applied = this.applied(rows, type, q);
       const { results } = applyQuery(this, applied.rows, applied.type, {
         ...q,
@@ -625,17 +643,19 @@ class ODataService {
 
     // Single entity
     switch (method) {
-      case "GET":
+      case "GET": {
+        const computed = this.computed({ rows: [row], type }, q);
         return protocol.entity(
           this,
-          row,
+          computed.rows[0],
           setName,
-          type,
+          computed.type,
           q,
           200,
           undefined,
           opts,
         );
+      }
       case "PUT":
       case "PATCH":
       case "MERGE": {

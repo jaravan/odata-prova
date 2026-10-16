@@ -73,6 +73,7 @@ interface Lookup {
 function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
   for (const name of node.select || []) {
     if (name === "*" || name.includes(".")) continue;
+    if (node.compute?.some((c) => c.alias === name)) continue;
     if (!type.properties[name] && !svc.navigation(type, name))
       throw new HttpError(
         400,
@@ -110,10 +111,10 @@ function splitTopLevel(text: string, sep: string): string[] {
 }
 
 // Query options the server does not implement. Rejecting them with 501
-// instead of silently ignoring them: a $compute that comes back as the plain
+// instead of silently ignoring them: a $deltatoken that comes back as the plain
 // collection looks like a working response to the caller and is wrong. ($apply is V4's,
 // see aggregation.ts)
-const UNSUPPORTED_OPTIONS = ["$compute", "$deltatoken"];
+const UNSUPPORTED_OPTIONS = ["$deltatoken"];
 
 // query: the request's query string, parsed
 function rejectUnsupported(query: Record<string, unknown>): void {

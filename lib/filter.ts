@@ -8,7 +8,7 @@
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
 import type { Literal, Property, PropertyValue, Row } from "./model.ts";
-import { toComparable, toMillis } from "./types.ts";
+import { isNumericType, toComparable, toMillis } from "./types.ts";
 
 // What a protocol module supplies: how its literals are spelled
 export interface LiteralSyntax {
@@ -628,4 +628,77 @@ function compileFilter(
   return (row, resolve) => truthy(evaluate(ast, row, resolve));
 }
 
-export { compileFilter };
+// The Edm type each function gives; round, floor and ceiling give their argument's
+const FUNCTION_TYPES: Record<string, string> = {
+  substringof: "Edm.Boolean",
+  contains: "Edm.Boolean",
+  startswith: "Edm.Boolean",
+  endswith: "Edm.Boolean",
+  tolower: "Edm.String",
+  toupper: "Edm.String",
+  trim: "Edm.String",
+  concat: "Edm.String",
+  substring: "Edm.String",
+  replace: "Edm.String",
+  length: "Edm.Int32",
+  indexof: "Edm.Int32",
+  year: "Edm.Int32",
+  month: "Edm.Int32",
+  day: "Edm.Int32",
+  hour: "Edm.Int32",
+  minute: "Edm.Int32",
+  second: "Edm.Int32",
+  date: "Edm.Date",
+  time: "Edm.TimeOfDay",
+  now: "Edm.DateTimeOffset",
+};
+
+// The type an expression gives, known before any row is read: $compute declares a property
+// of it. typeOf gives a property path's type. Null for the null literal alone.
+function expressionType(
+  node: Node,
+  typeOf: (path: string) => string,
+): string | null {
+  if ("literal" in node) return node.type;
+  if ("lambda" in node || "not" in node || "in" in node) return "Edm.Boolean";
+  if ("path" in node) return typeOf(node.path);
+  if ("these" in node)
+    throw new Error("$these/aggregate(...) is only allowed in $apply");
+  if ("neg" in node) {
+    const type = expressionType(node.expr, typeOf);
+    return arithmeticType("sub", type, type);
+  }
+  if ("func" in node) {
+    const args = node.args.map((a) => expressionType(a, typeOf));
+    if (["round", "floor", "ceiling"].includes(node.func))
+      return args[0] && isNumericType(args[0]) ? args[0] : "Edm.Double";
+    const type = FUNCTION_TYPES[node.func];
+    if (!type) throw new Error(`Unsupported function ${node.func}`);
+    return type;
+  }
+  const left = expressionType(node.left, typeOf);
+  const right = expressionType(node.right, typeOf);
+  if (["and", "or", "eq", "ne", "gt", "ge", "lt", "le"].includes(node.op))
+    return "Edm.Boolean";
+  for (const type of [left, right])
+    if (type !== null && !isNumericType(type))
+      throw new Error(`${node.op} needs numbers, not ${type}`);
+  return arithmeticType(node.op, left, right);
+}
+
+// An expression as $compute uses it: its value for a row, and its type
+function compileExpression(
+  text: string,
+  protocol: LiteralSyntax,
+): {
+  evaluate(row: Row, resolve: Resolve): Value;
+  type(typeOf: (path: string) => string): string | null;
+} {
+  const ast = new Parser(tokenize(text, protocol)).parse();
+  return {
+    evaluate: (row, resolve) => evaluate(ast, row, resolve),
+    type: (typeOf) => expressionType(ast, typeOf),
+  };
+}
+
+export { compileFilter, compileExpression };
