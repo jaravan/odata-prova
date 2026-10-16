@@ -63,6 +63,18 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 Arithmetic in `$filter` follows the spec's numeric promotion: `div` of two integers rounds towards zero (`Quantity div 2`), `divby` doesn't, and an operation with a null is null, which no comparison matches.
 
+### Computed properties (`$compute`)
+
+V4's `$compute` adds properties to each entity, from an expression written as in `$filter`, under an alias:
+
+```
+GET /odata/v4/MySrv/PurchaseOrderItemSet?$compute=Quantity mul NetPrice as LineTotal&$filter=LineTotal gt 5000&$orderby=LineTotal desc
+```
+
+A computed property is in the response, and `$filter`, `$orderby` and `$select` use it like one of the entity's own. The expression can use the entity's properties, paths through single-valued navigations (`PurchaseOrder/Status`), arithmetic and the `$filter` functions, and its type follows from them: `Quantity mul NetPrice` of two decimals is an `Edm.Decimal`, `year(OrderDate)` an `Edm.Int32`. It works on a collection, a single entity, `/$count`, and in an `$expand` (`Items($compute=...;$select=LineTotal)`).
+
+A mistake in it (an unknown property, an alias that is already a property, arithmetic on text) is a `400`. It isn't supported together with `$apply`, nor in V2, which has no `$compute`: both are a `501`.
+
 ### Server-driven paging
 
 With `PAGE_SIZE` set (`createApp`'s `pageSize` option), a collection's response holds at most that many rows, and a link to the next page: `@odata.nextLink` in V4, `d.__next` in V2. Following the links gives every row the query asks for, `$skip` and `$top` included. The count from `$count=true` or `$inlinecount=allpages` stays the total on every page. That's how SAP Gateway and CAP answer a large collection, so an app can be tried against a backend that pages.
@@ -164,7 +176,7 @@ UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply` in V2 and the parts of it listed under [Aggregation](#aggregation-apply), `$compute`, `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, the parts of `$apply` listed under [Aggregation](#aggregation-apply), `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 
