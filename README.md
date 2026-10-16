@@ -50,6 +50,9 @@ The image is built for amd64 and arm64 and tagged by version (`<major>.<minor>.<
 
 Needs Node.js 22 or later, or Docker. [examples/](examples/) has three services to try: [PurchaseOrderSrv](examples/PurchaseOrderSrv/) (V2, with a function import), [Northwind](examples/Northwind/) (V4) and [TripPin](examples/TripPin/) (V4, with actions and functions).
 
+> [!TIP]
+> **See it in a full project:** [fiori-devstack](https://github.com/jaravan/fiori-devstack) runs V2 and V4 Fiori Elements apps on odata-prova, with Docker Compose or Kubernetes, and OPA tests in CI.
+
 ## Your service
 
 ```
@@ -78,8 +81,6 @@ backend:
 Use `/odata/v4/MySrv` for a V4 app. The server also sends CORS headers, so apps can call it directly.
 
 The server serves only the service and its `$metadata`. Annotations your app loads from the system's catalog service (an `IWFND/CATALOGSERVICE` data source in `manifest.json`) aren't available; annotation files in the app work as usual.
-
-For a complete setup, see [fiori-devstack](https://github.com/jaravan/fiori-devstack): a V2 and a V4 Fiori Elements app on this server, on Docker Compose or Kubernetes, with their OPA tests running in CI.
 
 ## Configuration
 
