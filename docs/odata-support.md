@@ -61,6 +61,8 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`, over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nested, and with `$it` for the entity outside the lambda.
 
+Arithmetic in `$filter` follows the spec's numeric promotion: `div` of two integers rounds towards zero (`Quantity div 2`), `divby` doesn't, and an operation with a null is null, which no comparison matches.
+
 ### Server-driven paging
 
 With `PAGE_SIZE` set (`createApp`'s `pageSize` option), a collection's response holds at most that many rows, and a link to the next page: `@odata.nextLink` in V4, `d.__next` in V2. Following the links gives every row the query asks for, `$skip` and `$top` included. The count from `$count=true` or `$inlinecount=allpages` stays the total on every page. That's how SAP Gateway and CAP answer a large collection, so an app can be tried against a backend that pages.

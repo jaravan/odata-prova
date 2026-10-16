@@ -70,6 +70,31 @@ describe("$filter grammar (shared)", () => {
   }
 });
 
+describe("$filter arithmetic", () => {
+  const cases: [string, boolean][] = [
+    // Integers stay integers: div rounds towards zero, divby doesn't
+    ["Qty div 2 eq 3", true],
+    ["Qty divby 2 eq 3.5", true],
+    ["0 sub Qty div 2 eq -3", true],
+    ["Qty mod 4 eq 3", true],
+    // A decimal or a double operand divides without rounding
+    ["Amount div 1000 eq 12.5", true],
+    ["Qty div 2.0 eq 3.5", true],
+    ["0.1 add 0.2 eq 0.3", true],
+    // Null on either side is null, which no comparison matches
+    ["Nothing add 1 eq null", true],
+    ["Nothing add 1 lt 5", false],
+  ];
+  for (const [text, expected] of cases)
+    it(`${text} -> ${expected}`, () => assert.equal(run(v4, text), expected));
+
+  it("an integer or a decimal divided by zero is an error; a double is INF", () => {
+    assert.throws(() => run(v4, "Qty div 0 eq 1"), /Division by zero/);
+    assert.throws(() => run(v4, "Amount mod 0 eq 1"), /Division by zero/);
+    assert.equal(run(v2, "Qty div 0d gt 1000"), true);
+  });
+});
+
 describe("$filter V2 literals", () => {
   it("datetime'...' compares against a timestamp", () => {
     assert.equal(run(v2, "When ge datetime'2025-01-01T00:00:00'"), true);

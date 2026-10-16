@@ -72,6 +72,7 @@ const KEYWORDS = new Set([
   "sub",
   "mul",
   "div",
+  "divby",
   "mod",
 ]);
 
@@ -279,7 +280,7 @@ class Parser {
   }
   parseMultiplicative(): Node {
     let left = this.parseUnary();
-    while (this.isOp("mul", "div", "mod")) {
+    while (this.isOp("mul", "div", "divby", "mod")) {
       const op = this.expect("op").value;
       left = { op, left, right: this.parseUnary() };
     }
@@ -360,11 +361,11 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
       value: !truthy(evaluate(node.expr, row, resolve)),
       type: "Edm.Boolean",
     };
-  if ("neg" in node)
-    return {
-      value: -num(evaluate(node.expr, row, resolve)),
-      type: "Edm.Double",
-    };
+  if ("neg" in node) {
+    const v = evaluate(node.expr, row, resolve);
+    const type = arithmeticType("sub", v.type, v.type);
+    return { value: v.value === null ? null : -num(v), type };
+  }
   if ("func" in node)
     return callFunction(
       node.func,
@@ -407,17 +408,67 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
     case "le":
       return { value: compare(l, r) <= 0, type: "Edm.Boolean" };
     case "add":
-      return { value: num(l) + num(r), type: "Edm.Double" };
     case "sub":
-      return { value: num(l) - num(r), type: "Edm.Double" };
     case "mul":
-      return { value: num(l) * num(r), type: "Edm.Double" };
     case "div":
-      return { value: num(l) / num(r), type: "Edm.Double" };
+    case "divby":
     case "mod":
-      return { value: num(l) % num(r), type: "Edm.Double" };
+      return arithmetic(node.op, l, r);
   }
   throw new Error(`Unsupported operator ${node.op}`);
+}
+
+const INTEGER = /^Edm\.(Byte|SByte|Int16|Int32|Int64)$/;
+
+// The type of an arithmetic result, by the spec's numeric promotion: a Double or Single
+// operand makes it an Edm.Double, then a Decimal one (or divby) an Edm.Decimal, and integers
+// stay integers, Edm.Int64 if either is one. A null literal takes the other side's type.
+// Anything else (a string compared as a number) is an Edm.Double, as it always was.
+function arithmeticType(
+  op: string,
+  left: string | null,
+  right: string | null,
+): string {
+  const types = [left, right].filter((t): t is string => t !== null);
+  if (types.some((t) => /^Edm\.(Double|Single)$/.test(t))) return "Edm.Double";
+  if (op === "divby" || types.includes("Edm.Decimal")) return "Edm.Decimal";
+  if (types.length && types.every((t) => INTEGER.test(t)))
+    return types.includes("Edm.Int64") ? "Edm.Int64" : "Edm.Int32";
+  return "Edm.Double";
+}
+
+// add, sub, mul, div, divby, mod. Null when either side is null. div of two integers rounds
+// towards zero (5 div 2 is 2), divby doesn't (5 divby 2 is 2.5), and dividing an integer or a
+// decimal by zero is an error. A decimal result is cut to 15 significant digits, which drops
+// the noise of binary floating point (0.1 add 0.2 is 0.3).
+function arithmetic(op: string, l: Value, r: Value): Value {
+  const type = arithmeticType(op, l.type, r.type);
+  if (l.value === null || l.value === undefined) return { value: null, type };
+  if (r.value === null || r.value === undefined) return { value: null, type };
+  const a = num(l),
+    b = num(r);
+  const exact = INTEGER.test(type) || type === "Edm.Decimal";
+  if ((op === "div" || op === "divby" || op === "mod") && b === 0 && exact)
+    throw new Error("Division by zero");
+  let value: number;
+  switch (op) {
+    case "add":
+      value = a + b;
+      break;
+    case "sub":
+      value = a - b;
+      break;
+    case "mul":
+      value = a * b;
+      break;
+    case "mod":
+      value = a % b;
+      break;
+    default:
+      value = INTEGER.test(type) ? Math.trunc(a / b) : a / b;
+  }
+  if (type === "Edm.Decimal") value = Number(value.toPrecision(15));
+  return { value, type };
 }
 
 // any: pred holds for at least one item; all: for every item (true when there are none);
