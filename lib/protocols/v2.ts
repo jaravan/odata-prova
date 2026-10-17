@@ -122,7 +122,7 @@ function toWire(value: PropertyValue | undefined, prop: Property): unknown {
 
 function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   rejectUnsupported(query);
-  for (const name of ["$apply", "$compute"])
+  for (const name of ["$apply", "$compute", "$deltatoken"])
     if (query[name] !== undefined)
       throw new HttpError(501, `${name} is not supported in OData V2`);
   // Query string values are text (a repeated option isn't supported)

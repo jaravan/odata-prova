@@ -282,6 +282,8 @@ export interface QueryNode {
   apply?: Transformation[];
   // V4 $compute: properties computed for each row (see compute.ts)
   compute?: Computation[];
+  // V4: the delta token of a delta link (see delta.ts)
+  deltatoken?: string;
   // Where a page of server-driven paging starts, within the rows $skip and $top leave (see
   // paging in service.ts)
   skiptoken?: number;
@@ -361,6 +363,9 @@ export interface ResponseOptions {
   // Server-driven paging, on a GET (see paging in service.ts): the most rows a page holds,
   // and the URL of the page that starts at a $skiptoken
   page?: { size: number; link(skiptoken: number): string };
+  // A V4 GET of an entity set that tracks changes (see delta.ts): its delta link, with a new
+  // delta token
+  deltaLink?(): string;
 }
 
 // What a service answers, for Express or for a $batch part

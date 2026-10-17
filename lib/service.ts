@@ -16,6 +16,7 @@ import type { ETagMode } from "./etag.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
 import { applyCompute } from "./compute.ts";
+import { DeltaTokens, deltaChanges, type Removed } from "./delta.ts";
 import { applyTransformations, holdsEntities } from "./aggregation.ts";
 import { isHierarchyRow } from "./hierarchy.ts";
 import { create, update, deleteEntity } from "./writes.ts";
@@ -49,6 +50,8 @@ export interface CollectionResult {
   rows: Row[];
   count?: number;
   nextLink?: string;
+  // The delta link of a client that tracks changes, with the last page (see delta.ts)
+  deltaLink?: string;
 }
 
 // What a protocol module supplies (protocols/v2 and v4): how literals are read and keys
@@ -109,6 +112,15 @@ export interface Protocol extends LiteralSyntax {
     opts?: ResponseOptions,
   ): ODataResponse;
   error(status: number, message: string): ODataResponse;
+  // What changed in an entity set since a delta token (see delta.ts); V4 only
+  delta?(
+    svc: ODataService,
+    result: { rows: Row[]; removed: Removed[]; deltaLink: string },
+    setName: string,
+    type: EntityType,
+    node: QueryNode,
+    opts?: ResponseOptions,
+  ): ODataResponse;
 }
 
 // What operations change, by operation name (config.json, see operationRules in app.ts):
@@ -152,17 +164,20 @@ function paging(
   };
 }
 
-// The request's URL with a $skiptoken: its path from the root, and its query options as
-// they came, which are kept readable ($, commas, slashes and colons unescaped)
-function pageLink(
+// The request's URL with some of its query options changed (undefined: left out): its path
+// from the root, and its query options as they came, which are kept readable ($, commas,
+// slashes and colons unescaped)
+function requestLink(
   path: string,
   query: Record<string, unknown>,
-  skiptoken: number,
+  changes: Record<string, unknown>,
 ): string {
-  const options = Object.entries({ ...query, $skiptoken: skiptoken }).map(
-    ([name, value]) =>
-      `${name}=${encodeURIComponent(String(value)).replace(/%(24|2C|2F|3A)/g, (e) => decodeURIComponent(e))}`,
-  );
+  const options = Object.entries({ ...query, ...changes })
+    .filter(([, value]) => value !== undefined)
+    .map(
+      ([name, value]) =>
+        `${name}=${encodeURIComponent(String(value)).replace(/%(24|2C|2F|3A)/g, (e) => decodeURIComponent(e))}`,
+    );
   return `${encodeURI(path)}?${options.join("&")}`;
 }
 
@@ -176,6 +191,7 @@ class ODataService {
   rules: Rules;
   etags: ETagMode;
   pageSize: number;
+  deltaTokens = new DeltaTokens();
   operations: OperationView;
   drafts: Drafts;
 
@@ -351,7 +367,8 @@ class ODataService {
     ({ rows, type } = this.computed({ rows, type }, q));
     const applied = this.applied(rows, type, q);
     const { results, count } = applyQuery(this, applied.rows, applied.type, q);
-    const result = { ...paging(results, q, opts), count };
+    const result: CollectionResult = { ...paging(results, q, opts), count };
+    if (opts.deltaLink && !result.nextLink) result.deltaLink = opts.deltaLink();
     if (q.apply)
       return this.protocol.aggregated!(
         this,
@@ -376,6 +393,49 @@ class ODataService {
     if (asked && (!this.pageSize || asked < this.pageSize))
       return { size: asked, applied: true };
     return { size: this.pageSize, applied: false };
+  }
+
+  // Whether a GET of an entity set gets a delta link: a V4 client asks for one with Prefer:
+  // odata.track-changes, and the query is one a delta can answer, without $apply, $compute,
+  // $skip or $top. Otherwise the preference isn't applied, as the spec allows.
+  tracksChanges(prefer: string, q: QueryNode): boolean {
+    return (
+      !!this.protocol.delta &&
+      /odata\.track-changes/i.test(prefer) &&
+      !q.apply &&
+      !q.compute &&
+      q.skip === undefined &&
+      q.top === undefined
+    );
+  }
+
+  // What changed in the entity set since the delta token (see delta.ts), with a new delta
+  // link. A token that's unknown, no longer kept or from before a restart is a 410 Gone. Only
+  // V4 parses a $deltatoken, and has delta().
+  deltaResponse(
+    setName: string,
+    type: EntityType,
+    q: QueryNode,
+    opts: ResponseOptions,
+    link: (token: string) => string,
+  ): ODataResponse {
+    const before = this.deltaTokens.rows(q.deltatoken!, setName);
+    if (!before)
+      throw new HttpError(
+        410,
+        "The delta link has expired: read the entity set again for a new one",
+      );
+    const now = this.store.rows(setName);
+    const changes = deltaChanges(this, type, before, now, q);
+    const deltaLink = link(this.deltaTokens.issue(setName, now));
+    return this.protocol.delta!(
+      this,
+      { ...changes, deltaLink },
+      setName,
+      type,
+      q,
+      opts,
+    );
   }
 
   // --- Dispatch --------------------------------------------------------------------------
@@ -419,7 +479,8 @@ class ODataService {
     if (method === "GET" && pageSize.size)
       opts.page = {
         size: pageSize.size,
-        link: (skiptoken) => pageLink(path, query, skiptoken),
+        link: (skiptoken) =>
+          requestLink(path, query, { $skiptoken: skiptoken }),
       };
     const wantsMinimal = /return=minimal/i.test(opts.prefer);
     const wantsRepresentation = /return=representation/i.test(opts.prefer);
@@ -569,6 +630,20 @@ class ODataService {
       }
     }
 
+    if (q.deltatoken !== undefined) {
+      if (method !== "GET" || row !== undefined || segments.length !== 1)
+        throw new HttpError(
+          400,
+          "$deltatoken applies to reading an entity set",
+        );
+      return this.deltaResponse(setName, type, q, opts, (token) =>
+        requestLink(path, query, {
+          $skiptoken: undefined,
+          $deltatoken: token,
+        }),
+      );
+    }
+
     if (q.apply && (method !== "GET" || row !== undefined))
       throw new HttpError(400, "$apply applies to reading a collection only");
 
@@ -592,6 +667,17 @@ class ODataService {
       // Collection
       switch (method) {
         case "GET": {
+          const tracked =
+            segments.length === 1 && this.tracksChanges(opts.prefer, q);
+          if (tracked)
+            opts.deltaLink = () =>
+              requestLink(path, query, {
+                $skiptoken: undefined,
+                $deltatoken: this.deltaTokens.issue(
+                  setName,
+                  this.store.rows(setName),
+                ),
+              });
           const response = this.collectionResponse(
             rows,
             setName,
@@ -599,10 +685,14 @@ class ODataService {
             q,
             opts,
           );
-          if (pageSize.applied)
+          const applied = [
+            ...(pageSize.applied ? [`odata.maxpagesize=${pageSize.size}`] : []),
+            ...(tracked ? ["odata.track-changes"] : []),
+          ];
+          if (applied.length)
             response.headers = {
               ...response.headers,
-              "Preference-Applied": `odata.maxpagesize=${pageSize.size}`,
+              "Preference-Applied": applied.join(", "),
             };
           return response;
         }

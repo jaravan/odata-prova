@@ -110,18 +110,10 @@ function splitTopLevel(text: string, sep: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
-// Query options the server does not implement. Rejecting them with 501
-// instead of silently ignoring them: a $deltatoken that comes back as the plain
-// collection looks like a working response to the caller and is wrong. ($apply is V4's,
-// see aggregation.ts)
-const UNSUPPORTED_OPTIONS = ["$deltatoken"];
-
+// A $format the server does not implement is rejected with 501 instead of silently
+// ignored: JSON coming back for $format=xml looks like a working response and is wrong.
 // query: the request's query string, parsed
 function rejectUnsupported(query: Record<string, unknown>): void {
-  for (const name of UNSUPPORTED_OPTIONS) {
-    if (query[name] !== undefined)
-      throw new HttpError(501, `${name} is not supported`);
-  }
   if (
     query.$format !== undefined &&
     !/^(json|application\/json)$/i.test(String(query.$format).trim())

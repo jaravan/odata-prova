@@ -217,6 +217,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     expand: root.expand,
     apply: q.$apply ? parseApply(q.$apply) : undefined,
     compute: q.$compute ? parseCompute(q.$compute) : undefined,
+    deltatoken: q.$deltatoken,
   };
 }
 
@@ -318,7 +319,14 @@ const v4: Protocol = {
       })),
     });
   },
-  collection(svc, { rows, count, nextLink }, setName, type, node, opts) {
+  collection(
+    svc,
+    { rows, count, nextLink, deltaLink },
+    setName,
+    type,
+    node,
+    opts,
+  ) {
     checkSelect(svc, type, node);
     const body: Record<string, unknown> = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}`,
@@ -326,7 +334,30 @@ const v4: Protocol = {
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => serialize(svc, r, setName, type, node, opts));
     if (nextLink) body["@odata.nextLink"] = nextLink;
+    if (deltaLink) body["@odata.deltaLink"] = deltaLink;
     return json(200, body, opts);
+  },
+  // A delta response, in the OData 4.0 JSON format: the entities added or changed, then one
+  // $deletedEntity entry for each that's gone, and the next delta link
+  delta(svc, { rows, removed, deltaLink }, setName, type, node, opts) {
+    checkSelect(svc, type, node);
+    const context = `${svc.servicePath}/$metadata#${setName}`;
+    return json(
+      200,
+      {
+        "@odata.context": `${context}/$delta`,
+        value: [
+          ...rows.map((r) => serialize(svc, r, setName, type, node, opts)),
+          ...removed.map(({ row, reason }) => ({
+            "@odata.context": `${context}/$deletedEntity`,
+            id: svc.entityUri(setName, type, row),
+            reason,
+          })),
+        ],
+        "@odata.deltaLink": deltaLink,
+      },
+      opts,
+    );
   },
   // Rows of an $apply's result type: no key and so no ETag, and the context lists the
   // properties, e.g. $metadata#PurchaseOrderSet(Currency,Total). Each row has the ones it
