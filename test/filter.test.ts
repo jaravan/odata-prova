@@ -84,6 +84,15 @@ describe("$filter arithmetic", () => {
     // Null on either side is null, which no comparison matches
     ["Nothing add 1 eq null", true],
     ["Nothing add 1 lt 5", false],
+    // Negation: a minus before anything but a number
+    ["-Qty eq -7", true],
+    ["-Qty add 10 eq 3", true],
+    ["-(Qty sub 10) eq 3", true],
+    ["-length(Name) eq -8", true],
+    ["- Qty eq -7", true],
+    ["--Qty eq 7", true],
+    ["-Nothing eq null", true],
+    ["Qty mul -1 eq -7", true],
   ];
   for (const [text, expected] of cases)
     it(`${text} -> ${expected}`, () => assert.equal(run(v4, text), expected));

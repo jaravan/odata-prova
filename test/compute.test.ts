@@ -69,6 +69,24 @@ describe("$compute", () => {
     );
   });
 
+  it("a minus negates, in $compute and in a V2 $filter", async () => {
+    const r = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$compute=-TotalAmount as Negative,-(length(Supplier) sub 20) as Short&$select=Negative,Short`,
+    );
+    assert.equal(r.status, 200);
+    assert.equal(r.body.Negative, -12500);
+    assert.equal(r.body.Short, 1);
+    const v2 = await get(
+      `${s.v2}/PurchaseOrderSet?$filter=-TotalAmount lt -40000&$select=PurchaseOrderId`,
+    );
+    assert.deepEqual(
+      v2.body.d.results.map(
+        (o: { PurchaseOrderId: string }) => o.PurchaseOrderId,
+      ),
+      ["4500000002"],
+    );
+  });
+
   it("an integer division rounds towards zero, divby doesn't", async () => {
     const r = await get(
       `${s.v4}/PurchaseOrderSet('4500000001')?$compute=length(Supplier) div 2 as Half,length(Supplier) divby 2 as Exact&$select=Half,Exact`,

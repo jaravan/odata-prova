@@ -324,6 +324,7 @@ describe("$apply", () => {
       );
     };
     assert.deepEqual(await ids("topcount(1,TotalAmount mul -1)"), ["5"]);
+    assert.deepEqual(await ids("topcount(1,-TotalAmount)"), ["5"]);
     // Nordic Steel AB has 15 characters, Acme Components Ltd 19
     assert.deepEqual(await ids("bottomcount(2,length(Supplier))"), ["2", "1"]);
     assert.deepEqual(await ids("topsum(15000,TotalAmount div 2)"), ["2"]);

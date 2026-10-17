@@ -185,6 +185,13 @@ function tokenize(input: string, protocol: LiteralSyntax): Token[] {
       i += num[0].length;
       continue;
     }
+    // A minus that doesn't start a number negates what follows: -Price, -(a add b). OData
+    // subtracts with sub, so a minus is never binary.
+    if (c === "-") {
+      tokens.push({ kind: "op", value: "-" });
+      i++;
+      continue;
+    }
     throw new Error(`Unexpected character '${c}' in $filter at position ${i}`);
   }
   return tokens;
@@ -288,7 +295,8 @@ class Parser {
   }
   parseUnary(): Node {
     const t = this.peek();
-    if (t && t.kind === "op" && t.value === "sub") {
+    // -Price, as the spec writes it; sub Price as well, as it always worked
+    if (t && t.kind === "op" && (t.value === "-" || t.value === "sub")) {
       this.next();
       return { neg: true, expr: this.parseUnary() };
     }
