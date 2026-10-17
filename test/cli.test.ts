@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { PO_MODEL } from "./helpers.ts";
@@ -15,31 +16,35 @@ const run = (args: string[], env: Record<string, string> = {}) =>
     timeout: 10000,
   });
 
-// Starts it, and resolves with the port it listens on, then stops it
-async function listeningPort(args: string[], env: Record<string, string> = {}) {
+// Starts it: the port it listens on, what it has printed so far, and a way to stop it
+async function started(args: string[], env: Record<string, string> = {}) {
   const child = spawn(process.execPath, [SERVER, ...args], {
     env: { ...process.env, ...env },
   });
   let output = "";
   child.stdout.on("data", (d) => (output += d));
   child.stderr.on("data", (d) => (output += d));
-  try {
-    return await new Promise<number>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`did not start:\n${output}`)),
-        10000,
-      );
-      child.stdout.on("data", () => {
-        const m = output.match(/listening on port (\d+)/);
-        if (m) {
-          clearTimeout(timer);
-          resolve(Number(m[1]));
-        }
-      });
+  const port = await new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`did not start:\n${output}`));
+    }, 10000);
+    child.stdout.on("data", () => {
+      const m = output.match(/listening on port (\d+)/);
+      if (!m) return;
+      clearTimeout(timer);
+      // The service URLs follow the line, in the same tick
+      setTimeout(() => resolve(Number(m[1])), 100);
     });
-  } finally {
-    child.kill();
-  }
+  });
+  return { port, output: () => output, stop: () => child.kill() };
+}
+
+// Starts it, and resolves with the port it listens on, then stops it
+async function listeningPort(args: string[], env: Record<string, string> = {}) {
+  const s = await started(args, env);
+  s.stop();
+  return s.port;
 }
 
 describe("the odata-prova command", () => {
@@ -89,7 +94,7 @@ describe("the odata-prova command", () => {
     assert.equal(bad.status, 1);
     assert.match(
       bad.stderr,
-      /bad port\nthe port must be a number from 0 to 65535, got '70000'/,
+      /bad --port\n--port must be a number from 0 to 65535, got '70000'/,
     );
   });
 
@@ -108,6 +113,100 @@ describe("the odata-prova command", () => {
       );
     } finally {
       taken.close();
+    }
+  });
+
+  it("every setting has an option, which wins over its environment variable", async () => {
+    // A copy of the model without its data files, so mock rows fill it
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-"));
+    fs.copyFileSync(
+      path.join(PO_MODEL, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    const s = await started(
+      [
+        dir,
+        "--port=0",
+        "--service-name",
+        "Orders",
+        "--v2-path",
+        "",
+        "--mock-rows",
+        "3",
+        "--page-size",
+        "2",
+        "--etags",
+        "strict",
+        "--joins",
+        "strict",
+      ],
+      { MOCK_ROWS: "9", PAGE_SIZE: "9", V4_PATH: "/ignored" },
+    );
+    try {
+      const base = `http://127.0.0.1:${s.port}`;
+      // --v4-path wasn't given, so V4_PATH is taken; --v2-path "" switches V2 off
+      assert.match(s.output(), /V4: http:\/\/localhost:\d+\/ignored\//);
+      assert.doesNotMatch(s.output(), /V2:/);
+      const first = await (
+        await fetch(`${base}/ignored/PurchaseOrderSet`)
+      ).json();
+      assert.equal(first.value.length, 2); // --page-size 2
+      assert.ok(first["@odata.nextLink"]);
+      const all = await (
+        await fetch(`${base}/ignored/PurchaseOrderSet/$count`)
+      ).text();
+      assert.equal(all, "3"); // --mock-rows 3
+      assert.equal(
+        (await fetch(`${base}/odata/v2/Orders/PurchaseOrderSet`)).status,
+        404,
+      );
+    } finally {
+      s.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // --service-name names the default paths
+    const named = await started([
+      PO_MODEL,
+      "--port",
+      "0",
+      "--service-name",
+      "Orders",
+    ]);
+    named.stop();
+    assert.match(
+      named.output(),
+      /V2: http:\/\/localhost:\d+\/odata\/v2\/Orders\//,
+    );
+  });
+
+  it("a bad value is named as it was given: the option or the variable", () => {
+    for (const [args, env, message] of [
+      [
+        ["--mock-rows", "abc"],
+        {},
+        /bad --mock-rows\n--mock-rows must be a whole number, got 'abc'/,
+      ],
+      [
+        [],
+        { MOCK_ROWS: "-1" },
+        /bad MOCK_ROWS\nMOCK_ROWS must be a whole number, got '-1'/,
+      ],
+      [["--page-size", "1.5"], {}, /--page-size must be a whole number/],
+      [
+        ["--etags", "nope"],
+        {},
+        /--etags must be one of lenient, strict, off, got 'nope'/,
+      ],
+      [
+        ["--joins", "nope"],
+        { JOINS: "guess" },
+        /--joins must be one of guess, strict/,
+      ],
+      [["--port=-1"], {}, /bad --port\n--port must be a number/],
+    ] as const) {
+      const r = run([PO_MODEL, ...args], env);
+      assert.equal(r.status, 1, args.join(" "));
+      assert.match(r.stderr, message, args.join(" "));
     }
   });
 });

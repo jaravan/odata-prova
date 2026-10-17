@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Mock OData server that serves a metadata.xml as V2 and V4 at the same time
 //
-//   odata-prova [modelDir] [--port <port>]      (default: the current directory, port 3000)
+//   odata-prova [modelDir] [options]      (default: the current directory; see USAGE)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,21 +15,44 @@ const USAGE = `Usage: odata-prova [modelDir] [options]
 
 Serves the metadata.xml in modelDir (default: the current directory) as OData V2 and V4.
 
-Options:
-  -p, --port <port>  HTTP port (default: PORT, else 3000)
-  -h, --help         Show this help
-  -v, --version      Show the version
+Options (default):
+  -p, --port <port>          HTTP port (3000)
+      --service-name <name>  The name in the default paths (the model folder's)
+      --v2-path <path>       V2 service root (/odata/v2/<name>), "" to switch V2 off
+      --v4-path <path>       V4 service root (/odata/v4/<name>), "" to switch V4 off
+      --mock-rows <n>        Rows generated for each entity set without a data file (20)
+      --page-size <n>        The most rows in a response, with a link to the rest (0: all)
+      --etags <mode>         lenient, strict or off (lenient)
+      --joins <mode>         guess or strict (guess)
+  -h, --help                 Show this help
+  -v, --version              Show the version
 
-Everything else is set with environment variables: MODEL_DIR, SERVICE_NAME, V2_PATH,
-V4_PATH, MOCK_ROWS, PAGE_SIZE, ETAGS and JOINS.
+Each option can also be set with its environment variable instead: --mock-rows with
+MOCK_ROWS, and so on, and modelDir with MODEL_DIR. The option wins.
 See https://github.com/jaravan/odata-prova#configuration`;
 
-// Flags work in every shell, where PORT=4004 npx ... doesn't (Windows' cmd and PowerShell)
+// Each setting's option and the environment variable it falls back to
+const SETTINGS = {
+  port: "PORT",
+  "service-name": "SERVICE_NAME",
+  "v2-path": "V2_PATH",
+  "v4-path": "V4_PATH",
+  "mock-rows": "MOCK_ROWS",
+  "page-size": "PAGE_SIZE",
+  etags: "ETAGS",
+  joins: "JOINS",
+} as const;
+type Setting = keyof typeof SETTINGS;
+
+// Options work in every shell, where PORT=4004 npx ... doesn't (Windows' cmd and PowerShell)
 let args: ReturnType<typeof readArgs>;
 function readArgs() {
   return parseArgs({
     allowPositionals: true,
     options: {
+      ...(Object.fromEntries(
+        Object.keys(SETTINGS).map((name) => [name, { type: "string" }]),
+      ) as Record<Setting, { type: "string" }>),
       port: { type: "string", short: "p" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
@@ -72,20 +95,27 @@ function packageVersion(): string {
   return "unknown";
 }
 
-// --port, else PORT, else 3000. 0 takes any free port, which the startup log shows.
-const PORT_TEXT = args.values.port ?? process.env.PORT ?? "3000";
+// A setting's value: its option, else its environment variable, else undefined. An empty
+// one counts (--v2-path "" switches V2 off).
+function setting(name: Setting): string | undefined {
+  return args.values[name] ?? process.env[SETTINGS[name]];
+}
+
+// A bad value stops the server, with a message naming the option or variable it came from
+function badSetting(name: Setting, message: string): never {
+  const from = args.values[name] !== undefined ? `--${name}` : SETTINGS[name];
+  // a code: a plain message, not a stack trace
+  exitWithError(
+    `bad ${from}`,
+    Object.assign(new Error(`${from} ${message}`), { code: "ESETTING" }),
+  );
+}
+
+// 0 takes any free port, which the startup log shows
+const PORT_TEXT = setting("port") ?? "3000";
 const PORT = Number(PORT_TEXT);
 if (!/^\d+$/.test(PORT_TEXT) || PORT > 65535)
-  exitWithError(
-    "bad port",
-    // a code: a plain message, not a stack trace
-    Object.assign(
-      new Error(
-        `the port must be a number from 0 to 65535, got '${PORT_TEXT}'`,
-      ),
-      { code: "EPORT" },
-    ),
-  );
+  badSetting("port", `must be a number from 0 to 65535, got '${PORT_TEXT}'`);
 
 // The model to serve: the argument, else MODEL_DIR (the image sets /models), else the
 // current directory. findModelDir picks the one model in a folder that holds only one.
@@ -106,60 +136,46 @@ try {
 } catch (err) {
   exitWithError("cannot find the model", err);
 }
-const SERVICE_NAME = process.env.SERVICE_NAME || path.basename(MODEL_DIR);
+const SERVICE_NAME = setting("service-name") || path.basename(MODEL_DIR);
 
 // Set to an empty string to switch the specific protocol off
-const V2_PATH = process.env.V2_PATH ?? `/odata/v2/${SERVICE_NAME}`;
-const V4_PATH = process.env.V4_PATH ?? `/odata/v4/${SERVICE_NAME}`;
+const V2_PATH = setting("v2-path") ?? `/odata/v2/${SERVICE_NAME}`;
+const V4_PATH = setting("v4-path") ?? `/odata/v4/${SERVICE_NAME}`;
 
 // A setting that takes a whole number; anything else stops the server
-function wholeNumber(name: string, fallback: number): number {
-  const value = Number(process.env[name] ?? fallback);
+function wholeNumber(name: Setting, fallback: number): number {
+  const text = setting(name);
+  const value = Number(text ?? fallback);
   if (!Number.isInteger(value) || value < 0)
-    exitWithError(
-      `bad ${name}`,
-      // a code: a plain message, not a stack trace
-      Object.assign(
-        new Error(`${name} must be a whole number, got '${process.env[name]}'`),
-        { code: `E${name.replace("_", "")}` },
-      ),
-    );
+    badSetting(name, `must be a whole number, got '${text}'`);
   return value;
 }
 
 // Rows generated for each entity set that has no seed file; 0 leaves those sets empty
-const MOCK_ROWS = wholeNumber("MOCK_ROWS", 20);
+const MOCK_ROWS = wholeNumber("mock-rows", 20);
 
 // The most rows a collection's response holds, with a next link to the rest; 0 sends every row
-const PAGE_SIZE = wholeNumber("PAGE_SIZE", 0);
+const PAGE_SIZE = wholeNumber("page-size", 0);
 
 // A setting that takes one of a few values; an unknown one stops the server
 function choice<T extends string>(
-  name: string,
+  name: Setting,
   values: readonly T[],
   fallback: T,
 ): T {
-  const value = (process.env[name] || fallback) as T;
+  const value = (setting(name) || fallback) as T;
   if (!values.includes(value))
-    exitWithError(
-      `bad ${name}`,
-      Object.assign(
-        new Error(
-          `${name} must be one of ${values.join(", ")}, got '${process.env[name]}'`,
-        ),
-        { code: `E${name}` },
-      ),
-    );
+    badSetting(name, `must be one of ${values.join(", ")}, got '${value}'`);
   return value;
 }
 
 // How strictly If-Match is checked: lenient (a request without one goes through), strict
 // (an update or delete without one is a 428) or off (it's ignored)
-const ETAGS = choice<ETagMode>("ETAGS", ETAG_MODES, "lenient");
+const ETAGS = choice<ETagMode>("etags", ETAG_MODES, "lenient");
 
 // How a navigation without a ReferentialConstraint is joined: guess (by naming convention)
 // or strict (never guessed: it gets a key or link set of its own, see navigations.ts)
-const JOINS = choice<JoinMode>("JOINS", JOIN_MODES, "guess");
+const JOINS = choice<JoinMode>("joins", JOIN_MODES, "guess");
 
 let app: Express;
 try {
