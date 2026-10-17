@@ -179,6 +179,29 @@ Limits:
 - A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
 - No validation besides required values on activation, no side effects, and no locks between users.
 
+## Links between entities
+
+A write can link an entity to existing ones, whatever the navigation joins on: a foreign key on either side, a key of its own or a link set (see [Navigations without a ReferentialConstraint](#navigations-without-a-referentialconstraint)).
+
+- **In a body**, V4's `Nav@odata.bind`: a URL for a single-valued navigation, a list of them for a collection, on a create or an update. An update replaces a single-valued navigation's link and adds to a collection's. V2 links on a create with a navigation that holds only references, `"Courses": [{"__metadata": {"uri": "Courses(10)"}}]`.
+
+  ```json
+  POST /odata/v4/MySrv/People
+  { "UserName": "cy", "Photo@odata.bind": "Photos(1)", "Friends@odata.bind": ["People('ann')"] }
+  ```
+
+- **One link at a time**, V4's `$ref` and V2's `$links`:
+
+  | Request                                                            | What it does                                          |
+  | ------------------------------------------------------------------ | ----------------------------------------------------- |
+  | `GET People('ann')/Photo/$ref`, `GET People('ann')/$links/Photo`   | the URL of the entity it links to, or a list of them  |
+  | `PUT People('ann')/Photo/$ref` with `{"@odata.id": "Photos(1)"}`   | links a single-valued navigation (V2: `{"uri": ...}`) |
+  | `POST Orders(1)/Lines/$ref` with `{"@odata.id": "Lines('C')"}`     | adds a link to a collection                           |
+  | `DELETE People('ann')/Photo/$ref`                                  | removes a single-valued navigation's link             |
+  | `DELETE Orders(1)/Lines('C')/$ref`, or `Lines/$ref?$id=Lines('C')` | removes one of a collection's links                   |
+
+A URL can be relative to the service (`Photos(1)`), from the server's root (`/odata/v4/MySrv/Photos(1)`) or whole, and names an entity of the navigation's target set by its key. A foreign key on the entity's side is set from it, so `"PurchaseOrder@odata.bind"` creates an item under its order, even when the order's key is part of the item's. One on the target's side is set on the target, which leaves the entity it linked to before. An unknown entity, another entity set, or a list for a single-valued navigation is a `400` with the code `InvalidReference`, and nothing changes. So is a link that can't change: one through a key (an existing item's order), removing one through a required property, and a containment or draft navigation, whose targets are created through it.
+
 ## ETags
 
 An entity set has ETags when the metadata names the properties they're made of: `Core.OptimisticConcurrency` on the set (V4, as CAP writes it for `@odata.etag`), or `ConcurrencyMode="Fixed"` on properties of its type (V2, as SAP Gateway writes it). The other protocol's `$metadata` says the same in its own terms.
@@ -212,6 +235,7 @@ An error answers in the protocol's shape: `{"error":{"code":...,"message":...}}`
 | `ETagMismatch`     | `412`  | the `If-Match` ETag has gone stale: read the entity again             |
 | `ETagRequired`     | `428`  | `ETAGS=strict`, and an update or delete sends no `If-Match`           |
 | `DeltaLinkExpired` | `410`  | a delta link no longer kept: read the entity set again                |
+| `InvalidReference` | `400`  | a link names no entity of its navigation's target, or can't change    |
 
 Any other error's code is its status's: `BadRequest` (`400`), `NotFound` (`404`), `MethodNotAllowed` (`405`), `Conflict` (`409`), `PayloadTooLarge` (`413`), `NotImplemented` (`501`) or `InternalError` (`500`).
 
@@ -231,7 +255,7 @@ UserName;FirstName;Photo_Id
 russellwhyte;Russell;1
 ```
 
-Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column. The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. For now it's filled from data files only: a write doesn't change it.
+Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column. The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. A write sets it as any link, see [Links between entities](#links-between-entities).
 
 A collection with nothing to join on, a many-to-many link such as TripPin's `Person.Friends` or Northwind's `Customer.CustomerDemographics`, gets links of its own: a link set of key pairs, named after the source's entity set and the navigation. A navigation and its partner share one. A data file fills it, and generated data links each row to up to three others:
 
