@@ -7,6 +7,7 @@
 
 import type {
   EntityType,
+  EntitySet,
   JoinPair,
   LinkSet,
   Model,
@@ -31,10 +32,11 @@ interface Join {
   links?: { set: string; from: 0 | 1 };
 }
 
-function setsByType(model: Model): Record<string, string[]> {
+// contained: with the contained sets (see resolveContainment)
+function setsByType(model: Model, contained = true): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const es of Object.values(model.entitySets))
-    (out[es.entityType] ||= []).push(es.name);
+    if (contained || !es.contained) (out[es.entityType] ||= []).push(es.name);
   return out;
 }
 
@@ -154,7 +156,67 @@ function resolveNavigationsV2(model: Model, joins: JoinMode): void {
   }
 }
 
+// Containment (ContainsTarget) whose target no entity set holds, as TripPin's Person.Trips:
+// each such navigation of an entity set's type gets an entity set of the server's own,
+// <set>-<navigation> (People-Trips), and so on down (People-Trips-PlanItems). Its type keeps
+// its parent's keys in hidden columns, named <ParentType>_<key> (Person_UserName), or as
+// the parent has them when it's contained too, so a data file fills them like any column.
+// Returns the contained set of each navigation, by "<type>/<navigation>".
+function resolveContainment(model: Model): Record<string, string> {
+  const setOf: Record<string, string> = {};
+  const bound = new Set(
+    Object.values(model.entitySets).flatMap((es) =>
+      es.bindings.map((b) => b.target),
+    ),
+  );
+  const contain = (parent: EntitySet, chain: string[]) => {
+    const type = model.entityTypes[parent.entityType];
+    for (const nav of type.navigationProperties as V4NavigationProperty[]) {
+      // CAP's DraftAdministrativeData is contained, and draft.ts's
+      if (!nav.containsTarget || isDraftNavigation(model, type, nav)) continue;
+      const targetName = nav.type.replace(/^Collection\((.+)\)$/, "$1");
+      const target = model.entityTypes[targetName];
+      const binding = parent.bindings.find((b) => b.path === nav.name);
+      // A target with an entity set of its own, or a type that would contain itself
+      if (!target || (binding && bound.has(binding.target))) continue;
+      if (chain.includes(targetName)) continue;
+      // The parent's keys as the child keeps them
+      const identity = [...(type.parentKeys ?? []), ...type.keys];
+      const columns = identity.map((k) =>
+        type.parentKeys?.includes(k) ? k : `${type.name}_${k}`,
+      );
+      for (const [i, column] of columns.entries()) {
+        const prop =
+          type.hiddenKeys?.[identity[i]] ?? type.properties[identity[i]];
+        (target.hiddenKeys ??= {})[column] = {
+          ...prop,
+          name: column,
+          nullable: true,
+        };
+        if (!(target.parentKeys ??= []).includes(column))
+          target.parentKeys.push(column);
+      }
+      const set: EntitySet = {
+        name: `${parent.name}-${nav.name}`,
+        entityType: targetName,
+        bindings: [],
+        contained: { parentSet: parent.name, navigation: nav.name },
+      };
+      model.entitySets[set.name] = set;
+      setOf[`${type.fullName}/${nav.name}`] ??= set.name;
+      model.warnings.push(
+        `navigation with an entity set of its own: ${type.name}.${nav.name} in ${set.name} (containment; a data file can fill it)`,
+      );
+      contain(set, [...chain, targetName]);
+    }
+  };
+  for (const es of Object.values(model.entitySets))
+    contain(es, [es.entityType]);
+  return setOf;
+}
+
 function resolveNavigationsV4(model: Model, joins: JoinMode): void {
+  const contained = resolveContainment(model);
   const byType = setsByType(model);
   for (const et of Object.values(model.entityTypes)) {
     et.navigations = {};
@@ -174,6 +236,27 @@ function resolveNavigationsV4(model: Model, joins: JoinMode): void {
           throw new Error(
             `${et.name}.${nav.name}: unknown target type ${targetTypeName}`,
           );
+
+        // Into a contained set: joined on its parent's keys, which it keeps (see
+        // resolveContainment)
+        const containedSet = contained[`${et.fullName}/${nav.name}`];
+        if (containedSet) {
+          const identity = [...(et.parentKeys ?? []), ...et.keys];
+          const pairs = identity.map((k): JoinPair => [
+            k,
+            et.parentKeys?.includes(k) ? k : `${et.name}_${k}`,
+          ]);
+          finishNavigation(
+            et,
+            nav,
+            targetType,
+            containedSet,
+            { dependentSide: "target", pairs, hidden: true },
+            true,
+          );
+          et.navigations[nav.name].contained = true;
+          return;
+        }
 
         let targetSet: string | undefined;
         for (const setName of byType[et.fullName] || []) {
@@ -453,14 +536,23 @@ function linkSet(
         { set: sourceSet, type: sourceType },
         back.name,
       ];
+  // A contained entity's keys include its parent's (see resolveContainment)
+  const identity = (type: EntityType) => [
+    ...(type.parentKeys ?? []),
+    ...type.keys,
+  ];
   const set: LinkSet = {
     name: `${first.set}-${ownerNav}`,
     ends: [
-      { set: first.set, keys: first.type.keys, columns: first.type.keys },
+      {
+        set: first.set,
+        keys: identity(first.type),
+        columns: identity(first.type),
+      },
       {
         set: second.set,
-        keys: second.type.keys,
-        columns: second.type.keys.map((k) => `${ownerNav}_${k}`),
+        keys: identity(second.type),
+        columns: identity(second.type).map((k) => `${ownerNav}_${k}`),
       },
     ],
   };

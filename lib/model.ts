@@ -69,6 +69,9 @@ export interface EntityType {
   // navigation without one (Photo_Id for Photo, see hiddenKey in navigations.ts): columns of
   // the rows, not properties, so no response or $metadata shows them
   hiddenKeys?: Record<string, Property>;
+  // A contained type's hidden keys that hold its parent's keys (Person_UserName for a
+  // person's trips), which, with its keys, tell its entities apart (see keyOf in service.ts)
+  parentKeys?: string[];
   // SiblingEntity and DraftAdministrativeData of a draft-enabled type (see draft.ts)
   draftNavigations?: Record<string, DraftNavigation>;
   // The sap: attributes of a V2 document, without the prefix (label, ...)
@@ -192,6 +195,9 @@ export interface Navigation {
   // Joined through a link set (see LinkSet), with no join pairs: its name, and which of its
   // ends is this navigation's source
   links?: { set: string; from: 0 | 1 };
+  // A containment navigation into a contained entity set (see EntitySet), which V2 has no
+  // place for
+  contained?: boolean;
 }
 
 // SiblingEntity or DraftAdministrativeData, which the metadata gives no join for
@@ -219,6 +225,10 @@ export interface EntitySet {
   sap?: Record<string, string>;
   // The properties its entities' ETag is made of, when it has one (see etag.ts)
   concurrency?: string[];
+  // An entity set of the server's own, for the targets of a containment navigation (see
+  // resolveContainment in navigations.ts): its parent's entity set and the navigation. It's
+  // in no service document or $metadata, and reached only through the navigation.
+  contained?: { parentSet: string; navigation: string };
 }
 
 // Common.DraftRoot / DraftNode (see parseDraftAnnotations): the actions are qualified names,

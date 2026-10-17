@@ -186,10 +186,12 @@ class Store {
         const link: Row = {};
         for (const end of set.ends) {
           const type = model.entityTypes[model.entitySets[end.set].entityType];
-          end.columns.forEach(
-            (c, i) =>
-              (link[c] = propToInternal(row[c], type.properties[end.keys[i]])),
-          );
+          // A contained type's parent keys are hidden keys (see resolveContainment)
+          end.columns.forEach((c, i) => {
+            const k = end.keys[i];
+            const prop = type.properties[k] ?? type.hiddenKeys![k];
+            link[c] = propToInternal(row[c], prop);
+          });
         }
         return link;
       });
@@ -237,8 +239,15 @@ class Store {
     return this.data[setName];
   }
 
+  // key: the type's keys, and a contained entity's parent's keys too (see keyOf in
+  // service.ts)
   matchesKey(entityType: EntityType, row: Row, key: Key): boolean {
-    return entityType.keys.every((k) => String(row[k]) === String(key[k]));
+    return (
+      entityType.keys.every((k) => String(row[k]) === String(key[k])) &&
+      (entityType.parentKeys ?? []).every(
+        (k) => !(k in key) || String(row[k]) === String(key[k]),
+      )
+    );
   }
 
   find(setName: string, entityType: EntityType, key: Key): Row | undefined {

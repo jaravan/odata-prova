@@ -171,6 +171,8 @@ function serialize(
   for (const name of Object.keys(node.expand)) svc.navigation(type, name);
   const navs = { ...type.navigations, ...type.draftNavigations };
   for (const nav of Object.values(navs)) {
+    // Containment isn't in V2 (see resolveContainment in navigations.ts)
+    if ("contained" in nav && nav.contained) continue;
     const expanded = nav.name in node.expand;
     if (!selectAll && !node.select?.has(nav.name) && !expanded) continue;
     if (expanded) {
@@ -211,7 +213,10 @@ const v2: Protocol = {
   keyLiteral,
   parseQueryOptions,
   serviceDocument(svc) {
-    return json(200, { d: { EntitySets: Object.keys(svc.model.entitySets) } });
+    const sets = Object.values(svc.model.entitySets).filter(
+      (es) => !es.contained,
+    );
+    return json(200, { d: { EntitySets: sets.map((es) => es.name) } });
   },
   collection(svc, { rows, count, nextLink }, setName, type, node) {
     checkSelect(svc, type, node);

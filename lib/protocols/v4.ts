@@ -321,11 +321,13 @@ const v4: Protocol = {
   serviceDocument(svc) {
     return json(200, {
       "@odata.context": `${svc.servicePath}/$metadata`,
-      value: Object.keys(svc.model.entitySets).map((name) => ({
-        name,
-        kind: "EntitySet",
-        url: name,
-      })),
+      value: Object.values(svc.model.entitySets)
+        .filter((es) => !es.contained)
+        .map(({ name }) => ({
+          name,
+          kind: "EntitySet",
+          url: name,
+        })),
     });
   },
   collection(

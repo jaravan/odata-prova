@@ -2,7 +2,14 @@
 // The document's V4 annotations are written as UI5's V2 model reads them (see
 // annotations-v2.ts).
 
-import type { Model, OperationView, Property, TypedElement } from "./model.ts";
+import type {
+  EntityType,
+  Model,
+  Navigation,
+  OperationView,
+  Property,
+  TypedElement,
+} from "./model.ts";
 import { CANONICAL_TO_V2 } from "./types.ts";
 import { annotationsV2 } from "./annotations-v2.ts";
 import type { AnnotationsV2 } from "./annotations-v2.ts";
@@ -94,7 +101,13 @@ interface AssociationOut {
 // The document's V4 annotations, as UI5's V2 model reads them (see annotations-v2.ts)
 function emitV2(model: Model): string {
   const annotations = annotationsV2(model);
-  const byType = setsByType(model);
+  const byType = setsByType(model, false);
+  // Containment isn't in V2: a navigation into a contained set, or from a type that only
+  // contained sets hold (see resolveContainment in navigations.ts), has no AssociationSet
+  const inV2 = (et: EntityType, nav: Navigation) =>
+    !nav.contained &&
+    !model.entitySets[nav.targetSet]?.contained &&
+    !!byType[et.fullName]?.length;
 
   // One Association per navigation pair (a navigation and its partner share it).
   const associations: AssociationOut[] = [];
@@ -106,7 +119,7 @@ function emitV2(model: Model): string {
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
       const key = `${et.fullName}/${nav.name}`;
-      if (navAssoc[key]) continue;
+      if (navAssoc[key] || !inV2(et, nav)) continue;
       const targetType = model.entityTypes[nav.targetType];
       const partner = nav.partner
         ? targetType.navigations[nav.partner]
@@ -196,6 +209,7 @@ function emitV2(model: Model): string {
       for (const p of Object.values(et.properties))
         out.push(...propertyV2(p, "        ", etag.has(p.name)));
       for (const nav of Object.values(et.navigations)) {
+        if (!inV2(et, nav)) continue;
         const { assoc, fromRole, toRole } =
           navAssoc[`${et.fullName}/${nav.name}`];
         out.push(
@@ -237,6 +251,7 @@ function emitV2(model: Model): string {
         )}" m:IsDefaultEntityContainer="true">`,
       );
       for (const es of Object.values(model.entitySets)) {
+        if (es.contained) continue;
         const a = attrs([
           ["Name", es.name],
           ["EntityType", es.entityType],

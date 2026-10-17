@@ -45,7 +45,14 @@ describe("mock data", () => {
     assert.equal(store.rows("People").length, 1); // People.json
     for (const set of ["Photos", "Airlines", "Airports"])
       assert.equal(store.rows(set).length, 5, set);
-    assert.deepEqual(store.generated, ["Photos", "Airlines", "Airports"]);
+    // The contained sets of Person.Trips and Trip.PlanItems too
+    assert.deepEqual(store.generated, [
+      "Photos",
+      "Airlines",
+      "Airports",
+      "People-Trips",
+      "People-Trips-PlanItems",
+    ]);
   });
 
   it("is the same on every start", () => {

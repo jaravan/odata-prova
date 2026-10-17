@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Containment as TripPin has it: a person's trips and a trip's plan items exist only under
+     their parent, in no entity set, and their keys are unique only under it -->
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="C" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Person">
+        <Key><PropertyRef Name="UserName"/></Key>
+        <Property Name="UserName" Type="Edm.String" Nullable="false"/>
+        <NavigationProperty Name="Trips" Type="Collection(C.Trip)" ContainsTarget="true"/>
+      </EntityType>
+      <EntityType Name="Trip">
+        <Key><PropertyRef Name="TripId"/></Key>
+        <Property Name="TripId" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <NavigationProperty Name="PlanItems" Type="Collection(C.PlanItem)" ContainsTarget="true"/>
+      </EntityType>
+      <EntityType Name="PlanItem">
+        <Key><PropertyRef Name="PlanItemId"/></Key>
+        <Property Name="PlanItemId" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="People" EntityType="C.Person"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

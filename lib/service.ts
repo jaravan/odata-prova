@@ -227,8 +227,16 @@ class ODataService {
     return { set: es, type: this.model.entityTypes[es.entityType] };
   }
 
+  // A contained entity's key is unique only under its parent (two people's trip 1001), so
+  // its parent's keys, which it keeps, are part of what tells it apart (see
+  // resolveContainment in navigations.ts), when row has them
   keyOf(entityType: EntityType, row: Row): Key {
-    return Object.fromEntries(entityType.keys.map((k) => [k, row[k]]));
+    const parents = (entityType.parentKeys ?? []).filter(
+      (k) => row[k] !== undefined,
+    );
+    return Object.fromEntries(
+      [...parents, ...entityType.keys].map((k) => [k, row[k]]),
+    );
   }
 
   // The entity's ETag, for an entity set that has them (see etag.ts)
@@ -236,6 +244,7 @@ class ODataService {
     return etagOf(this.model, setName, row);
   }
 
+  // A contained entity's is its parent's, then the navigation: People('x')/Trips(1001)
   entityUri(setName: string, entityType: EntityType, row: Row): string {
     const lit = (k: string) =>
       this.protocol.keyLiteral(row[k], entityType.properties[k]);
@@ -243,6 +252,18 @@ class ODataService {
       entityType.keys.length === 1
         ? lit(entityType.keys[0])
         : entityType.keys.map((k) => `${k}=${lit(k)}`).join(",");
+    const contained = this.model.entitySets[setName]?.contained;
+    if (contained) {
+      const parent = this.entitySet(contained.parentSet);
+      const nav = parent.type.navigations[contained.navigation];
+      const parentRow = this.store
+        .rows(contained.parentSet)
+        .find((p) =>
+          nav.join.every(([src, tgt]) => String(p[src]) === String(row[tgt])),
+        );
+      if (parentRow)
+        return `${this.entityUri(contained.parentSet, parent.type, parentRow)}/${contained.navigation}(${keyText})`;
+    }
     return `${this.servicePath}/${setName}(${keyText})`;
   }
 
@@ -308,7 +329,13 @@ class ODataService {
         501,
         `Navigation ${name} is not supported: ${reason}`,
       );
-    return type.navigations[name] || type.draftNavigations?.[name];
+    const nav = type.navigations[name];
+    if (nav?.contained && this.protocol.version === "2.0")
+      throw new HttpError(
+        404,
+        `${name} is a containment navigation, not available in OData V2`,
+      );
+    return nav || type.draftNavigations?.[name];
   }
 
   // --- Collections -----------------------------------------------------------------------
@@ -537,7 +564,8 @@ class ODataService {
         headers,
       );
     }
-    if (!this.model.entitySets[first])
+    // A contained set is reached only through its navigation (see resolveContainment)
+    if (!this.model.entitySets[first] || this.model.entitySets[first].contained)
       throw new HttpError(404, `${first} is not an entity set or operation`);
 
     // Walk: entity set, then navigation properties, keeping the current row/collection.

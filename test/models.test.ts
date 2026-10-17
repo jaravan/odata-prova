@@ -27,7 +27,9 @@ for (const name of names) {
 
     it("answers on every entity set in both versions, with data in some", async () => {
       let rows = 0;
-      for (const set of Object.keys(s.model.entitySets)) {
+      for (const set of Object.values(s.model.entitySets)
+        .filter((es) => !es.contained) // reached through their navigation
+        .map((es) => es.name)) {
         const v2 = await get(`${s.v2}/${set}`);
         const v4 = await get(`${s.v4}/${set}`);
         assert.equal(v2.status, 200, `v2 ${set}`);

@@ -15,9 +15,9 @@ const SERVICES = [
   // match key to key (every employee their own manager), get keys of their own, and the
   // many-to-many links link sets
   { dir: "real/NorthwindV4", disabledNavigations: 0 },
-  // containment: Person.Trips, and Trip's own navigations, which have no entity set to start
-  // from. Person.Photo and Flight's links get keys of their own, Person.Friends a link set
-  { dir: "real/TripPin", disabledNavigations: 3 },
+  // Person.Photo and Flight's links get keys of their own, Person.Friends and Trip.Photos
+  // link sets, and Person.Trips and Trip.PlanItems contained sets
+  { dir: "real/TripPin", disabledNavigations: 0 },
   { dir: "GatewaySrv", disabledNavigations: 0 },
 ];
 
@@ -68,7 +68,9 @@ for (const { dir, disabledNavigations } of SERVICES) {
     });
 
     it("answers on every entity set in both versions", async () => {
-      for (const set of Object.keys(s.model.entitySets))
+      for (const set of Object.values(s.model.entitySets)
+        .filter((es) => !es.contained) // reached through their navigation
+        .map((es) => es.name))
         for (const root of [s.v2, s.v4])
           assert.equal(
             (await get(`${root}/${set}`)).status,
