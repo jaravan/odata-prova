@@ -99,7 +99,13 @@ try {
 
 // Express 5 passes listen errors (eg port in use) to callback instead of throwing
 const server = app.listen(PORT, (err) => {
-  if (err) exitWithError(`cannot listen on port ${PORT}`, err);
+  if (err)
+    exitWithError(
+      (err as Error & { code?: string }).code === "EADDRINUSE"
+        ? `port ${PORT} is in use: set PORT to another one, eg PORT=4004`
+        : `cannot listen on port ${PORT}`,
+      err,
+    );
   const { port } = server.address() as AddressInfo;
   console.log(`odata-prova listening on port ${port}`);
   if (V2_PATH) console.log(`  V2: http://localhost:${port}${V2_PATH}/`);
