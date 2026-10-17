@@ -2,7 +2,8 @@ name: release
 
 # Runs on a version tag: git tag v0.1.0 && git push origin v0.1.0
 # Checks that the tag matches package.json and that the tests pass, then pushes the image
-# to GHCR for amd64 and arm64. Publishing to npm is not added yet.
+# to GHCR for amd64 and arm64, and publishes the package to npm. npm needs the repository
+# secret NPM_TOKEN: a granular access token that can publish odata-prova.
 on:
   push:
     tags: ["v*"]
@@ -10,6 +11,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write # npm provenance: the package says which workflow run built it
 
 jobs:
   release:
@@ -58,3 +60,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Last, once the image is out. prepack builds dist/; a version that's already on npm
+      # (published by hand) is left as it is
+      - run: yarn npm publish --access public --provenance --tolerate-republish
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
