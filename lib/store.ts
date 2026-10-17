@@ -186,12 +186,15 @@ class Store {
   }
 
   // Converts an incoming object into an entity. Known properties converted to their Edm
-  // type, unknown keys (and navigation payloads) dropped.
+  // type, and the hidden keys (see hiddenKey in navigations.ts) kept, unknown keys (and
+  // navigation payloads) dropped.
   normalize(entityType: EntityType, input: Record<string, unknown>): Row {
     const row: Row = {};
     for (const p of Object.values(entityType.properties)) {
       row[p.name] = propToInternal(input[p.name], p);
     }
+    for (const p of Object.values(entityType.hiddenKeys ?? {}))
+      row[p.name] = propToInternal(input[p.name], p);
     return row;
   }
 

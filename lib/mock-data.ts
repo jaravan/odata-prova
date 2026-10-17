@@ -49,7 +49,13 @@ function writeMockData(
     const data = store.rows(set);
     const file = csvSafe(type, data) ? `${set}.csv` : `${set}.json`;
     const text = file.endsWith(".csv")
-      ? toCsv(Object.keys(type.properties), data)
+      ? toCsv(
+          [
+            ...Object.keys(type.properties),
+            ...Object.keys(type.hiddenKeys ?? {}),
+          ],
+          data,
+        )
       : JSON.stringify(data, null, 2) + "\n";
     try {
       fs.mkdirSync(dataDir, { recursive: true });

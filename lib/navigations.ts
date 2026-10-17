@@ -1,7 +1,9 @@
 // Resolves each entity type's navigation properties into navigations (see model.ts): the
 // target entity set, and the join between the two sides' rows. A V2 document says it in
 // associations, a V4 document in referential constraints; without either, the join is
-// guessed from the property names (see joinByNaming), unless joins are strict.
+// guessed from the property names (see joinByNaming), unless joins are strict. A
+// single-valued navigation with no join at all gets a foreign key of its own (see
+// hiddenKey).
 
 import type {
   EntityType,
@@ -24,6 +26,7 @@ type JoinMode = (typeof JOIN_MODES)[number];
 interface Join {
   dependentSide: "source" | "target";
   pairs: JoinPair[];
+  hidden?: boolean;
 }
 
 function setsByType(model: Model): Record<string, string[]> {
@@ -49,6 +52,7 @@ function finishNavigation(
     isCollection: nav.isCollection ?? false,
     dependentSide: join.dependentSide,
     join: join.pairs,
+    ...(join.hidden ? { hidden: true } : {}),
     // Deleting a principal takes its dependents with it when they cannot exist on their
     // own, i.e. when the foreign key is part of the dependent's key (an order's items,
     // keyed by order id + position). A plain lookup reference is left alone. V4 can also
@@ -123,6 +127,13 @@ function resolveNavigationsV2(model: Model, joins: JoinMode): void {
             ]),
           };
         } else {
+          // The navigation back, on the association's other end
+          const back = (
+            targetType.navigationProperties as V2NavigationProperty[]
+          ).find(
+            (p) =>
+              p.relationship === nav.relationship && p.fromRole === nav.toRole,
+          );
           join = joinByNaming(
             model,
             et,
@@ -131,6 +142,7 @@ function resolveNavigationsV2(model: Model, joins: JoinMode): void {
             assoc.name,
             fromEnd.multiplicity === "*",
             joins,
+            fromEnd.multiplicity === "*" ? undefined : back,
           );
         }
         finishNavigation(et, nav, targetType, targetSet, join, false);
@@ -219,6 +231,7 @@ function resolveNavigationsV4(model: Model, joins: JoinMode): void {
               nav.name,
               /^Collection\(/.test(back?.type || ""),
               joins,
+              back && !/^Collection\(/.test(back.type) ? back : undefined,
             );
           }
         }
@@ -264,8 +277,10 @@ function disableOnError(
 // one row to one row. That suits a one-to-one link, but not a navigation with a "many" side
 // (an order's ID is not its items' ID) or one from a type to itself, so it is skipped there.
 // sourceIsMany: whether the source's end is "many" (V2's multiplicity, V4's partner).
-// Every join found this way is logged: it's a guess. With strict joins there is no guess,
-// and the navigation is disabled (see disableOnError).
+// Every join found this way is logged: it's a guess. With strict joins there is no guess.
+// Without a join either way, a single-valued navigation gets a key of its own, and so does a
+// collection whose navigation back (single-valued) is one (see hiddenKey); any other is
+// disabled (see disableOnError).
 function joinByNaming(
   model: Model,
   sourceType: EntityType,
@@ -274,12 +289,35 @@ function joinByNaming(
   relationshipName: string,
   sourceIsMany: boolean,
   joins: JoinMode,
+  back?: NavigationProperty,
 ): Join {
-  if (joins === "strict")
+  const own = () => {
+    if (!nav.isCollection) return hiddenKey(model, sourceType, nav, targetType);
+    if (!back) return undefined;
+    const pairs = hiddenKey(model, targetType, back, sourceType).pairs.map(
+      ([column, k]): JoinPair => [k, column],
+    );
+    return { dependentSide: "target" as const, pairs, hidden: true };
+  };
+  const logged = (join: Join | undefined) => {
+    if (join)
+      model.warnings.push(
+        `navigation with a key of its own: ${sourceType.name}.${nav.name} on ${join.pairs
+          .map(([s, t]) =>
+            join.dependentSide === "source" ? s : `${targetType.name}.${t}`,
+          )
+          .join(", ")} (no ReferentialConstraint; a data file can fill it)`,
+      );
+    return join;
+  };
+  if (joins === "strict") {
+    const join = logged(own());
+    if (join) return join;
     throw new Error(
       `${sourceType.name}.${nav.name}: no ReferentialConstraint for ${relationshipName}, ` +
         `and joins are strict (not guessed) - add one to metadata.xml`,
     );
+  }
   const many = nav.isCollection || sourceIsMany || sourceType === targetType;
   // Joins one side's whole key to the other's: the props, all of `type`'s keys
   const isWholeKey = (type: EntityType, props: string[]) =>
@@ -337,10 +375,37 @@ function joinByNaming(
     ]);
     if (fk) return found("source", [[fk, k]]);
   }
+  const join = logged(own());
+  if (join) return join;
   throw new Error(
     `${sourceType.name}.${nav.name}: cannot derive join condition for ${relationshipName} - ` +
       `add a ReferentialConstraint to metadata.xml`,
   );
+}
+
+// A single-valued navigation that nothing joins (TripPin's Person.Photo) gets a foreign key
+// of its own: a hidden column for each of the target's keys, <nav>_<key> (Photo_Id), the
+// name joinByNaming would have taken. A data file fills it in that column, and generated
+// rows point it at real ones, like any foreign key. It's not a guess: the server keeps it.
+// Its partner, a collection (an order's Items, for an item's Order), joins back on it.
+function hiddenKey(
+  model: Model,
+  sourceType: EntityType,
+  nav: NavigationProperty,
+  targetType: EntityType,
+): Join {
+  if (!targetType.keys.length)
+    throw new Error(
+      `${sourceType.name}.${nav.name}: ${targetType.name} has no key to point at`,
+    );
+  const pairs = targetType.keys.map((k): JoinPair => [`${nav.name}_${k}`, k]);
+  for (const [column, k] of pairs)
+    (sourceType.hiddenKeys ??= {})[column] = {
+      ...targetType.properties[k],
+      name: column,
+      nullable: true,
+    };
+  return { dependentSide: "source", pairs, hidden: true };
 }
 
 // Marks navigations that are each other's inverse, so V2 emission can share one

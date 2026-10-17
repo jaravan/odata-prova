@@ -86,6 +86,9 @@ interface AssociationOut {
   ends: { role: string; type: string; multiplicity: string; set: string }[];
   principal: { role: string; properties: string[] };
   dependent: { role: string; properties: string[] };
+  // Joined on a hidden key (see hiddenKey in navigations.ts): no ReferentialConstraint, as
+  // the document has no property for it
+  hidden?: boolean;
 }
 
 // The document's V4 annotations, as UI5's V2 model reads them (see annotations-v2.ts)
@@ -118,7 +121,7 @@ function emitV2(model: Model): string {
         : nav.isCollection
           ? "1"
           : "*";
-      const toMultiplicity = nav.isCollection ? "*" : "1";
+      const toMultiplicity = nav.isCollection ? "*" : nav.hidden ? "0..1" : "1";
       const principalIsSource = nav.dependentSide === "target";
       const assoc: AssociationOut = {
         name,
@@ -144,6 +147,7 @@ function emitV2(model: Model): string {
           role: principalIsSource ? toRole : fromRole,
           properties: nav.join.map(([s, t]) => (principalIsSource ? t : s)),
         },
+        hidden: nav.hidden,
       };
       associations.push(assoc);
       navAssoc[key] = { assoc, fromRole, toRole };
@@ -211,16 +215,18 @@ function emitV2(model: Model): string {
               end.type,
             )}" Multiplicity="${end.multiplicity}"/>`,
           );
-        out.push("        <ReferentialConstraint>");
-        out.push(`          <Principal Role="${assoc.principal.role}">`);
-        for (const p of assoc.principal.properties)
-          out.push(`            <PropertyRef Name="${esc(p)}"/>`);
-        out.push("          </Principal>");
-        out.push(`          <Dependent Role="${assoc.dependent.role}">`);
-        for (const p of assoc.dependent.properties)
-          out.push(`            <PropertyRef Name="${esc(p)}"/>`);
-        out.push("          </Dependent>");
-        out.push("        </ReferentialConstraint>");
+        if (!assoc.hidden) {
+          out.push("        <ReferentialConstraint>");
+          out.push(`          <Principal Role="${assoc.principal.role}">`);
+          for (const p of assoc.principal.properties)
+            out.push(`            <PropertyRef Name="${esc(p)}"/>`);
+          out.push("          </Principal>");
+          out.push(`          <Dependent Role="${assoc.dependent.role}">`);
+          for (const p of assoc.dependent.properties)
+            out.push(`            <PropertyRef Name="${esc(p)}"/>`);
+          out.push("          </Dependent>");
+          out.push("        </ReferentialConstraint>");
+        }
         out.push("      </Association>");
       }
       out.push(

@@ -48,6 +48,10 @@ export interface EntityType {
   navigations: Record<string, Navigation>;
   // Declared navigations the server can't join, with the reason (requests using one get a 501)
   disabledNavigations?: Record<string, string>;
+  // Foreign keys the metadata doesn't have, which the server keeps for a single-valued
+  // navigation without one (Photo_Id for Photo, see hiddenKey in navigations.ts): columns of
+  // the rows, not properties, so no response or $metadata shows them
+  hiddenKeys?: Record<string, Property>;
   // SiblingEntity and DraftAdministrativeData of a draft-enabled type (see draft.ts)
   draftNavigations?: Record<string, DraftNavigation>;
   // The sap: attributes of a V2 document, without the prefix (label, ...)
@@ -165,6 +169,8 @@ export interface Navigation {
   // children inside a draft tree (also joined on IsActiveEntity), "active" from outside the
   // tree (reaches the active entities only)
   draft?: "composition" | "active";
+  // Joined on hidden key columns (see hiddenKeys), which no $metadata has a constraint for
+  hidden?: boolean;
 }
 
 // SiblingEntity or DraftAdministrativeData, which the metadata gives no join for

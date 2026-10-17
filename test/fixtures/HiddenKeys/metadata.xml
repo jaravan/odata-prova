@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="H" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <!-- Navigations without a ReferentialConstraint, and no property to guess one from -->
+      <EntityType Name="Person">
+        <Key><PropertyRef Name="UserName"/></Key>
+        <Property Name="UserName" Type="Edm.String" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <NavigationProperty Name="Photo" Type="H.Photo"/>
+      </EntityType>
+      <EntityType Name="Photo">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Int64" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+      </EntityType>
+      <EntityType Name="Order">
+        <Key><PropertyRef Name="Number"/></Key>
+        <Property Name="Number" Type="Edm.Int32" Nullable="false"/>
+        <NavigationProperty Name="Lines" Type="Collection(H.Line)" Partner="Order"/>
+      </EntityType>
+      <EntityType Name="Line">
+        <Key><PropertyRef Name="Code"/></Key>
+        <Property Name="Code" Type="Edm.String" Nullable="false"/>
+        <NavigationProperty Name="Order" Type="H.Order" Partner="Lines"/>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="People" EntityType="H.Person">
+          <NavigationPropertyBinding Path="Photo" Target="Photos"/>
+        </EntitySet>
+        <EntitySet Name="Photos" EntityType="H.Photo"/>
+        <EntitySet Name="Orders" EntityType="H.Order">
+          <NavigationPropertyBinding Path="Lines" Target="Lines"/>
+        </EntitySet>
+        <EntitySet Name="Lines" EntityType="H.Line">
+          <NavigationPropertyBinding Path="Order" Target="Orders"/>
+        </EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

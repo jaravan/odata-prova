@@ -137,7 +137,8 @@ function emitV4(model: Model): string {
           ["Partner", nav.partner],
         ]);
         const children: string[] = [];
-        if (nav.dependentSide === "source") {
+        // A hidden key (see hiddenKey in navigations.ts) has no property to constrain
+        if (nav.dependentSide === "source" && !nav.hidden) {
           for (const [src, tgt] of nav.join)
             children.push(
               `          <ReferentialConstraint Property="${esc(

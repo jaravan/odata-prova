@@ -50,9 +50,10 @@ for (const version of ["V2", "V4"]) {
   });
 }
 
-// JOINS=strict: no guessing. The same models' navigations are disabled instead, with the reason.
+// JOINS=strict: no guessing. The same models' navigations get a key of their own instead
+// (Item.Order_ID), which the data files' OrderID column doesn't fill: no link until one does.
 for (const version of ["V2", "V4"]) {
-  describe(`strict joins: a navigation without a ReferentialConstraint is disabled (${version} metadata)`, () => {
+  describe(`strict joins: a navigation without a ReferentialConstraint gets a key of its own (${version} metadata)`, () => {
     let s: TestServer;
     before(
       async () =>
@@ -63,28 +64,21 @@ for (const version of ["V2", "V4"]) {
     );
     after(() => s.close());
 
-    it("guesses no join, and logs each navigation it disables", () => {
+    it("guesses no join, and logs the key each navigation gets", () => {
       const order = s.model.entityTypes["S.Order"];
-      assert.equal(order.navigations.Items, undefined);
-      assert.match(order.disabledNavigations!.Items, /joins are strict/);
-      assert.equal(s.model.entityTypes["S.Item"].navigations.Order, undefined);
-      assert.equal(s.model.warnings.length, 2);
-      for (const w of s.model.warnings)
-        assert.match(
-          w,
-          /^navigation disabled: (Order\.Items|Item\.Order): no ReferentialConstraint for .*, and joins are strict \(not guessed\) - add one to metadata\.xml$/,
-        );
+      assert.deepEqual(order.navigations.Items.join, [["ID", "Order_ID"]]);
+      assert.deepEqual(s.model.entityTypes["S.Item"].navigations.Order.join, [
+        ["Order_ID", "ID"],
+      ]);
+      assert.deepEqual(s.model.warnings.sort(), [
+        "navigation with a key of its own: Item.Order on Order_ID (no ReferentialConstraint; a data file can fill it)",
+        "navigation with a key of its own: Order.Items on Item.Order_ID (no ReferentialConstraint; a data file can fill it)",
+      ]);
     });
 
-    it("a request through the navigation is a 501 saying why; the entities still work", async () => {
-      for (const url of [
-        `${s.v4}/Orders(1)/Items`,
-        `${s.v4}/Orders?$expand=Items`,
-      ]) {
-        const r = await get(url);
-        assert.equal(r.status, 501);
-        assert.match(r.body.error.message, /add one to metadata\.xml/);
-      }
+    it("links nothing until a data file fills the key; the entities still work", async () => {
+      assert.deepEqual((await get(`${s.v4}/Orders(1)/Items`)).body.value, []);
+      assert.equal((await get(`${s.v4}/Items(1)/Order`)).status, 204);
       assert.equal((await get(`${s.v4}/Items`)).body.value.length, 3);
     });
   });
