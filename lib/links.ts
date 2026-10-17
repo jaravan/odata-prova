@@ -46,6 +46,22 @@ function addLink(
   store.insert(nav.links!.set, link);
 }
 
+// Unlinks row from target
+function removeLink(
+  model: Model,
+  store: Store,
+  nav: Navigation,
+  row: Row,
+  target: Row,
+): void {
+  const [from, to] = endsOf(model, nav);
+  const links = store.rows(nav.links!.set);
+  const kept = links.filter(
+    (l) => !(holds(l, from, row) && holds(l, to, target)),
+  );
+  links.splice(0, Infinity, ...kept);
+}
+
 // Removes the links of a row of the entity set that is being deleted
 function unlink(model: Model, store: Store, setName: string, row: Row): void {
   for (const set of Object.values(model.linkSets))
@@ -56,4 +72,4 @@ function unlink(model: Model, store: Store, setName: string, row: Row): void {
       }
 }
 
-export { linkedRows, addLink, unlink };
+export { linkedRows, addLink, removeLink, unlink };

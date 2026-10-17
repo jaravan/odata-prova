@@ -437,6 +437,18 @@ const v4: Protocol = {
   nullEntity() {
     return { status: 204 };
   },
+  references(svc, uris, single) {
+    const context = `${svc.servicePath}/$metadata#`;
+    if (single)
+      return json(200, {
+        "@odata.context": `${context}$ref`,
+        "@odata.id": uris[0],
+      });
+    return json(200, {
+      "@odata.context": `${context}Collection($ref)`,
+      value: uris.map((uri) => ({ "@odata.id": uri })),
+    });
+  },
   // Non-entity result of an operation: a complex value is the body; a primitive or a
   // collection is in "value"
   operationValue(svc, op, returnType, value, opts) {

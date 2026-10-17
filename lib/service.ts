@@ -18,6 +18,7 @@ import { applyQuery } from "./apply-query.ts";
 import { applyCompute } from "./compute.ts";
 import { DeltaTokens, deltaChanges, type Removed } from "./delta.ts";
 import { addLink, linkedRows } from "./links.ts";
+import { link, resolveReference, unlink } from "./references.ts";
 import { applyTransformations, holdsEntities } from "./aggregation.ts";
 import { isHierarchyRow } from "./hierarchy.ts";
 import { create, update, deleteEntity } from "./writes.ts";
@@ -97,6 +98,9 @@ export interface Protocol extends LiteralSyntax {
   ): ODataResponse;
   // A single-valued navigation or operation result that is empty
   nullEntity(): ODataResponse;
+  // The links a navigation has, as $ref (V4) or $links (V2) reads them: the URLs of the
+  // entities, one (single) or a list
+  references(svc: ODataService, uris: string[], single: boolean): ODataResponse;
   // A non-entity operation result
   operationValue(
     svc: ODataService,
@@ -470,6 +474,80 @@ class ODataService {
     );
   }
 
+  // --- References ------------------------------------------------------------------------
+
+  // The links of parent.row's navigation (see references.ts): GET reads them, PUT sets a
+  // single-valued navigation's, POST adds one to a collection's, DELETE removes one. target:
+  // the entity the path names (Nav(key), or a single-valued navigation's), keyed: by a key.
+  // A link to set is the body's @odata.id (V4) or uri (V2); one to remove from a
+  // collection, V4's $id too.
+  referenceRequest(
+    method: string,
+    parent: { row: Row; type: EntityType; nav: AnyNavigation; setName: string },
+    target: Row | undefined,
+    keyed: boolean,
+    body: unknown,
+    query: Record<string, unknown>,
+  ): ODataResponse {
+    const { row, type, nav, setName } = parent;
+    if (!("dependentSide" in nav))
+      throw new HttpError(
+        400,
+        `${nav.name} is the draft's own: it has no links`,
+      );
+    const targetType = this.entitySet(nav.targetSet).type;
+    const url = (field: string) =>
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>)[field]
+        : undefined;
+    const given = () =>
+      resolveReference(
+        this,
+        url(this.protocol.version === "4.0" ? "@odata.id" : "uri"),
+        nav,
+      );
+    switch (method) {
+      case "GET": {
+        const rows = target ? [target] : this.related(row, type, nav).rows;
+        return this.protocol.references(
+          this,
+          rows.map((r) => this.entityUri(nav.targetSet, targetType, r)),
+          !nav.isCollection || keyed,
+        );
+      }
+      case "PUT":
+        if (nav.isCollection)
+          throw new HttpError(405, `POST a link to the collection ${nav.name}`);
+        link(this, setName, type, row, nav, given());
+        return { status: 204 };
+      case "POST":
+        if (!nav.isCollection)
+          throw new HttpError(405, `PUT the link of ${nav.name}`);
+        link(this, setName, type, row, nav, given());
+        return { status: 204 };
+      case "DELETE": {
+        if (!nav.isCollection) {
+          unlink(this, setName, type, row, nav);
+          return { status: 204 };
+        }
+        const which = keyed
+          ? target
+          : query.$id !== undefined
+            ? resolveReference(this, query.$id, nav)
+            : undefined;
+        if (!which)
+          throw new HttpError(
+            400,
+            `Name the link to remove: ${nav.name}(key)/$ref, or $id`,
+          );
+        unlink(this, setName, type, row, nav, which);
+        return { status: 204 };
+      }
+      default:
+        throw new HttpError(405, `${method} not allowed on links`);
+    }
+  }
+
   // --- Dispatch --------------------------------------------------------------------------
 
   dispatch(
@@ -542,6 +620,22 @@ class ODataService {
       wantValue = true;
       segments.pop();
     }
+    // The links of a navigation rather than its entities: V4's Nav/$ref, V2's $links/Nav
+    let wantRefs = false;
+    if (protocol.version === "4.0" && segments.at(-1)?.name === "$ref") {
+      wantRefs = true;
+      segments.pop();
+    }
+    const linksAt = segments.findIndex((s) => s.name === "$links");
+    if (protocol.version === "2.0" && linksAt !== -1) {
+      if (linksAt === 0 || linksAt !== segments.length - 2)
+        throw new HttpError(
+          400,
+          "$links goes between an entity and a navigation",
+        );
+      wantRefs = true;
+      segments.splice(linksAt, 1);
+    }
 
     // Operation imports: /Name, /Name(a=1) (V4 functions), /Name?a=1 (V2)
     const first = segments[0].name;
@@ -582,8 +676,8 @@ class ODataService {
     const key = parseKey(segments[0].keyText, type, this.protocol);
     // When POSTing to Parent(key)/Nav
     let parentForCreate:
-      { row: Row; type: EntityType; nav: AnyNavigation } | undefined =
-      undefined;
+      | { row: Row; type: EntityType; nav: AnyNavigation; setName: string }
+      | undefined = undefined;
     if (key) {
       row = this.store.find(setName, type, key);
       if (!row) throw new HttpError(404, `${type.name} not found`);
@@ -626,6 +720,11 @@ class ODataService {
             404,
             `${seg.name} is not a property or navigation of ${type.name}`,
           );
+        if (wantRefs)
+          throw new HttpError(
+            400,
+            `${seg.name} is a property, not a navigation`,
+          );
         if (method !== "GET") throw new HttpError(405, "Method not allowed");
         if (q.apply)
           throw new HttpError(
@@ -650,7 +749,7 @@ class ODataService {
       if (nav.draft === "admin" && method !== "GET")
         throw new HttpError(405, `${nav.name} is read-only`);
       const related = this.related(row, type, nav);
-      parentForCreate = { row, type, nav };
+      parentForCreate = { row, type, nav, setName };
       setName = nav.targetSet;
       type = related.type;
       rows = related.rows;
@@ -664,6 +763,19 @@ class ODataService {
         row = rows[0];
         if (!row && method === "GET") return protocol.nullEntity();
       }
+    }
+
+    if (wantRefs) {
+      if (!parentForCreate || segments.length < 2)
+        throw new HttpError(400, "Links are a navigation's: Set(key)/Nav/$ref");
+      return this.referenceRequest(
+        method,
+        parentForCreate,
+        row,
+        !!segments.at(-1)!.keyText,
+        body,
+        query,
+      );
     }
 
     if (q.deltatoken !== undefined) {

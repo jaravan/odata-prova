@@ -240,6 +240,10 @@ const v2: Protocol = {
   nullEntity() {
     return json(200, { d: null });
   },
+  references(svc, uris, single) {
+    if (single) return json(200, { d: { uri: uris[0] } });
+    return json(200, { d: { results: uris.map((uri) => ({ uri })) } });
+  },
   // Non-entity result of a function import, as SAP Gateway sends it:
   // { d: { <FunctionName>: value } }, or { d: { results: [...] } } for a collection
   operationValue(svc, op, returnType, value) {

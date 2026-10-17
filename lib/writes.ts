@@ -1,8 +1,9 @@
 // Creates, updates and deletes entities in the store: required values, deep insert and its
-// rollback, and cascading deletes. Drafts write through here too (see draft.ts).
+// rollback, links to existing entities (see references.ts), and cascading deletes. Drafts
+// write through here too (see draft.ts).
 
 import { propToInternal } from "./types.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { renewETag } from "./etag.ts";
 import type {
   AnyNavigation,
@@ -10,13 +11,20 @@ import type {
   EntityType,
   Key,
   Model,
+  Navigation,
   Row,
 } from "./model.ts";
 import type { Store } from "./store.ts";
 import { addLink, unlink } from "./links.ts";
+import {
+  changeable,
+  link,
+  resolveReference,
+  type ReferenceHost,
+} from "./references.ts";
 
 // What the writes use of the service (the ODataService in service.ts)
-export interface WriteHost {
+export interface WriteHost extends ReferenceHost {
   model: Model;
   store: Store;
   entitySet(name: string): { set: EntitySet; type: EntityType };
@@ -26,6 +34,69 @@ export interface WriteHost {
     type: EntityType,
     nav: AnyNavigation,
   ): { type: EntityType; rows: Row[] };
+}
+
+// V2's reference to an entity in a body: {"__metadata": {"uri": "Photos(2)"}} and nothing else
+function isUri(value: unknown): value is { __metadata: { uri: string } } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  const meta = (value as { __metadata?: { uri?: unknown } }).__metadata;
+  return keys.length === 1 && typeof meta?.uri === "string";
+}
+
+// The links a body sets to existing entities: Nav@odata.bind (V4: a URL, or a list of them
+// for a collection), or, in a V2 create, a navigation holding only references. field: the
+// body's field the link came from.
+function bindsOf(
+  svc: WriteHost,
+  type: EntityType,
+  fields: Record<string, unknown>,
+): { field: string; nav: Navigation; targets: Row[] }[] {
+  const out: { field: string; nav: Navigation; targets: Row[] }[] = [];
+  for (const [field, value] of Object.entries(fields)) {
+    const bind = /^(.+)@odata\.bind$/.exec(field);
+    let name: string, urls: unknown;
+    if (bind) [name, urls] = [bind[1], value];
+    else {
+      // V2: {"Nav": {"__metadata": {"uri": ...}}}, or a list (or {results}) of them
+      const list = Array.isArray(value)
+        ? value
+        : (value as { results?: unknown[] } | null)?.results;
+      if (!own(type.navigations, field)) continue;
+      if (isUri(value)) [name, urls] = [field, value.__metadata.uri];
+      else if (Array.isArray(list) && list.length && list.every(isUri))
+        [name, urls] = [field, list.map((u) => u.__metadata.uri)];
+      else continue;
+    }
+    const nav = own(type.navigations, name);
+    if (!nav)
+      throw new HttpError(
+        400,
+        `${name} is not a navigation of ${type.name}`,
+        "InvalidReference",
+      );
+    changeable(type, nav);
+    if (nav.isCollection !== Array.isArray(urls))
+      throw new HttpError(
+        400,
+        `${field} must be ${nav.isCollection ? "a list of URLs" : "one URL"}`,
+        "InvalidReference",
+      );
+    const targets = (Array.isArray(urls) ? urls : [urls]).map((url: unknown) =>
+      resolveReference(svc, url, nav),
+    );
+    out.push({ field, nav, targets });
+  }
+  return out;
+}
+
+// A link's foreign key on the entity's own side, as values to create it with
+function boundValues(binds: ReturnType<typeof bindsOf>): Row {
+  const values: Row = {};
+  for (const { nav, targets } of binds)
+    if (!nav.links && nav.dependentSide === "source")
+      for (const [src, tgt] of nav.join) values[src] = targets[0][tgt];
+  return values;
 }
 
 // A Nullable="false" property a write leaves null is a 400. Keys are checked on their own,
@@ -95,7 +166,14 @@ function insertTree(
   if (!body || typeof body !== "object")
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
-  const row = svc.store.normalize(entityType, { ...body, ...presetValues });
+  // Links to existing entities: a foreign key on this side before the required values are
+  // checked, the others once the entity exists
+  const binds = bindsOf(svc, entityType, fields);
+  const row = svc.store.normalize(entityType, {
+    ...body,
+    ...boundValues(binds),
+    ...presetValues,
+  });
   for (const k of entityType.keys) {
     if (row[k] === null)
       throw new HttpError(
@@ -120,7 +198,7 @@ function insertTree(
   // in. V4 sends arrays, V2 either arrays or { results: [...] }.
   for (const nav of Object.values(entityType.navigations)) {
     const payload = fields[nav.name];
-    if (!payload) continue;
+    if (!payload || binds.some((b) => b.field === nav.name)) continue;
     const children: unknown[] = nav.isCollection
       ? Array.isArray(payload)
         ? payload
@@ -143,6 +221,10 @@ function insertTree(
       if (nav.links) addLink(svc.model, svc.store, nav, row, made);
     }
   }
+  for (const { nav, targets } of binds)
+    if (nav.links || nav.dependentSide === "target")
+      for (const target of targets)
+        link(svc, setName, entityType, row, nav, target);
   return row;
 }
 
@@ -170,7 +252,15 @@ function update(
     else if (replace) changes[p.name] = propToInternal(undefined, p);
   }
   if (!draft) checkRequired(entityType, changes, Object.keys(changes), false);
-  return Object.assign(row, changes);
+  // Links to existing entities: a single-valued navigation's instead of the one before, a
+  // collection's besides the others. Resolved before anything changes, so a bad one changes
+  // nothing.
+  const binds = bindsOf(svc, entityType, fields);
+  Object.assign(row, changes);
+  for (const { nav, targets } of binds)
+    for (const target of targets)
+      link(svc, setName, entityType, row, nav, target);
+  return row;
 }
 
 // deleting: the rows this DELETE is already removing. Cascades can lead back to one (a
