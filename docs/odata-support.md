@@ -207,6 +207,16 @@ Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` w
 
 A navigation without a `ReferentialConstraint` (on either side) is joined by naming: on the source's key names when the target has them (an item keyed by `SalesOrder` + `ItemNo` under a sales order keyed by `SalesOrder`), or on a foreign key named after the other side (`Item.OrderID`, `Item.Order_ID`, CAP's `author_ID`). Each such join is logged as `navigation joined by naming: ...`, since it's a guess. A match that would join two types' whole keys to each other (an order's `ID` to its items' `ID`) is only taken for a one-to-one link, never for one with a "many" side or from a type to itself.
 
-A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none: such a navigation is disabled instead, as below, with `add one to metadata.xml` as the reason. A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner in either mode.
+A navigation with nothing to join on, such as TripPin's `Person.Photo`, gets a key of its own: a hidden column for each of the target's keys, named `<Navigation>_<Key>` (`Photo_Id`), the name a guess would have looked for. A data file fills it like any other column, and generated rows point it at real ones:
 
-A navigation the server can't join (for example a many-to-many link without a `ReferentialConstraint`) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
+```
+data/People.csv
+UserName;FirstName;Photo_Id
+russellwhyte;Russell;1
+```
+
+Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column. The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. For now it's filled from data files only: a write doesn't change it.
+
+A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none: such a navigation gets a key of its own instead, which links nothing until a data file fills it, or is disabled as below when it can't have one. A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner in either mode.
+
+A navigation the server can't join (for now, a many-to-many link, a collection with no navigation back, or a contained one) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.

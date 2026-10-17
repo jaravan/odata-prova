@@ -57,7 +57,7 @@ That is the package's whole API: `odata-prova` exports `createApp`, `findModelDi
 
 - **Draft validation** - drafts are activated as they are: no validation messages, side effects, or locks between users.
 - **Richer operation rules** - rules can only set fixed values; conditions, computed values or creating entities would need more.
-- **Navigations without foreign keys** - a navigation is a join between property values, so one the metadata gives no columns for is disabled: a single-valued link with no foreign key (TripPin's `Person.Photo`), a many-to-many link (`Person.Friends`), or a contained target (`ContainsTarget`, `Person.Trips`). Hidden foreign-key properties, filled from a seed column such as `Photo_Id`, would turn the first into an ordinary join; containment would also need an internal entity set keyed by the parent, exposed in V2 as a regular set, and many-to-many a link set between the two sides.
+- **Navigations without foreign keys** - a single-valued link with no foreign key (TripPin's `Person.Photo`) gets a hidden key of its own, but a many-to-many link (`Person.Friends`), a collection with no navigation back (`Trip.Photos`) and a contained target (`ContainsTarget`, `Person.Trips`) are disabled. Many-to-many needs a link set between the two sides; containment an internal entity set keyed by the parent, exposed in V2 as a regular set.
 - **Persistent storage** - swap the in-memory `Store` for a real database.
 
 ## References
