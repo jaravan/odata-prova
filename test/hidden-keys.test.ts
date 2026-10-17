@@ -72,6 +72,12 @@ describe("a navigation with a key of its own", () => {
     assert.deepEqual(again.navigations.Photo.join, [["Photo_Id", "Id"]]);
   });
 
+  it("doesn't stop a create, which links nothing yet", async () => {
+    const r = await send("POST", `${s.v4}/People`, { UserName: "cy" });
+    assert.equal(r.status, 201);
+    assert.equal((await get(`${s.v4}/People('cy')/Photo`)).status, 204);
+  });
+
   it("keeps its value through a PATCH and a PUT", async () => {
     assert.equal(
       (await send("PATCH", `${s.v4}/People('ann')`, { Name: "Anna" })).status,

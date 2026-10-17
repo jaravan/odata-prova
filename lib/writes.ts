@@ -41,7 +41,8 @@ function checkRequired(
   const settable = creating ? "creatable" : "updatable";
   for (const name of names) {
     const p = entityType.properties[name];
-    if (p.nullable || entityType.keys.includes(name)) continue;
+    // A hidden key (see hiddenKey in navigations.ts) is the server's, never required
+    if (!p || p.nullable || entityType.keys.includes(name)) continue;
     if (p.computed || p.sap?.[settable] === "false") continue;
     if (row[name] === null)
       throw new HttpError(400, `Property ${name} is required`);
