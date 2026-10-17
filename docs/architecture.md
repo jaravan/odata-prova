@@ -16,9 +16,9 @@ flowchart LR
         direction LR
         REQ(["HTTP request"]) --> APP["app.ts (Express)"]
         APP -- "POST .../$batch" --> BATCH["batch.ts"] --> SVC
-        APP -- "everything else" --> SVC["ODataService.dispatch()"]
+        APP -- "everything else" --> SVC["ODataService.dispatch()<br/>+ dispatch.ts"]
         SVC -- "$filter, $orderby, $expand..." --> QF["query.ts, filter.ts<br/>+ apply-query.ts"]
-        SVC -- "create, update, delete" --> WR["writes.ts"]
+        SVC -- "create, update, delete, links" --> WR["writes.ts<br/>+ references.ts"]
         SVC -- "actions, functions" --> OPS["operations.ts"]
         SVC -- "parse/serialize" --> PROTO["protocol module<br/>(v2.ts or v4.ts)"]
         PROTO --> RES(["HTTP response"])
@@ -28,7 +28,23 @@ flowchart LR
     SVC -- "read/write rows" --> ST
 ```
 
-One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `service.ts` walks the resource path and follows navigations, protocol-agnostically, handing each part of the work to its own module: the path and its keys to `resource-path.ts`, query options to `apply-query.ts`, creates, updates and deletes to `writes.ts`, actions and functions to `operations.ts`, and drafts to `draft.ts`.
+One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `dispatch.ts` walks the resource path and follows navigations, protocol-agnostically, and hands each part of the work to its own module. `service.ts` keeps what they all share: the model's lookups, navigations, and a collection's response.
+
+| Module                                                                           | What it does                                                        |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `app.ts`, `batch.ts`                                                             | the Express app: routes, CORS, `$batch`, errors outside the service |
+| `service.ts`, `dispatch.ts`                                                      | a request from its path to its answer                               |
+| `protocol.ts`, `protocols/v2.ts`, `protocols/v4.ts`                              | each protocol's literals, query options and responses               |
+| `metadata.ts`, `navigations.ts`, `operation-views.ts`                            | reading `metadata.xml` into the model                               |
+| `emit.ts`, `emit-v2.ts`, `emit-v4.ts`, `annotations-v2.ts`, `sap-annotations.ts` | the `$metadata` of the protocol the document wasn't written in      |
+| `resource-path.ts`, `query.ts`                                                   | the path and its keys, the query options                            |
+| `filter.ts`, `apply-query.ts`, `compute.ts`                                      | `$filter`, `$orderby`, `$search`, `$top`, `$skip`; `$compute`       |
+| `apply-parse.ts`, `aggregation.ts`, `aggregates.ts`, `hierarchy.ts`              | `$apply`: parsing, running, aggregate values, hierarchies           |
+| `paging.ts`, `delta.ts`                                                          | server-driven paging, delta links                                   |
+| `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets        |
+| `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                |
+| `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows: data files, generated mock data                           |
+| `types.ts`, `model.ts`                                                           | Edm values, the model's types                                       |
 
 The sources are TypeScript, in `lib/`; `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
