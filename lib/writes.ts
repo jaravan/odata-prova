@@ -45,7 +45,11 @@ function checkRequired(
     if (!p || p.nullable || entityType.keys.includes(name)) continue;
     if (p.computed || p.sap?.[settable] === "false") continue;
     if (row[name] === null)
-      throw new HttpError(400, `Property ${name} is required`);
+      throw new HttpError(
+        400,
+        `Property ${name} is required`,
+        "RequiredProperty",
+      );
   }
 }
 
@@ -94,11 +98,19 @@ function insertTree(
   const row = svc.store.normalize(entityType, { ...body, ...presetValues });
   for (const k of entityType.keys) {
     if (row[k] === null)
-      throw new HttpError(400, `Key property ${k} is required`);
+      throw new HttpError(
+        400,
+        `Key property ${k} is required`,
+        "RequiredProperty",
+      );
   }
   if (!draft) checkRequired(entityType, row, Object.keys(row), true);
   if (svc.store.find(setName, entityType, svc.keyOf(entityType, row))) {
-    throw new HttpError(409, `${entityType.name} with this key already exists`);
+    throw new HttpError(
+      409,
+      `${entityType.name} with this key already exists`,
+      "DuplicateKey",
+    );
   }
   renewETag(svc.model, setName, entityType, row);
   svc.store.insert(setName, row);

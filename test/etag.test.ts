@@ -52,6 +52,7 @@ describe("ETags (Core.OptimisticConcurrency, V4 document, strict)", () => {
   it("an update or delete without If-Match -> 428, and nothing changes", async () => {
     const patch = await send("PATCH", book(2), { title: "Changed" });
     assert.equal(patch.status, 428);
+    assert.equal(patch.body.error.code, "ETagRequired");
     assert.match(patch.body.error.message, /If-Match/);
     const del = await send("DELETE", book(2));
     assert.equal(del.status, 428);
@@ -80,6 +81,7 @@ describe("ETags (Core.OptimisticConcurrency, V4 document, strict)", () => {
       { "if-match": before },
     );
     assert.equal(stale.status, 412);
+    assert.equal(stale.body.error.code, "ETagMismatch");
     assert.equal(
       (await get(book(1))).body.title,
       "Wuthering Heights (2nd ed.)",

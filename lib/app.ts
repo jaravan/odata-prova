@@ -295,7 +295,8 @@ function createApp({
           req.path.startsWith(`${s.servicePath}/`),
       ) || services[0];
     const protocol = service?.protocol || protocols.v4;
-    sendResult(res, protocol, protocol.error(status ?? 500, err.message));
+    const code = err instanceof HttpError ? err.code : undefined;
+    sendResult(res, protocol, protocol.error(status ?? 500, err.message, code));
   };
   app.use(onError);
 

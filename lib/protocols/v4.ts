@@ -22,6 +22,7 @@ import {
   splitTopLevel,
   parseInt10,
   rejectUnsupported,
+  errorCode,
 } from "../query.ts";
 import { parseApply } from "../aggregation.ts";
 import { parseCompute } from "../compute.ts";
@@ -459,7 +460,7 @@ const v4: Protocol = {
       opts,
     );
   },
-  error(status, message, code = "MOCK") {
+  error(status, message, code = errorCode(status)) {
     return json(status, { error: { code, message } });
   },
 };

@@ -70,7 +70,7 @@ function specialFloat(value: unknown): string | undefined {
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
 // or as something the type can't hold.
 function invalid(value: unknown, type: string): HttpError {
-  return new HttpError(400, `Invalid ${type} value: ${value}`);
+  return new HttpError(400, `Invalid ${type} value: ${value}`, "InvalidValue");
 }
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
@@ -145,12 +145,16 @@ function propToInternal(value: unknown, prop: Property): PropertyValue {
     try {
       value = JSON.parse(value);
     } catch {
-      throw new HttpError(400, `${prop.name}: expected JSON, got ${value}`);
+      throw new HttpError(
+        400,
+        `${prop.name}: expected JSON, got ${value}`,
+        "InvalidValue",
+      );
     }
   }
   if (!prop.isCollection) return elementToInternal(value, prop);
   if (!Array.isArray(value))
-    throw new HttpError(400, `${prop.name}: expected an array`);
+    throw new HttpError(400, `${prop.name}: expected an array`, "InvalidValue");
   return value.map((v) => elementToInternal(v, prop));
 }
 
@@ -158,7 +162,11 @@ function elementToInternal(value: unknown, prop: Property): PropertyValue {
   if (value === null || value === undefined) return null;
   if (prop.complexType) {
     if (typeof value !== "object" || Array.isArray(value))
-      throw new HttpError(400, `${prop.name}: expected an object`);
+      throw new HttpError(
+        400,
+        `${prop.name}: expected an object`,
+        "InvalidValue",
+      );
     const fields = value as Record<string, unknown>;
     const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))

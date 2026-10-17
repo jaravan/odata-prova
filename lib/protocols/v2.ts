@@ -20,6 +20,7 @@ import {
   checkSelect,
   parseInt10,
   rejectUnsupported,
+  errorCode,
 } from "../query.ts";
 
 const version = "2.0";
@@ -263,7 +264,7 @@ const v2: Protocol = {
       );
     return json(200, { d: { [prop.name]: toWire(value, prop) } });
   },
-  error(status, message, code = "MOCK") {
+  error(status, message, code = errorCode(status)) {
     return json(status, {
       error: { code, message: { lang: "en", value: message } },
     });

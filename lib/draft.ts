@@ -473,7 +473,11 @@ class Drafts {
     const existing = this.sibling(setName, type, row, false);
     if (existing) {
       if (preserveChanges)
-        throw new HttpError(409, `A draft of this ${type.name} already exists`);
+        throw new HttpError(
+          409,
+          `A draft of this ${type.name} already exists`,
+          "DraftExists",
+        );
       this.discard(setName, type, existing);
     }
     const uuid = this.newAdmin();

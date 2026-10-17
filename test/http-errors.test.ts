@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import {
   start,
   get,
+  send,
   batch,
   batchResponses,
+  ORDER,
+  type Reply,
   type TestServer,
 } from "./helpers.ts";
 
@@ -55,5 +58,54 @@ describe("bad requests get an OData error, not an HTML page", () => {
     assert.equal(bad.status, 400);
     assert.match(bad.body.error.message.value, /Malformed URL/);
     assert.equal(good.status, 200);
+  });
+});
+
+// Every error has a code a client can branch on: its status's, or a more specific one
+describe("error codes", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  // V2 and V4 both have it next to the message
+  const code = (r: Reply) => r.body.error.code as string;
+
+  it("by status, in V4 and V2", async () => {
+    for (const [url, status, expected] of [
+      [`${s.v4}/Nope`, 404, "NotFound"],
+      [`${s.v2}/Nope`, 404, "NotFound"],
+      [`${s.v4}/PurchaseOrderSet?$filter=Nope eq 1`, 400, "BadRequest"],
+      [`${s.v4}/PurchaseOrderSet?$format=xml`, 501, "NotImplemented"],
+      [`${s.v4}/PurchaseOrderSet%E0%A4%A`, 400, "BadRequest"],
+    ] as const) {
+      const r = await get(url);
+      assert.equal(r.status, status, url);
+      assert.equal(code(r), expected, url);
+    }
+    const method = await send("DELETE", `${s.v4}/PurchaseOrderSet`);
+    assert.equal(code(method), "MethodNotAllowed");
+  });
+
+  it("more specific where a client can act on it", async () => {
+    const missing = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+      PurchaseOrderId: "9",
+    });
+    assert.equal(code(missing), "RequiredProperty");
+    const invalid = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+      ...ORDER,
+      PurchaseOrderId: "9",
+      TotalAmount: "lots",
+    });
+    assert.equal(code(invalid), "InvalidValue");
+    const duplicate = await send("POST", `${s.v2}/PurchaseOrderSet`, {
+      ...ORDER,
+      PurchaseOrderId: "4500000001",
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(code(duplicate), "DuplicateKey");
+    const expired = await get(`${s.v4}/PurchaseOrderSet?$deltatoken=nope`);
+    assert.equal(code(expired), "DeltaLinkExpired");
   });
 });

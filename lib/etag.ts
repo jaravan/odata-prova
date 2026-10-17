@@ -121,6 +121,7 @@ function checkIfMatch(
       throw new HttpError(
         428,
         `${setName} uses optimistic concurrency: send the entity's ETag in If-Match`,
+        "ETagRequired",
       );
     return;
   }
@@ -129,6 +130,7 @@ function checkIfMatch(
     throw new HttpError(
       412,
       `The entity has changed since it was read: its ETag is now ${etag}`,
+      "ETagMismatch",
     );
 }
 

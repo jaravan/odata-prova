@@ -145,7 +145,7 @@ function createBatchHandler(
     } catch (e) {
       // decodeUrl throws only HttpErrors
       const err = e as HttpError;
-      return protocol.error(err.status, err.message);
+      return protocol.error(err.status, err.message, err.code);
     }
     const result = service.dispatch(
       method,

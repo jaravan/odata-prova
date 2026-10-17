@@ -12,11 +12,32 @@
 
 import type { AnyNavigation, EntityType, Model, QueryNode } from "./model.ts";
 
+// The error's code, which a client can branch on: by its status, unless a more specific one
+// says what to do about it (see Errors in docs/odata-support.md)
+const STATUS_CODES: Record<number, string> = {
+  400: "BadRequest",
+  404: "NotFound",
+  405: "MethodNotAllowed",
+  409: "Conflict",
+  410: "Gone",
+  412: "PreconditionFailed",
+  413: "PayloadTooLarge",
+  428: "PreconditionRequired",
+  500: "InternalError",
+  501: "NotImplemented",
+};
+
+function errorCode(status: number): string {
+  return own(STATUS_CODES, String(status)) ?? `Http${status}`;
+}
+
 class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code: string;
+  constructor(status: number, message: string, code = errorCode(status)) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -150,6 +171,7 @@ function parseInt10(text: unknown, name: string): number | undefined {
 
 export {
   HttpError,
+  errorCode,
   decodeUrl,
   own,
   newNode,

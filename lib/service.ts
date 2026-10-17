@@ -112,7 +112,8 @@ export interface Protocol extends LiteralSyntax {
     value: PropertyValue,
     opts?: ResponseOptions,
   ): ODataResponse;
-  error(status: number, message: string): ODataResponse;
+  // code: what a client can branch on, by default the status's (see errorCode in query.ts)
+  error(status: number, message: string, code?: string): ODataResponse;
   // What changed in an entity set since a delta token (see delta.ts); V4 only
   delta?(
     svc: ODataService,
@@ -454,6 +455,7 @@ class ODataService {
       throw new HttpError(
         410,
         "The delta link has expired: read the entity set again for a new one",
+        "DeltaLinkExpired",
       );
     const now = this.store.rows(setName);
     const changes = deltaChanges(this, type, before, now, q);
@@ -481,7 +483,7 @@ class ODataService {
       return this.handle(method, path, query, body, headers);
     } catch (e) {
       if (e instanceof HttpError)
-        return this.protocol.error(e.status, e.message);
+        return this.protocol.error(e.status, e.message, e.code);
       console.error(e);
       return this.protocol.error(500, (e as Error).message);
     }
