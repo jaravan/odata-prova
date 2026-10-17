@@ -199,6 +199,22 @@ An entity set has ETags when the metadata names the properties they're made of: 
 
 UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try a `412` by hand, read an entity, change it from another client (`If-Match: *`), and then change it with the first ETag.
 
+## Errors
+
+An error answers in the protocol's shape: `{"error":{"code":...,"message":...}}` in V4, and the same with `"message":{"lang":"en","value":...}` in V2. Its `code` is one a client can branch on. Where it can act on the error, the code says how:
+
+| `code`             | Status | When                                                                  |
+| ------------------ | ------ | --------------------------------------------------------------------- |
+| `RequiredProperty` | `400`  | a create or update leaves a `Nullable="false"` property or a key null |
+| `InvalidValue`     | `400`  | a value doesn't fit its property's type                               |
+| `DuplicateKey`     | `409`  | a create's key is already taken                                       |
+| `DraftExists`      | `409`  | an edit draft of the entity already exists                            |
+| `ETagMismatch`     | `412`  | the `If-Match` ETag has gone stale: read the entity again             |
+| `ETagRequired`     | `428`  | `ETAGS=strict`, and an update or delete sends no `If-Match`           |
+| `DeltaLinkExpired` | `410`  | a delta link no longer kept: read the entity set again                |
+
+Any other error's code is its status's: `BadRequest` (`400`), `NotFound` (`404`), `MethodNotAllowed` (`405`), `Conflict` (`409`), `PayloadTooLarge` (`413`), `NotImplemented` (`501`) or `InternalError` (`500`).
+
 ## Not supported
 
 Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, `$deltatoken` in V2, the parts of `$apply` listed under [Aggregation](#aggregation-apply), and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
