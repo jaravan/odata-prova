@@ -217,6 +217,17 @@ russellwhyte;Russell;1
 
 Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column. The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. For now it's filled from data files only: a write doesn't change it.
 
+A collection with nothing to join on, a many-to-many link such as TripPin's `Person.Friends` or Northwind's `Customer.CustomerDemographics`, gets links of its own: a link set of key pairs, named after the source's entity set and the navigation. A navigation and its partner share one. A data file fills it, and generated data links each row to up to three others:
+
+```
+data/People-Friends.csv
+UserName;Friends_UserName
+russellwhyte;scottketchum
+russellwhyte;ronaldmundy
+```
+
+Each one is logged as `navigation with links of its own: Person.Friends in People-Friends`, which names its file. Creating an entity through the navigation (`POST People('russellwhyte')/Friends`, or a deep insert) links it, deleting an entity removes its links, and a failed `$batch` changeset takes them back.
+
 A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none: such a navigation gets a key of its own instead, which links nothing until a data file fills it, or is disabled as below when it can't have one. A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner in either mode.
 
-A navigation the server can't join (for now, a many-to-many link, a collection with no navigation back, or a contained one) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
+A navigation the server can't join (for now, a contained one, or one to an entity type no entity set holds) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
