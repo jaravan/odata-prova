@@ -4,7 +4,7 @@
 import { toComparable } from "./types.ts";
 import { compileFilter } from "./filter.ts";
 import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import type {
   AnyNavigation,
   EntityType,
@@ -55,12 +55,12 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
   };
   const resolve = (row: Row, path: string): Literal => {
     // A path that is a property of its own: $apply's result for a groupby on a path
-    const own = entityType.properties[path.replace(/^\$it\//, "")];
-    if (own) return { value: row[own.name], type: own.type };
+    const itself = own(entityType.properties, path.replace(/^\$it\//, ""));
+    if (itself) return { value: row[itself.name], type: itself.type };
     const parts = path.replace(/^\$it\//, "").split("/");
     const at = walk(row, parts.slice(0, -1), path);
     if (!at) return { value: null, type: null };
-    const prop = at.type.properties[parts[parts.length - 1]];
+    const prop = own(at.type.properties, parts[parts.length - 1]);
     if (!prop)
       throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
     return { value: at.row[prop.name], type: prop.type };
@@ -75,7 +75,7 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
       const related = svc.related(at.row, at.type, nav);
       return { rows: related.rows, resolve: resolver(svc, related.type) };
     }
-    const prop = type?.properties[last];
+    const prop = own(type?.properties, last);
     // A collection-valued property holds an array
     if (at && prop?.isCollection)
       return {

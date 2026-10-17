@@ -2,7 +2,7 @@
 // for it (config.json) and answers by its return type. Draft actions go to draft.ts.
 
 import { toInternal, propToInternal } from "./types.ts";
-import { HttpError, splitTopLevel } from "./query.ts";
+import { HttpError, own, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import type {
@@ -71,7 +71,7 @@ function operationImport(
   svc: ODataService,
   name: string,
 ): Operation | undefined {
-  return svc.operations.imports[name];
+  return own(svc.operations.imports, name);
 }
 
 // The operation `name` (qualified or not) bound to `type` or a base type, on an entity

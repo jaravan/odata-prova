@@ -9,7 +9,7 @@
 // the same (see aggregation.ts), and so is the expression topcount and the others rank by.
 
 import { compileExpression } from "./filter.ts";
-import { HttpError, splitTopLevel } from "./query.ts";
+import { HttpError, own, splitTopLevel } from "./query.ts";
 import { resolver, type QueryHost } from "./apply-query.ts";
 import type {
   Computation,
@@ -34,7 +34,8 @@ function parseCompute(text: string, option = "$compute"): Computation[] {
 // aggregation.ts).
 function pathType(svc: QueryHost, type: EntityType, path: string): string {
   path = path.replace(/^\$it\//, "");
-  if (type.properties[path]) return type.properties[path].type;
+  const itself = own(type.properties, path);
+  if (itself) return itself.type;
   const parts = path.split("/");
   let at = type;
   for (const part of parts.slice(0, -1)) {
@@ -43,7 +44,7 @@ function pathType(svc: QueryHost, type: EntityType, path: string): string {
       throw new Error(`Cannot compute on path ${path}`);
     at = svc.model.entityTypes[nav.targetType];
   }
-  const prop = at.properties[parts[parts.length - 1]];
+  const prop = own(at.properties, parts[parts.length - 1]);
   if (!prop) throw new Error(`Unknown property ${path} on ${at.name}`);
   return prop.type;
 }
@@ -99,9 +100,14 @@ function applyCompute(
 ): { rows: Row[]; type: EntityType } {
   const properties: Record<string, Property> = {};
   const expressions = compute.map(({ expression, alias }) => {
-    if (!/^[A-Za-z_]\w*$/.test(alias))
+    // __proto__ would set the rows' prototype rather than a property
+    if (!/^[A-Za-z_]\w*$/.test(alias) || alias === "__proto__")
       throw new HttpError(400, `Invalid ${option} alias: ${alias}`);
-    if (type.properties[alias] || type.navigations[alias] || properties[alias])
+    if (
+      own(type.properties, alias) ||
+      own(type.navigations, alias) ||
+      own(properties, alias)
+    )
       throw new HttpError(
         400,
         `${option}: ${alias} is already a property or navigation of ${type.name}`,

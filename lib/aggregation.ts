@@ -37,7 +37,7 @@
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import type { Resolve } from "./filter.ts";
-import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
+import { HttpError, own, parseInt10, splitTopLevel } from "./query.ts";
 import {
   parseTopLevels,
   parseRelatives,
@@ -251,7 +251,8 @@ function parseAggregates(text: string): Aggregate[] {
 }
 
 function checkAlias(agg: Aggregate, expr: string): Aggregate {
-  if (!IDENTIFIER.test(agg.alias))
+  // __proto__ would set the rows' prototype rather than a property
+  if (!IDENTIFIER.test(agg.alias) || agg.alias === "__proto__")
     throw new HttpError(400, `Invalid $apply alias in ${expr}`);
   return agg;
 }
@@ -420,7 +421,7 @@ function withPaths(
 ): { rows: Row[]; type: EntityType; origin: Map<Row, Row> } {
   const paths = [
     ...new Set([...groupBy, ...aggregates.map((a) => a.property ?? "")]),
-  ].filter((name) => name.includes("/") && !type.properties[name]);
+  ].filter((name) => name.includes("/") && !own(type.properties, name));
   if (!paths.length)
     return { rows, type, origin: new Map(rows.map((r) => [r, r])) };
   const properties = { ...type.properties };
@@ -513,7 +514,7 @@ function pathProperty(
       501,
       `$apply: a path through more than one collection navigation (${path}) is not supported`,
     );
-  const prop = current.properties[parts[parts.length - 1]];
+  const prop = own(current.properties, parts[parts.length - 1]);
   if (!prop)
     throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
   return {
@@ -675,7 +676,10 @@ function aggregated(
   const inputs = aggregates.map((agg) => {
     // A custom aggregate is named after its property, and so is its result by default
     const ownName = agg.method === "custom" && agg.alias === agg.property;
-    if (properties[agg.alias] || (type.properties[agg.alias] && !ownName))
+    if (
+      own(properties, agg.alias) ||
+      (own(type.properties, agg.alias) && !ownName)
+    )
       throw new HttpError(400, `$apply: alias ${agg.alias} is already in use`);
     const input =
       agg.property === undefined
@@ -718,12 +722,12 @@ function unionType(input: EntityType, types: EntityType[]): EntityType {
 
 // The property a custom aggregate aggregates: the one of its name
 function customInput(type: EntityType, name: string): Property {
-  if (type.customAggregates?.[name] === undefined)
+  if (own(type.customAggregates, name) === undefined)
     throw new HttpError(
       400,
       `$apply: ${name} is not a custom aggregate of ${type.name} (Aggregation.CustomAggregate)`,
     );
-  const prop = type.properties[name];
+  const prop = own(type.properties, name);
   if (!prop)
     throw new HttpError(
       501,
@@ -733,7 +737,7 @@ function customInput(type: EntityType, name: string): Property {
 }
 
 function propertyOf(type: EntityType, name: string): Property {
-  const prop = type.properties[name];
+  const prop = own(type.properties, name);
   if (!prop)
     throw new HttpError(400, `Unknown property ${name} on ${type.name}`);
   return prop;

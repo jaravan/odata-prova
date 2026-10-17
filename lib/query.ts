@@ -33,8 +33,23 @@ function decodeUrl(
   }
 }
 
+// The model's lookups are plain objects, so a name from a request such as constructor or
+// toString would find what every object inherits. own() finds only the record's own entries:
+// it's how a name from a request is looked up.
+function own<T>(
+  record: Record<string, T> | undefined,
+  key: string,
+): T | undefined {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+// An $expand tree is keyed by names from the request, so it has no prototype: any name,
+// __proto__ too, is an entry of its own
 function newNode(): QueryNode {
-  return { expand: {}, select: undefined };
+  return {
+    expand: Object.create(null) as QueryNode["expand"],
+    select: undefined,
+  };
 }
 
 // "Items/PurchaseOrder" -> ensures node.expand.Items.expand.PurchaseOrder exists; returns the leaf.
@@ -74,7 +89,7 @@ function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
   for (const name of node.select || []) {
     if (name === "*" || name.includes(".")) continue;
     if (node.compute?.some((c) => c.alias === name)) continue;
-    if (!type.properties[name] && !svc.navigation(type, name))
+    if (!own(type.properties, name) && !svc.navigation(type, name))
       throw new HttpError(
         400,
         `${name} is not a property or navigation of ${type.name}`,
@@ -136,6 +151,7 @@ function parseInt10(text: unknown, name: string): number | undefined {
 export {
   HttpError,
   decodeUrl,
+  own,
   newNode,
   addExpandPath,
   addSelectPath,

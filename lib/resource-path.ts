@@ -3,7 +3,7 @@
 
 import { toInternal } from "./types.ts";
 import type { LiteralSyntax } from "./filter.ts";
-import { HttpError, decodeUrl } from "./query.ts";
+import { HttpError, decodeUrl, own } from "./query.ts";
 import type { EntityType, Key } from "./model.ts";
 
 // A path segment: Name, or Name(key or parameters)
@@ -66,7 +66,7 @@ function parseKey(
   for (const part of parts) {
     const eq = part.indexOf("=");
     const name = part.slice(0, eq).trim();
-    const prop = entityType.properties[name];
+    const prop = own(entityType.properties, name);
     if (!prop || !entityType.keys.includes(name))
       throw new HttpError(
         400,

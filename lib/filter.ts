@@ -8,6 +8,7 @@
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
 import type { Literal, Property, PropertyValue, Row } from "./model.ts";
+import { own } from "./query.ts";
 import { isNumericType, toComparable, toMillis } from "./types.ts";
 
 // What a protocol module supplies: how its literals are spelled
@@ -500,7 +501,7 @@ function evaluateLambda(
   // Value of a collection-valued property's item: the item, or a field of a complex item
   const itemValue = (item: unknown, rest: string): Value => {
     if (!rest) return { value: item, type: prop?.elementType ?? null };
-    const field = prop?.complexType?.properties[rest];
+    const field = prop?.complexType && own(prop.complexType.properties, rest);
     if (!field)
       throw new Error(`Unknown property ${node.variable}/${rest} in $filter`);
     const fields = item as Record<string, unknown> | null | undefined;

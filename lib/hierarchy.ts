@@ -25,7 +25,7 @@
 // The Aggregation vocabulary's traverse puts rows in a hierarchy's order, without filling
 // anything in: traverse($root/Genres,GenresHierarchy,ID,preorder,Name desc).
 
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { isIntegerType } from "./types.ts";
 import { applyQuery, type QueryHost } from "./apply-query.ts";
 import type {
@@ -326,13 +326,13 @@ function hierarchyOf(
   type: EntityType,
   t: { set: string; qualifier: string; nodeProperty: string },
 ): Hierarchy {
-  const es = svc.model.entitySets[t.set];
+  const es = own(svc.model.entitySets, t.set);
   if (!es || es.entityType !== type.fullName)
     throw new HttpError(
       400,
       `$apply: ${t.set} is not an entity set of ${type.name}`,
     );
-  const h = type.hierarchies?.[t.qualifier];
+  const h = own(type.hierarchies, t.qualifier);
   if (!h)
     throw new HttpError(
       400,

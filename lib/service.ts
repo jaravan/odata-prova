@@ -9,7 +9,7 @@
 // drafts (draft.ts).
 import { specialFloat } from "./types.ts";
 import type { LiteralSyntax } from "./filter.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { draftMatch, Drafts } from "./draft.ts";
 import { etagOf, checkIfMatch, renewETag } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
@@ -222,7 +222,7 @@ class ODataService {
   }
 
   entitySet(name: string): { set: EntitySet; type: EntityType } {
-    const es = this.model.entitySets[name];
+    const es = own(this.model.entitySets, name);
     if (!es) throw new HttpError(404, `Entity set ${name} not found`);
     return { set: es, type: this.model.entityTypes[es.entityType] };
   }
@@ -323,19 +323,19 @@ class ODataService {
   // draft.ts), or undefined. One the metadata declares but the server had to switch off (see
   // disableOnError in metadata.ts) is a 501, with the reason.
   navigation(type: EntityType, name: string): AnyNavigation | undefined {
-    const reason = type.disabledNavigations?.[name];
+    const reason = own(type.disabledNavigations, name);
     if (reason)
       throw new HttpError(
         501,
         `Navigation ${name} is not supported: ${reason}`,
       );
-    const nav = type.navigations[name];
+    const nav = own(type.navigations, name);
     if (nav?.contained && this.protocol.version === "2.0")
       throw new HttpError(
         404,
         `${name} is a containment navigation, not available in OData V2`,
       );
-    return nav || type.draftNavigations?.[name];
+    return nav || own(type.draftNavigations, name);
   }
 
   // --- Collections -----------------------------------------------------------------------
@@ -544,7 +544,7 @@ class ODataService {
     // Operation imports: /Name, /Name(a=1) (V4 functions), /Name?a=1 (V2)
     const first = segments[0].name;
     const imported =
-      !this.model.entitySets[first] && operationImport(this, first);
+      !own(this.model.entitySets, first) && operationImport(this, first);
     if (imported) {
       if (segments.length > 1 || wantCount || wantValue)
         throw new HttpError(
@@ -565,7 +565,10 @@ class ODataService {
       );
     }
     // A contained set is reached only through its navigation (see resolveContainment)
-    if (!this.model.entitySets[first] || this.model.entitySets[first].contained)
+    if (
+      !own(this.model.entitySets, first) ||
+      this.model.entitySets[first].contained
+    )
       throw new HttpError(404, `${first} is not an entity set or operation`);
 
     // Walk: entity set, then navigation properties, keeping the current row/collection.
@@ -589,7 +592,7 @@ class ODataService {
       // Bound operations: Set(key)/NS.Name or Set/NS.Name, with (a=1) for V4 functions
       const op =
         !this.navigation(type, seg.name) &&
-        !type.properties[seg.name] &&
+        !own(type.properties, seg.name) &&
         boundOperation(this, seg.name, type, row === undefined);
       if (op) {
         if (i !== segments.length - 1 || wantCount || wantValue)
@@ -615,7 +618,7 @@ class ODataService {
       const nav = this.navigation(type, seg.name);
       if (!nav) {
         // Plain property access: Set(key)/Prop or Set(key)/Prop/$value
-        const prop = type.properties[seg.name];
+        const prop = own(type.properties, seg.name);
         if (!prop || i !== segments.length - 1)
           throw new HttpError(
             404,
