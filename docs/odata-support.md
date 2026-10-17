@@ -13,7 +13,7 @@ In a CSV data file, a complex or collection value goes in its cell as JSON. Filt
 
 Writes are checked against the metadata: a value that doesn't fit its type, or a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, is a `400`. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required, and neither is anything in a draft, which may be incomplete until it is activated.
 
-The tests load Northwind (V2 and V4) and TripPin unmodified, see [test/fixtures/real](../test/fixtures/real/).
+The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
 
 ## SAP annotations in the generated V4 metadata
 
@@ -228,6 +228,17 @@ russellwhyte;ronaldmundy
 
 Each one is logged as `navigation with links of its own: Person.Friends in People-Friends`, which names its file. Creating an entity through the navigation (`POST People('russellwhyte')/Friends`, or a deep insert) links it, deleting an entity removes its links, and a failed `$batch` changeset takes them back.
 
+A containment navigation (`ContainsTarget`) whose target no entity set holds, such as TripPin's `Person.Trips`, gets an entity set of its own, named after the parent's set and the navigation (`People-Trips`, and `People-Trips-PlanItems` below it). It's in no service document or `$metadata`, and is reached only through its parent: `People('russellwhyte')/Trips(1001)/PlanItems`. A contained entity's key is unique only under its parent, so its rows keep their parent's keys in hidden columns, named after the parent's type (`Person_UserName`, then `Trip_TripId`), which a data file fills:
+
+```
+data/People-Trips.csv
+Person_UserName;TripId;Name
+russellwhyte;1001;Trip in US
+scottketchum;1001;Trip in Beijing
+```
+
+Creating one through the navigation puts it under that parent, at the parent's URL (`Location: .../People('russellwhyte')/Trips(1002)`), and deleting the parent deletes everything it contains. V2 has no containment, so these navigations aren't in the V2 service. Each one is logged as `navigation with an entity set of its own: ...`.
+
 A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none: such a navigation gets a key of its own instead, which links nothing until a data file fills it, or is disabled as below when it can't have one. A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner in either mode.
 
-A navigation the server can't join (for now, a contained one, or one to an entity type no entity set holds) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.
+A navigation the server can't join (one to an entity type no entity set holds, outside containment) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.

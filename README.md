@@ -115,7 +115,7 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 
 What `$apply` doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
 
-The tests load Northwind (V2 and V4) and TripPin unmodified.
+The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, including those with no foreign key in the metadata ([Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint)).
 
 ## Why not the fe-mockserver or CAP?
 
