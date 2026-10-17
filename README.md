@@ -40,7 +40,7 @@ odata-prova listening on port 3000
   V4: http://localhost:3000/odata/v4/MySrv/
 ```
 
-> If port 3000 is already in use, pick another with `PORT`, e.g. `PORT=4004 npx odata-prova ./MySrv`
+> If port 3000 is already in use, pick another with `--port`, e.g. `npx odata-prova ./MySrv --port 4004`
 
 Or with Docker, mounting the folder as `/models/<ServiceName>`:
 
@@ -86,11 +86,11 @@ The server serves only the service and its `$metadata`. Annotations your app loa
 
 ## Configuration
 
-`odata-prova [modelDir]` serves the model in `modelDir`, or in the current directory. Everything else is set through environment variables, all optional:
+`odata-prova [modelDir] [--port <port>]` serves the model in `modelDir`, or in the current directory, and `odata-prova --help` lists the options. Everything else is set through environment variables, all optional:
 
 | Variable       | Default                                        | Purpose                                                                                                                                                                                                                                                     |
 | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`         | `3000`                                         | HTTP port                                                                                                                                                                                                                                                   |
+| `PORT`         | `3000`                                         | HTTP port, unless `--port` sets it                                                                                                                                                                                                                          |
 | `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve when no `modelDir` is given, or a folder holding exactly one model                                                                                                                                                                       |
 | `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                                                                                                                                                                                                     |
 | `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                                                                                                                                                                 |
