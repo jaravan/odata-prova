@@ -90,6 +90,25 @@ The link is the request with a `$skiptoken`: where the next page starts among th
 
 A V4 client can ask for smaller pages with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not. Paging applies to an entity set, a navigation's collection, a function's result and an `$apply` result, not to collections in an `$expand`. It's off by default, as a client that ignores the links would see only the first page.
 
+### Delta links
+
+A V4 client can track the changes to an entity set: it reads the set with `Prefer: odata.track-changes`, and gets an `@odata.deltaLink` with the last page. Reading that link later answers what has changed since, with the next delta link:
+
+```
+GET /odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3-1
+
+{ "@odata.context": "/odata/v4/MySrv/$metadata#PurchaseOrderSet/$delta",
+  "value": [
+    { "PurchaseOrderId": "4500000003", "Status": "Open", ... },
+    { "@odata.context": "/odata/v4/MySrv/$metadata#PurchaseOrderSet/$deletedEntity",
+      "id": "/odata/v4/MySrv/PurchaseOrderSet('4500000001')", "reason": "changed" } ],
+  "@odata.deltaLink": "/odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3-2" }
+```
+
+The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`. Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
+
+A delta link is for an entity set, read without `$apply`, `$compute`, `$skip` or `$top`; for other reads the preference isn't applied, and `Preference-Applied` says so. The server keeps the latest 100 delta links, and none across a restart: an older one is a `410 Gone`, and the client reads the set again. A change inside an expanded navigation isn't a change of the entity. V2 has no delta links: `$deltatoken` there is a `501`.
+
 ### Aggregation (`$apply`)
 
 V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals: `$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))`. Transformations are separated by `/` and run in order, before the other query options, which then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
@@ -176,7 +195,7 @@ UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, the parts of `$apply` listed under [Aggregation](#aggregation-apply), `$deltatoken`, and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, `$deltatoken` in V2, the parts of `$apply` listed under [Aggregation](#aggregation-apply), and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 

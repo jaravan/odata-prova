@@ -111,8 +111,9 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
 - **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
+- **Delta links** (V4): read an entity set with `Prefer: odata.track-changes`, and its `@odata.deltaLink` later answers what was added, changed or deleted since. See [Delta links](docs/odata-support.md#delta-links).
 
-`$deltatoken` and the rest of `$apply` are rejected with `501`.
+The rest of `$apply` is rejected with `501`.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified.
 
