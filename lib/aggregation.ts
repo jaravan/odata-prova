@@ -10,11 +10,12 @@
 // Name)), works on a property of that name holding the value it leads to (see withPaths),
 // which the response nests: {"Supplier":{"Name":"..."}}.
 //
-// Supported: filter, search, orderby, skip, top, identity, concat, groupby (with an
-// aggregate or a filter), aggregate with sum, min, max, average, countdistinct, $count and
-// custom aggregates, and topcount, bottomcount, topsum, bottomsum, toppercent and
-// bottompercent, and the hierarchy functions TopLevels, ancestors and descendants (see
-// hierarchy.ts). Other transformations are a 501. A groupby's filter is how UI5
+// Supported: filter, search, orderby, skip, top, identity, concat, compute (see compute.ts),
+// groupby (with an aggregate or a filter), aggregate with sum, min, max, average,
+// countdistinct, $count and custom aggregates, topcount, bottomcount, topsum, bottomsum,
+// toppercent and bottompercent (by a property or an expression), and the hierarchy
+// transformations traverse, TopLevels, ancestors and descendants (see hierarchy.ts). Other
+// transformations are a 501. A groupby's filter is how UI5
 // filters groups on their aggregated values ($$filterOnAggregate): $these is the group, so
 //
 //   groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),...)
@@ -37,9 +38,12 @@ import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
 import {
   parseTopLevels,
   parseRelatives,
+  parseTraverse,
   topLevels,
   relatives,
+  traverse,
 } from "./hierarchy.ts";
+import { applyCompute, parseCompute, typedExpression } from "./compute.ts";
 import { isIntegerType, isNumericType, toComparable } from "./types.ts";
 import type {
   Aggregate,
@@ -136,6 +140,7 @@ function parseTransformation(text: string): Transformation {
   if (/^(?:[\w.]+\.)?TopLevels$/.test(name)) return parseTopLevels(args, text);
   if (name === "ancestors" || name === "descendants")
     return parseRelatives(name, args, text, parseApply);
+  if (name === "traverse") return parseTraverse(args, text);
   switch (name) {
     case "filter":
       return { kind: "filter", filter: args };
@@ -143,6 +148,8 @@ function parseTransformation(text: string): Transformation {
       throw new HttpError(400, `Invalid $apply: ${text} (identity has no ())`);
     case "search":
       return { kind: "search", search: args };
+    case "compute":
+      return { kind: "compute", compute: parseCompute(args, "$apply") };
     case "orderby":
       return { kind: "orderby", orderby: args };
     case "skip":
@@ -199,15 +206,15 @@ function parseTransformation(text: string): Transformation {
 }
 
 // topcount(2,Amount): a count (a whole number), a sum, or a percentage (0 to 100), and the
-// property, alias or path whose values rank the rows
+// property, alias, path or expression whose values rank the rows
 function parseRank(
   method: Extract<Transformation, { kind: "rank" }>["method"],
   args: string,
   text: string,
 ): Transformation {
-  const [first, path, ...more] = splitTopLevel(args, ",");
+  const [first, by, ...more] = splitTopLevel(args, ",");
   const number = method.endsWith("count") ? /^\d+$/ : /^-?\d+(\.\d+)?$/;
-  if (!first || !path || more.length || !number.test(first))
+  if (!first || !by || more.length || !number.test(first))
     throw new HttpError(400, `Invalid $apply: ${text}`);
   const value = Number(first);
   if (method.endsWith("percent") && value > 100)
@@ -215,12 +222,7 @@ function parseRank(
       400,
       `Invalid $apply: ${text} (a percentage is 0 to 100)`,
     );
-  if (!/^[A-Za-z_][A-Za-z0-9_]*(\/[A-Za-z_][A-Za-z0-9_]*)*$/.test(path))
-    throw new HttpError(
-      501,
-      `$apply: ${method} by an expression (${path}) is not supported, only by a property`,
-    );
-  return { kind: "rank", method, value, path };
+  return { kind: "rank", method, value, by };
 }
 
 // "TotalAmount with sum as Total,$count as Count"
@@ -297,6 +299,12 @@ function applyTransformations(
         break;
       case "rank":
         rows = ranked(svc, rows, type, t);
+        break;
+      case "compute":
+        ({ rows, type } = applyCompute(svc, rows, type, t.compute, "$apply"));
+        break;
+      case "traverse":
+        rows = traverse(svc, rows, type, t);
         break;
       case "toplevels":
         rows = topLevels(svc, rows, type, t);
@@ -417,32 +425,33 @@ function pathProperty(
 
 // The rows topcount and the others keep: the highest values first (top...) or the lowest
 // (bottom...), as many as the count, or until they add up to the sum or to the percentage of
-// the total. Rows whose value is null are left out.
+// the total. A count ranks any primitive value (text alphabetically, dates by time), a sum
+// or percentage a number. Rows whose value is null are left out.
 function ranked(
   svc: QueryHost,
   rows: Row[],
   type: EntityType,
   t: Extract<Transformation, { kind: "rank" }>,
 ): Row[] {
-  const prop = t.path.includes("/")
-    ? pathProperty(svc, type, t.path)
-    : propertyOf(type, t.path);
-  if (!isNumericType(prop.type))
+  const { valueType, valueOf } = rankedBy(svc, type, t.by);
+  const counting = t.method.endsWith("count");
+  if (counting ? !/^Edm\.\w+$/.test(valueType) : !isNumericType(valueType))
     throw new HttpError(
       400,
-      `$apply: ${t.method} needs a number, and ${t.path} is ${prop.type}`,
+      `$apply: ${t.method} needs ${counting ? "a primitive value" : "a number"}, and ${t.by} is ${valueType}`,
     );
-  const resolve = resolver(svc, type);
   const sign = t.method.startsWith("top") ? -1 : 1;
   const valued = rows
-    .map((row) => ({ row, value: resolve(row, t.path).value }))
-    .filter((r) => r.value !== null && r.value !== undefined)
-    .map((r) => ({ row: r.row, value: Number(r.value) }))
-    .sort((a, b) => sign * (a.value - b.value));
-  if (t.method.endsWith("count"))
-    return valued.slice(0, t.value).map((r) => r.row);
+    .map((row) => ({ row, value: toComparable(valueOf(row), valueType) }))
+    .filter((r) => r.value !== null)
+    .sort((a, b) => {
+      const x = a.value!,
+        y = b.value!;
+      return sign * (x < y ? -1 : x > y ? 1 : 0);
+    });
+  if (counting) return valued.slice(0, t.value).map((r) => r.row);
   const target = t.method.endsWith("percent")
-    ? (valued.reduce((s, r) => s + r.value, 0) * t.value) / 100
+    ? (valued.reduce((s, r) => s + Number(r.value), 0) * t.value) / 100
     : t.value;
   // The fewest rows from the start whose values add up to the target: none for 0
   const kept: Row[] = [];
@@ -450,18 +459,42 @@ function ranked(
   for (const r of valued) {
     if (sum >= target) break;
     kept.push(r.row);
-    sum += r.value;
+    sum += Number(r.value);
   }
   return kept;
 }
 
+// What rows are ranked by: a property or path (Supplier/Rating), or an expression
+// (Amount mul Quantity), with its type
+function rankedBy(
+  svc: QueryHost,
+  type: EntityType,
+  by: string,
+): { valueType: string; valueOf: (row: Row) => unknown } {
+  if (/^[A-Za-z_]\w*(\/[A-Za-z_]\w*)*$/.test(by)) {
+    const prop = by.includes("/")
+      ? pathProperty(svc, type, by)
+      : propertyOf(type, by);
+    const resolve = resolver(svc, type);
+    return { valueType: prop.type, valueOf: (row) => resolve(row, by).value };
+  }
+  const expression = typedExpression(svc, type, by, "$apply");
+  return {
+    valueType: expression.type ?? "null",
+    valueOf: (row) => expression.value(row),
+  };
+}
+
 // Whether a sequence's result can hold entities of the input, not only aggregated rows:
-// what a filter, search, orderby, skip, top, identity or groupby's filter passes on, and
+// what a filter, search, orderby, skip, top, identity, a rank, a hierarchy transformation or
+// groupby's filter passes on, and
 // what a concat has from any of its sequences. Only those can be expanded.
 function holdsEntities(transformations: Transformation[]): boolean {
   let entities = true;
   for (const t of transformations) {
-    if (t.kind === "aggregate" || t.kind === "groupby") entities = false;
+    // compute's rows are copies with a property more, written as $apply's rows
+    if (t.kind === "aggregate" || t.kind === "groupby" || t.kind === "compute")
+      entities = false;
     else if (t.kind === "concat")
       entities = entities && t.sequences.some(holdsEntities);
   }

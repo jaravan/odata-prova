@@ -180,8 +180,8 @@ describe("$apply", () => {
 
     for (const [query, message] of [
       [
-        "$apply=topcount(1,Supplier)",
-        /topcount needs a number, and Supplier is Edm.String/,
+        "$apply=topsum(1,Supplier)",
+        /topsum needs a number, and Supplier is Edm.String/,
       ],
       ["$apply=topcount(1,Nope)", /Unknown property Nope/],
       ["$apply=topcount(-1,TotalAmount)", /Invalid \$apply/],
@@ -280,10 +280,69 @@ describe("$apply", () => {
     assert.equal(one.status, 400);
   });
 
+  it("compute adds a property the transformations after it use", async () => {
+    const r = await apply(
+      "$apply=compute(TotalAmount mul 2 as Doubled)/filter(Doubled gt 20000)/orderby(Doubled desc)&$select=PurchaseOrderId,Doubled",
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.value, [
+      { PurchaseOrderId: "4500000002", Doubled: "90401" },
+      { PurchaseOrderId: "4500000001", Doubled: "25000" },
+    ]);
+
+    const byMonth = await apply(
+      "$apply=compute(month(OrderDate) as Month)/groupby((Month),aggregate($count as Count))",
+    );
+    assert.deepEqual(byMonth.body.value, [
+      { Month: 1, Count: "1" },
+      { Month: 2, Count: "2" },
+      { Month: 3, Count: "2" },
+    ]);
+
+    // Its rows are copies with a property more, not entities to expand
+    const expanded = await apply(
+      "$apply=compute(TotalAmount mul 2 as Doubled)&$expand=Items",
+    );
+    assert.equal(expanded.status, 400);
+    for (const query of [
+      "$apply=compute(TotalAmount mul 2)",
+      "$apply=compute(Nope mul 2 as X)",
+      "$apply=compute(Status add 1 as X)",
+    ]) {
+      const bad = await apply(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(bad.body.error.message, /\$apply/, query);
+    }
+  });
+
+  it("topcount and the others by an expression; a count by any value", async () => {
+    const ids = async (transformation: string) => {
+      const r = await apply(`$apply=${transformation}&$select=PurchaseOrderId`);
+      assert.equal(r.status, 200, transformation);
+      return r.body.value.map((o: { PurchaseOrderId: string }) =>
+        o.PurchaseOrderId.slice(-1),
+      );
+    };
+    assert.deepEqual(await ids("topcount(1,TotalAmount mul -1)"), ["5"]);
+    // Nordic Steel AB has 15 characters, Acme Components Ltd 19
+    assert.deepEqual(await ids("bottomcount(2,length(Supplier))"), ["2", "1"]);
+    assert.deepEqual(await ids("topsum(15000,TotalAmount div 2)"), ["2"]);
+    // Text alphabetically, dates by time
+    assert.deepEqual(await ids("topcount(1,Supplier)"), ["5"]);
+    assert.deepEqual(await ids("bottomcount(1,OrderDate)"), ["1"]);
+
+    for (const [query, message] of [
+      ["$apply=topsum(1,concat(Supplier,'x'))", /topsum needs a number/],
+      ["$apply=topcount(1,Nope mul 2)", /Unknown property Nope/],
+    ] as const) {
+      const r = await apply(query);
+      assert.equal(r.status, 400, query);
+      assert.match(r.body.error.message, message, query);
+    }
+  });
+
   it("what isn't supported -> 501, never ignored", async () => {
     for (const query of [
-      "$apply=compute(TotalAmount mul 2 as Double)",
-      "$apply=topcount(2,TotalAmount mul 2)",
       "$apply=groupby((Currency),topcount(1,TotalAmount))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
       "$apply=groupby((Items/Material))",

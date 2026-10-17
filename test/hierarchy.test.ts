@@ -154,7 +154,31 @@ describe("TopLevels", () => {
     ]);
   });
 
-  it("a mistake -> 400; Show, or nodes other than an entity set -> 501", async () => {
+  it("Show expands the ancestors of a node, even one ExpandLevels collapses", async () => {
+    const shown = await apply(topLevels(',Levels=1,Show=["5"]'), SELECT);
+    assert.deepEqual(nodes(shown.body.value), [
+      [1, "expanded", 0, 4, 0],
+      [2, "leaf", 1, 0, 1],
+      [3, "leaf", 1, 0, 2],
+      [4, "expanded", 1, 1, 3],
+      [5, "leaf", 2, 0, 4],
+      [6, "collapsed", 0, 0, 5],
+    ]);
+    const ids = async (params: string) =>
+      (await apply(topLevels(params), SELECT)).body.value.map(
+        (n: { ID: number }) => n.ID,
+      );
+    assert.deepEqual(
+      await ids(
+        ',Levels=2,ExpandLevels=[{"NodeID":"6","Levels":0}],Show=["8"]',
+      ),
+      [1, 2, 3, 4, 6, 7, 8],
+    );
+    // A node that isn't among the rows is left alone
+    assert.deepEqual(await ids(',Levels=1,Show=["99"]'), [1, 6]);
+  });
+
+  it("a mistake -> 400; nodes other than an entity set -> 501", async () => {
     for (const [transformations, status, message] of [
       [
         topLevels().replace("'GenresHierarchy'", "'Nope'"),
@@ -175,7 +199,7 @@ describe("TopLevels", () => {
         400,
         /needs HierarchyQualifier/,
       ],
-      [topLevels(",Show=['1']"), 501, /Show is not supported/],
+      [topLevels(",Show=['1']"), 400, /Invalid \$apply: Show/],
       [
         topLevels().replace("$root/Genres", "$root/Genres(1)/children"),
         501,
@@ -185,6 +209,68 @@ describe("TopLevels", () => {
       const r = await apply(transformations);
       assert.equal(r.status, status, transformations);
       assert.match(r.body.error.message, message, transformations);
+    }
+  });
+});
+
+describe("traverse", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+  });
+  after(() => s.close());
+
+  const traverse = async (transformations: string, rest = "&$select=ID") => {
+    const r = await get(
+      `${s.v4}/Genres?$apply=${encodeURIComponent(transformations)}${rest}`,
+    );
+    return r;
+  };
+  const ids = async (transformations: string) => {
+    const r = await traverse(transformations);
+    assert.equal(r.status, 200, transformations);
+    return r.body.value.map((n: { ID: number }) => n.ID);
+  };
+  const T = "traverse($root/Genres,GenresHierarchy,ID";
+
+  it("puts parents before their children (preorder) or after them (postorder)", async () => {
+    assert.deepEqual(await ids(`${T},preorder)`), [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert.deepEqual(await ids(`${T},postorder)`), [2, 3, 5, 4, 1, 8, 7, 6]);
+  });
+
+  it("sorts roots and siblings by the expressions after the order", async () => {
+    assert.deepEqual(
+      await ids(`${T},preorder,name desc)`),
+      [6, 7, 8, 1, 3, 4, 5, 2],
+    );
+  });
+
+  it("keeps a node in its place when its parent isn't among the rows", async () => {
+    assert.deepEqual(
+      await ids(`filter(ID ne 4)/${T},preorder)`),
+      [1, 2, 3, 5, 6, 7, 8],
+    );
+  });
+
+  it("keeps the rows entities, with nothing filled in", async () => {
+    const r = await traverse(
+      `filter(ID ge 7)/${T},preorder)`,
+      "&$select=ID,DrillState&$expand=parent($select=ID)",
+    );
+    assert.deepEqual(r.body.value, [
+      { ID: 7, DrillState: null, parent: { ID: 6 } },
+      { ID: 8, DrillState: null, parent: { ID: 7 } },
+    ]);
+  });
+
+  it("a mistake -> 400", async () => {
+    for (const transformations of [
+      `${T},inorder)`,
+      `${T})`,
+      "traverse($root/Genres,Nope,ID,preorder)",
+    ]) {
+      const r = await traverse(transformations);
+      assert.equal(r.status, 400, transformations);
     }
   });
 });

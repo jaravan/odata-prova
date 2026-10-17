@@ -5,7 +5,8 @@
 //
 // The rows get a copy with the values, and their type a copy with a property for each alias,
 // typed by its expression (see expressionType in filter.ts), so $filter, $orderby, $select and
-// the protocols' serializers need nothing of their own.
+// the protocols' serializers need nothing of their own. $apply's compute transformation is
+// the same (see aggregation.ts), and so is the expression topcount and the others rank by.
 
 import { compileExpression } from "./filter.ts";
 import { HttpError, splitTopLevel } from "./query.ts";
@@ -18,18 +19,23 @@ import type {
   Row,
 } from "./model.ts";
 
-// "NetPrice mul Quantity as LineTotal,..." -> [{ expression, alias }]
-function parseCompute(text: string): Computation[] {
+// "NetPrice mul Quantity as LineTotal,..." -> [{ expression, alias }]. option: the query
+// option it's in, for the message of a mistake
+function parseCompute(text: string, option = "$compute"): Computation[] {
   return splitTopLevel(text, ",").map((item) => {
     const m = item.match(/^(.+)\s+as\s+(\S+)$/s);
-    if (!m) throw new HttpError(400, `Invalid $compute: ${item}`);
+    if (!m) throw new HttpError(400, `Invalid ${option}: ${item}`);
     return { expression: m[1].trim(), alias: m[2] };
   });
 }
 
-// The type of a property path: "Prop", or "Nav/Prop" through single-valued navigations
+// The type of a property path: "Prop", or "Nav/Prop" through single-valued navigations. A
+// path can also be a property of its own, in a groupby's result (see withPaths in
+// aggregation.ts).
 function pathType(svc: QueryHost, type: EntityType, path: string): string {
-  const parts = path.replace(/^\$it\//, "").split("/");
+  path = path.replace(/^\$it\//, "");
+  if (type.properties[path]) return type.properties[path].type;
+  const parts = path.split("/");
   let at = type;
   for (const part of parts.slice(0, -1)) {
     const nav = svc.navigation(at, part);
@@ -52,10 +58,36 @@ function stored(value: unknown, type: string): PropertyValue {
 
 // A mistake in an expression is the client's: a 400. The expression parser is $filter's,
 // whose messages name it.
-function invalid(e: unknown): HttpError {
+function invalid(e: unknown, option: string): HttpError {
   if (e instanceof HttpError) return e;
-  const message = (e as Error).message.replace(/\$filter/g, "$compute");
-  return new HttpError(400, `Invalid $compute: ${message}`);
+  const message = (e as Error).message.replace(/\$filter/g, option);
+  return new HttpError(400, `Invalid ${option}: ${message}`);
+}
+
+// An expression on the rows of a type: its type, known before any row is read, and its value
+// for a row. A mistake in it is a 400 naming the option it's in.
+function typedExpression(
+  svc: QueryHost,
+  type: EntityType,
+  text: string,
+  option: string,
+): { type: string | null; value(row: Row): unknown } {
+  try {
+    const compiled = compileExpression(text, svc.protocol);
+    const resolve = resolver(svc, type);
+    return {
+      type: compiled.type((path) => pathType(svc, type, path)),
+      value(row) {
+        try {
+          return compiled.evaluate(row, resolve).value;
+        } catch (e) {
+          throw invalid(e, option);
+        }
+      },
+    };
+  } catch (e) {
+    throw invalid(e, option);
+  }
 }
 
 function applyCompute(
@@ -63,52 +95,40 @@ function applyCompute(
   rows: Row[],
   type: EntityType,
   compute: Computation[],
+  option = "$compute",
 ): { rows: Row[]; type: EntityType } {
   const properties: Record<string, Property> = {};
   const expressions = compute.map(({ expression, alias }) => {
     if (!/^[A-Za-z_]\w*$/.test(alias))
-      throw new HttpError(400, `Invalid $compute alias: ${alias}`);
+      throw new HttpError(400, `Invalid ${option} alias: ${alias}`);
     if (type.properties[alias] || type.navigations[alias] || properties[alias])
       throw new HttpError(
         400,
-        `$compute: ${alias} is already a property or navigation of ${type.name}`,
+        `${option}: ${alias} is already a property or navigation of ${type.name}`,
       );
-    let compiled: ReturnType<typeof compileExpression>;
-    let result: string | null;
-    try {
-      compiled = compileExpression(expression, svc.protocol);
-      result = compiled.type((path) => pathType(svc, type, path));
-    } catch (e) {
-      throw invalid(e);
-    }
-    if (!result || !/^Edm\.\w+$/.test(result))
+    const typed = typedExpression(svc, type, expression, option);
+    if (!typed.type || !/^Edm\.\w+$/.test(typed.type))
       throw new HttpError(
         400,
-        `$compute: ${alias} needs a value of a primitive type`,
+        `${option}: ${alias} needs a value of a primitive type`,
       );
     properties[alias] = {
       name: alias,
-      type: result,
-      v2Type: result,
-      elementType: result,
+      type: typed.type,
+      v2Type: typed.type,
+      elementType: typed.type,
       nullable: true,
       sap: {},
       isCollection: false,
       computed: true,
     };
-    return { alias, compiled, type: result };
+    return { alias, typed };
   });
 
-  const resolve = resolver(svc, type);
   const computed = rows.map((row) => {
     const out: Row = { ...row };
-    for (const { alias, compiled, type } of expressions) {
-      try {
-        out[alias] = stored(compiled.evaluate(row, resolve).value, type);
-      } catch (e) {
-        throw invalid(e);
-      }
-    }
+    for (const { alias, typed } of expressions)
+      out[alias] = stored(typed.value(row), typed.type!);
     return out;
   });
   return {
@@ -117,4 +137,4 @@ function applyCompute(
   };
 }
 
-export { parseCompute, applyCompute };
+export { parseCompute, applyCompute, typedExpression };

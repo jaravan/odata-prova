@@ -21,10 +21,13 @@
 //
 // The rows a hierarchy function answers with are copies of the entities with those
 // properties filled in, and still entities: they keep their key, ETag and navigations.
+//
+// The Aggregation vocabulary's traverse puts rows in a hierarchy's order, without filling
+// anything in: traverse($root/Genres,GenresHierarchy,ID,preorder,Name desc).
 
 import { HttpError } from "./query.ts";
 import { isIntegerType } from "./types.ts";
-import type { QueryHost } from "./apply-query.ts";
+import { applyQuery, type QueryHost } from "./apply-query.ts";
 import type {
   EntityType,
   Hierarchy,
@@ -36,6 +39,7 @@ import type { Qualify, Xml } from "./metadata.ts";
 
 type TopLevels = Extract<Transformation, { kind: "toplevels" }>;
 type Relatives = Extract<Transformation, { kind: "ancestors" | "descendants" }>;
+type Traverse = Extract<Transformation, { kind: "traverse" }>;
 
 const AGGREGATION_HIERARCHY = "Org.OData.Aggregation.V1.RecursiveHierarchy";
 const HIERARCHY_HIERARCHY =
@@ -190,11 +194,12 @@ function parseTopLevels(args: string, text: string): TopLevels {
         "NodeProperty",
         "Levels",
         "ExpandLevels",
+        "Show",
       ].includes(name)
     )
       throw new HttpError(
-        name === "Show" ? 501 : 400,
-        `$apply: TopLevels's ${name} is not ${name === "Show" ? "supported" : "a parameter"}`,
+        400,
+        `$apply: TopLevels's ${name} is not a parameter`,
       );
   if (!params.HierarchyNodes)
     throw new HttpError(400, `Invalid $apply: TopLevels needs HierarchyNodes`);
@@ -211,6 +216,41 @@ function parseTopLevels(args: string, text: string): TopLevels {
     nodeProperty: quoted("NodeProperty"),
     levels,
     expandLevels: parseExpandLevels(params.ExpandLevels),
+    show: parseShow(params.Show),
+  };
+}
+
+// ["4","7"]: the node IDs to show
+function parseShow(text: string | undefined): string[] {
+  if (text === undefined) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, `Invalid $apply: Show=${text}`);
+  }
+  if (!Array.isArray(parsed) || parsed.some((id) => typeof id !== "string"))
+    throw new HttpError(400, `Invalid $apply: Show=${text}`);
+  return parsed as string[];
+}
+
+// traverse(H,Q,p,preorder|postorder[,orderby...]): the hierarchy nodes ($root/Genres), its
+// qualifier, the node property, the order, and how to sort roots and siblings
+function parseTraverse(args: string, text: string): Traverse {
+  const [nodes, qualifier, nodeProperty, order, ...orderby] = splitArgs(args);
+  if (
+    !order ||
+    !/^[A-Za-z_]\w*$/.test(qualifier) ||
+    (order !== "preorder" && order !== "postorder")
+  )
+    throw new HttpError(400, `Invalid $apply: ${text}`);
+  return {
+    kind: "traverse",
+    set: rootSet(nodes, "traverse"),
+    qualifier,
+    nodeProperty,
+    order,
+    orderby: orderby.length ? orderby.join(",") : undefined,
   };
 }
 
@@ -319,6 +359,7 @@ interface Forest {
   roots: Row[];
   children: Map<Row, Row[]>;
   byId: Map<string, Row>;
+  parentOf: Map<Row, Row>;
 }
 
 function forestOf(
@@ -356,11 +397,14 @@ function forestOf(
   // Roots in the rows' order, those that broke a cycle included
   const index = new Map(rows.map((r, i) => [r, i]));
   roots.sort((a, b) => index.get(a)! - index.get(b)!);
-  return { roots, children, byId };
+  for (const root of roots) parentOf.delete(root);
+  return { roots, children, byId, parentOf };
 }
 
 // TopLevels: the nodes with fewer ancestors than Levels (all without Levels), in preorder,
-// where ExpandLevels shows more levels below a node or collapses it
+// where ExpandLevels shows more levels below a node or collapses it, and Show expands every
+// ancestor of a node (even one ExpandLevels collapses), so that it's shown too. A node ID
+// that isn't among the rows is left alone.
 function topLevels(
   svc: QueryHost,
   rows: Row[],
@@ -370,6 +414,14 @@ function topLevels(
   const h = hierarchyOf(svc, type, t);
   const forest = forestOf(svc, rows, type, h);
   const expand = new Map(t.expandLevels.map((e) => [e.nodeId, e.levels]));
+  const opened = new Set<Row>();
+  for (const id of t.show)
+    for (
+      let at = forest.parentOf.get(forest.byId.get(id)!);
+      at && !opened.has(at);
+      at = forest.parentOf.get(at)
+    )
+      opened.add(at);
   const limited: Limited = { order: [], shown: new Map(), depth: new Map() };
   // below: how many levels to show under the node
   const visit = (node: Row, below: number, depth: number) => {
@@ -377,6 +429,7 @@ function topLevels(
     limited.depth.set(node, depth);
     const override = expand.get(String(node[h.nodeProperty]));
     if (override !== undefined) below = override ?? Infinity;
+    if (opened.has(node)) below = Math.max(below, 1);
     const kids = below > 0 ? forest.children.get(node)! : [];
     limited.shown.set(node, kids);
     for (const kid of kids) visit(kid, below - 1, depth + 1);
@@ -504,11 +557,51 @@ function withDerived(
   });
 }
 
+// traverse: the rows in the order of the whole hierarchy, sorted by orderby first when given,
+// so that a node keeps its place when the rows leave out its parent. The rows themselves,
+// nothing filled in.
+function traverse(
+  svc: QueryHost,
+  rows: Row[],
+  type: EntityType,
+  t: Traverse,
+): Row[] {
+  const h = hierarchyOf(svc, type, t);
+  let nodes = svc.store.rows(t.set);
+  if (t.orderby)
+    nodes = applyQuery(svc, nodes, type, {
+      expand: {},
+      orderby: t.orderby,
+    }).results;
+  const forest = forestOf(svc, nodes, type, h);
+  const id = (row: Row) => String(row[h.nodeProperty]);
+  const input = new Map<string, Row[]>();
+  for (const row of rows) {
+    const same = input.get(id(row));
+    if (same) same.push(row);
+    else input.set(id(row), [row]);
+  }
+  const out: Row[] = [];
+  const visit = (node: Row) => {
+    const own = input.get(id(node)) ?? [];
+    input.delete(id(node));
+    if (t.order === "preorder") out.push(...own);
+    forest.children.get(node)!.forEach(visit);
+    if (t.order === "postorder") out.push(...own);
+  };
+  forest.roots.forEach(visit);
+  // Rows that aren't nodes of the hierarchy, in their order
+  for (const left of input.values()) out.push(...left);
+  return out;
+}
+
 export {
   parseHierarchies,
   parseTopLevels,
   parseRelatives,
+  parseTraverse,
   topLevels,
   relatives,
+  traverse,
   isHierarchyRow,
 };

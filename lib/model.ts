@@ -306,8 +306,9 @@ export type Transformation =
   | { kind: "search"; search: string }
   | { kind: "orderby"; orderby: string }
   | { kind: "skip" | "top"; count: number }
-  // topcount(2,Amount): the rows with the highest or lowest values of a number (path), as
-  // many as a count, as add up to a sum, or as add up to a percentage of the total
+  // topcount(2,Amount): the rows with the highest or lowest values of a property, path or
+  // expression (by), as many as a count, or as add up to a sum or to a percentage of the
+  // total
   | {
       kind: "rank";
       method:
@@ -318,11 +319,25 @@ export type Transformation =
         | "toppercent"
         | "bottompercent";
       value: number;
-      path: string;
+      by: string;
+    }
+  // compute(Amount mul 2 as Double): a property computed for each row (see compute.ts)
+  | { kind: "compute"; compute: Computation[] }
+  // traverse($root/Genres,GenresHierarchy,ID,preorder): the rows in the hierarchy's order,
+  // a parent before its children (preorder) or after them (postorder), with roots and
+  // siblings sorted by orderby when given
+  | {
+      kind: "traverse";
+      set: string;
+      qualifier: string;
+      nodeProperty: string;
+      order: "preorder" | "postorder";
+      orderby?: string;
     }
   | { kind: "identity" }
   // com.sap.vocabularies.Hierarchy.v1.TopLevels(...): the first levels of a hierarchy in
-  // preorder, with nodes expanded (levels > 0, or null for all) or collapsed (0)
+  // preorder, with nodes expanded (levels > 0, or null for all) or collapsed (0), and the
+  // nodes to show (their ancestors expanded)
   | {
       kind: "toplevels";
       set: string;
@@ -330,6 +345,7 @@ export type Transformation =
       nodeProperty: string;
       levels?: number;
       expandLevels: { nodeId: string; levels: number | null }[];
+      show: string[];
     }
   // ancestors(...) and descendants(...): the rows that are ancestors or descendants of those
   // the transformations give (the start nodes), within distance levels, and with the start
