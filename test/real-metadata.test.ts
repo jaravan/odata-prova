@@ -9,14 +9,15 @@ const FIXTURES = path.join(import.meta.dirname, "fixtures");
 // Services the server was not written for. Each must load, serve a self-consistent $metadata
 // in both versions (the one it was not written in is generated), and answer on every entity set.
 const SERVICES = [
-  { dir: "real/NorthwindV2", disabledNavigations: 4 }, // many-to-many links
-  // many-to-many links. ShipVia -> Shipper, and Employee's self-links (ReportsTo), which a
-  // join by naming would match key to key (every employee their own manager), get keys of
-  // their own
-  { dir: "real/NorthwindV4", disabledNavigations: 4 },
-  // containment, Person.Friends (many-to-many with itself) and Trip.Photos (no navigation
-  // back); Person.Photo and Flight's links get keys of their own
-  { dir: "real/TripPin", disabledNavigations: 4 },
+  // its many-to-many links get link sets
+  { dir: "real/NorthwindV2", disabledNavigations: 0 },
+  // ShipVia -> Shipper and Employee's self-links (ReportsTo), which a join by naming would
+  // match key to key (every employee their own manager), get keys of their own, and the
+  // many-to-many links link sets
+  { dir: "real/NorthwindV4", disabledNavigations: 0 },
+  // containment: Person.Trips, and Trip's own navigations, which have no entity set to start
+  // from. Person.Photo and Flight's links get keys of their own, Person.Friends a link set
+  { dir: "real/TripPin", disabledNavigations: 3 },
   { dir: "GatewaySrv", disabledNavigations: 0 },
 ];
 

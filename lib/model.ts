@@ -28,6 +28,23 @@ export interface Model {
   annotationsXml: string[];
   // The namespace each alias stands for, from <edmx:Include Alias> and <Schema Alias>
   aliases: Record<string, string>;
+  // The link sets of the navigations no key can join, many-to-many ones (see linkSet in
+  // navigations.ts), by name
+  linkSets: Record<string, LinkSet>;
+}
+
+// Pairs of keys that link two entity sets' rows, which the store keeps as rows of their own,
+// under the name: People-Friends, with columns UserName and Friends_UserName
+export interface LinkSet {
+  name: string;
+  ends: [LinkEnd, LinkEnd];
+}
+
+// One side of a link set: the entity set, its type's keys, and the columns holding them
+export interface LinkEnd {
+  set: string;
+  keys: string[];
+  columns: string[];
 }
 
 export interface Container {
@@ -169,8 +186,12 @@ export interface Navigation {
   // children inside a draft tree (also joined on IsActiveEntity), "active" from outside the
   // tree (reaches the active entities only)
   draft?: "composition" | "active";
-  // Joined on hidden key columns (see hiddenKeys), which no $metadata has a constraint for
+  // Joined on hidden key columns (see hiddenKeys), or through a link set (links), which no
+  // $metadata has a constraint for
   hidden?: boolean;
+  // Joined through a link set (see LinkSet), with no join pairs: its name, and which of its
+  // ends is this navigation's source
+  links?: { set: string; from: 0 | 1 };
 }
 
 // SiblingEntity or DraftAdministrativeData, which the metadata gives no join for

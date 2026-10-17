@@ -11,6 +11,7 @@
 // Values are produced in the store's internal representation (see types.ts).
 
 import type {
+  LinkSet,
   Model,
   PrimitiveValue,
   Property,
@@ -186,6 +187,7 @@ function foreignKeys(model: Model): ForeignKey[] {
   const out = new Map<string, ForeignKey>();
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
+      if (nav.links) continue; // see generateLinks
       for (const source of setsOfType[et.fullName] || []) {
         const fromSource = nav.dependentSide === "source";
         const fk = {
@@ -552,4 +554,28 @@ function generateData(
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
 }
 
-export { generateData };
+// The rows of a link set without a data file (see linkSet in navigations.ts): each row of its
+// first end linked to up to three of the second's, never to itself
+function generateLinks(
+  model: Model,
+  data: Record<string, Row[]>,
+  set: LinkSet,
+): Row[] {
+  const rng = random(`${model.container.namespace}/${set.name}`);
+  const [from, to] = set.ends;
+  const targets = data[to.set] ?? [];
+  const links: Row[] = [];
+  for (const row of data[from.set] ?? []) {
+    const pool = targets.filter((t) => t !== row);
+    for (let n = int(rng, 4); n > 0 && pool.length; n--) {
+      const target = pool.splice(int(rng, pool.length), 1)[0];
+      const link: Row = {};
+      from.columns.forEach((c, i) => (link[c] = row[from.keys[i]]));
+      to.columns.forEach((c, i) => (link[c] = target[to.keys[i]]));
+      links.push(link);
+    }
+  }
+  return links;
+}
+
+export { generateData, generateLinks };

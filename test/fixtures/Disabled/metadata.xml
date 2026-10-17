@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A navigation to an entity type no entity set holds, so there is nothing to link to. The
+     server must disable it and still serve everything else. -->
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="D" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Student">
+        <Key><PropertyRef Name="StudentId"/></Key>
+        <Property Name="StudentId" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <NavigationProperty Name="Advisor" Type="D.Advisor"/>
+      </EntityType>
+      <EntityType Name="Advisor">
+        <Key><PropertyRef Name="AdvisorId"/></Key>
+        <Property Name="AdvisorId" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="Students" EntityType="D.Student"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

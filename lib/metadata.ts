@@ -254,6 +254,8 @@ function parseMetadata(
       ...inlineAnnotations(xml),
     ],
     aliases: parseAliases(edmx, schemas),
+    // Filled in as the navigations are resolved (see linkSet in navigations.ts)
+    linkSets: {},
   };
 
   const qualify = termQualifier(model.aliases);

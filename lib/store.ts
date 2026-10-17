@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { EntityType, Key, Model, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
-import { generateData } from "./generate.ts";
+import { generateData, generateLinks } from "./generate.ts";
 import { asActive } from "./draft.ts";
 
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
@@ -119,6 +119,8 @@ class Store {
   data: Record<string, Row[]>;
   // The entity sets whose rows were generated
   generated: string[];
+  // The link sets whose rows were generated (see linkSet in navigations.ts)
+  generatedLinks: string[];
 
   // mockRows: rows to generate for each entity set without a seed file (0: leave it empty)
   constructor(
@@ -130,6 +132,7 @@ class Store {
     this.model = model;
     this.data = {};
     this.generated = [];
+    this.generatedLinks = [];
     const dataDir = path.join(modelDir, "data");
     const files: Record<string, string | undefined> = {};
     for (const es of Object.values(model.entitySets)) {
@@ -175,13 +178,35 @@ class Store {
       }
     }
 
+    // The link sets, kept like entity sets: a data file's, or generated ones
+    for (const set of Object.values(model.linkSets)) {
+      const { file, rows } = loadSeedFile(dataDir, [set.name]);
+      files[set.name] = file;
+      this.data[set.name] = rows.map((row) => {
+        const link: Row = {};
+        for (const end of set.ends) {
+          const type = model.entityTypes[model.entitySets[end.set].entityType];
+          end.columns.forEach(
+            (c, i) =>
+              (link[c] = propToInternal(row[c], type.properties[end.keys[i]])),
+          );
+        }
+        return link;
+      });
+      if (!file && mockRows > 0) {
+        this.data[set.name] = generateLinks(model, this.data, set);
+        this.generatedLinks.push(set.name);
+      }
+    }
+
     for (const [name, file] of Object.entries(files)) {
       const how = file
         ? ` from ${path.basename(file)}`
-        : this.generated.includes(name)
+        : this.generated.includes(name) || this.generatedLinks.includes(name)
           ? " generated (no seed file)"
           : " (no seed file)";
-      log(`  ${name}: ${this.data[name].length} rows${how}`);
+      const what = model.linkSets[name] ? "links" : "rows";
+      log(`  ${name}: ${this.data[name].length} ${what}${how}`);
     }
   }
 

@@ -3,11 +3,12 @@
 // associations, a V4 document in referential constraints; without either, the join is
 // guessed from the property names (see joinByNaming), unless joins are strict. A
 // single-valued navigation with no join at all gets a foreign key of its own (see
-// hiddenKey).
+// hiddenKey), and a collection one a link set (see linkSet).
 
 import type {
   EntityType,
   JoinPair,
+  LinkSet,
   Model,
   NavigationProperty,
   V2NavigationProperty,
@@ -27,6 +28,7 @@ interface Join {
   dependentSide: "source" | "target";
   pairs: JoinPair[];
   hidden?: boolean;
+  links?: { set: string; from: 0 | 1 };
 }
 
 function setsByType(model: Model): Record<string, string[]> {
@@ -53,6 +55,7 @@ function finishNavigation(
     dependentSide: join.dependentSide,
     join: join.pairs,
     ...(join.hidden ? { hidden: true } : {}),
+    ...(join.links ? { links: join.links } : {}),
     // Deleting a principal takes its dependents with it when they cannot exist on their
     // own, i.e. when the foreign key is part of the dependent's key (an order's items,
     // keyed by order id + position). A plain lookup reference is left alone. V4 can also
@@ -60,6 +63,7 @@ function finishNavigation(
     cascadeDelete:
       cascadeHint ||
       (dependentIsTarget &&
+        join.pairs.length > 0 &&
         join.pairs.every(([, targetProp]) =>
           targetType.keys.includes(targetProp),
         )),
@@ -142,7 +146,7 @@ function resolveNavigationsV2(model: Model, joins: JoinMode): void {
             assoc.name,
             fromEnd.multiplicity === "*",
             joins,
-            fromEnd.multiplicity === "*" ? undefined : back,
+            { back, targetSet },
           );
         }
         finishNavigation(et, nav, targetType, targetSet, join, false);
@@ -231,7 +235,7 @@ function resolveNavigationsV4(model: Model, joins: JoinMode): void {
               nav.name,
               /^Collection\(/.test(back?.type || ""),
               joins,
-              back && !/^Collection\(/.test(back.type) ? back : undefined,
+              { back, targetSet },
             );
           }
         }
@@ -279,8 +283,9 @@ function disableOnError(
 // sourceIsMany: whether the source's end is "many" (V2's multiplicity, V4's partner).
 // Every join found this way is logged: it's a guess. With strict joins there is no guess.
 // Without a join either way, a single-valued navigation gets a key of its own, and so does a
-// collection whose navigation back (single-valued) is one (see hiddenKey); any other is
-// disabled (see disableOnError).
+// collection whose navigation back (single-valued) is one (see hiddenKey), and any other
+// collection a link set (see linkSet). other: the navigation back from the target, if any,
+// and the target's entity set
 function joinByNaming(
   model: Model,
   sourceType: EntityType,
@@ -289,18 +294,25 @@ function joinByNaming(
   relationshipName: string,
   sourceIsMany: boolean,
   joins: JoinMode,
-  back?: NavigationProperty,
+  other: { back?: NavigationProperty; targetSet: string },
 ): Join {
-  const own = () => {
+  const { back, targetSet } = other;
+  const own = (): Join | undefined => {
     if (!nav.isCollection) return hiddenKey(model, sourceType, nav, targetType);
-    if (!back) return undefined;
-    const pairs = hiddenKey(model, targetType, back, sourceType).pairs.map(
-      ([column, k]): JoinPair => [k, column],
-    );
-    return { dependentSide: "target" as const, pairs, hidden: true };
+    if (back && !sourceIsMany) {
+      const pairs = hiddenKey(model, targetType, back, sourceType).pairs.map(
+        ([column, k]): JoinPair => [k, column],
+      );
+      return { dependentSide: "target", pairs, hidden: true };
+    }
+    return linkSet(model, sourceType, nav, targetType, targetSet, back);
   };
   const logged = (join: Join | undefined) => {
-    if (join)
+    if (join?.links)
+      model.warnings.push(
+        `navigation with links of its own: ${sourceType.name}.${nav.name} in ${join.links.set} (no ReferentialConstraint; a data file can fill it)`,
+      );
+    else if (join)
       model.warnings.push(
         `navigation with a key of its own: ${sourceType.name}.${nav.name} on ${join.pairs
           .map(([s, t]) =>
@@ -408,6 +420,59 @@ function hiddenKey(
   return { dependentSide: "source", pairs, hidden: true };
 }
 
+// A collection navigation no key can join (a many-to-many link, Person.Friends, or one with no
+// navigation back) is joined through a link set: pairs of the two sides' keys, which a data
+// file fills (data/People-Friends.csv: UserName;Friends_UserName), and generated data links
+// at random. It's named after the source's entity set and the navigation; a navigation and
+// its partner, a collection too, share one, named after whichever of the two sorts first.
+// Undefined when the source has no entity set to link (a contained one).
+function linkSet(
+  model: Model,
+  sourceType: EntityType,
+  nav: NavigationProperty,
+  targetType: EntityType,
+  targetSet: string,
+  back: NavigationProperty | undefined,
+): Join | undefined {
+  const sourceSet = setsByType(model)[sourceType.fullName]?.[0];
+  if (!sourceSet || !sourceType.keys.length || !targetType.keys.length)
+    return undefined;
+  const mine = `${sourceType.fullName}/${nav.name}`;
+  const theirs = back && `${targetType.fullName}/${back.name}`;
+  const owned = !theirs || mine <= theirs;
+  // The owner's source end first, with its keys as they are; the other's columns are named
+  // after the owner's navigation
+  const [first, second, ownerNav] = owned
+    ? [
+        { set: sourceSet, type: sourceType },
+        { set: targetSet, type: targetType },
+        nav.name,
+      ]
+    : [
+        { set: targetSet, type: targetType },
+        { set: sourceSet, type: sourceType },
+        back.name,
+      ];
+  const set: LinkSet = {
+    name: `${first.set}-${ownerNav}`,
+    ends: [
+      { set: first.set, keys: first.type.keys, columns: first.type.keys },
+      {
+        set: second.set,
+        keys: second.type.keys,
+        columns: second.type.keys.map((k) => `${ownerNav}_${k}`),
+      },
+    ],
+  };
+  model.linkSets[set.name] ??= set;
+  return {
+    dependentSide: "target",
+    pairs: [],
+    hidden: true,
+    links: { set: set.name, from: owned ? 0 : 1 },
+  };
+}
+
 // Marks navigations that are each other's inverse, so V2 emission can share one
 // Association between them and V4 emission can write Partner.
 function resolvePartners(model: Model): void {
@@ -415,11 +480,15 @@ function resolvePartners(model: Model): void {
     for (const nav of Object.values(et.navigations)) {
       const target = model.entityTypes[nav.targetType];
       const reverse = nav.join.map(([s, t]) => [t, s]);
-      const partner = Object.values(target.navigations).find(
-        (back) =>
-          back.targetType === et.fullName &&
-          JSON.stringify(back.join) === JSON.stringify(reverse) &&
-          back !== nav,
+      // Through a link set: the other navigation through it, from its other end
+      const partner = Object.values(target.navigations).find((back) =>
+        nav.links
+          ? back.links?.set === nav.links.set &&
+            back.links.from !== nav.links.from
+          : !back.links &&
+            back.targetType === et.fullName &&
+            JSON.stringify(back.join) === JSON.stringify(reverse) &&
+            back !== nav,
       );
       nav.partner = partner?.name;
     }

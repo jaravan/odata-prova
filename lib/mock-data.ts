@@ -1,5 +1,5 @@
 // Writes the generated mock data of a model to its data/ folder, one file per entity set
-// that has no seed file yet, so it can be edited by hand. Existing files are never touched.
+// (and link set, see linkSet in navigations.ts) that has no seed file yet, so it can be edited by hand. Existing files are never touched.
 // Used by the odata-prova-mock-data CLI (mock-data.ts).
 //
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
@@ -44,6 +44,17 @@ function writeMockData(
   const store = new Store(model, modelDir, () => {}, { mockRows: rows });
   const dataDir = path.join(modelDir, "data");
   const written: { file: string; rows: number }[] = [];
+  const write = (file: string, text: string) => {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, file), text, { flag: "wx" });
+    } catch (e) {
+      // A read-only mount shows up as EROFS, or as ENOENT on Docker Desktop
+      const err = e as Error;
+      err.message = `cannot write ${path.join(dataDir, file)}: ${err.message} (is the model folder read-only?)`;
+      throw err;
+    }
+  };
   for (const set of store.generated) {
     const type = model.entityTypes[model.entitySets[set].entityType];
     const data = store.rows(set);
@@ -57,16 +68,18 @@ function writeMockData(
           data,
         )
       : JSON.stringify(data, null, 2) + "\n";
-    try {
-      fs.mkdirSync(dataDir, { recursive: true });
-      fs.writeFileSync(path.join(dataDir, file), text, { flag: "wx" });
-    } catch (e) {
-      // A read-only mount shows up as EROFS, or as ENOENT on Docker Desktop
-      const err = e as Error;
-      err.message = `cannot write ${path.join(dataDir, file)}: ${err.message} (is the model folder read-only?)`;
-      throw err;
-    }
+    write(file, text);
     written.push({ file: path.join("data", file), rows: data.length });
+  }
+  // The link sets of many-to-many navigations (see linkSet in navigations.ts)
+  for (const name of store.generatedLinks) {
+    const columns = model.linkSets[name].ends.flatMap((end) => end.columns);
+    const file = `${name}.csv`;
+    write(file, toCsv(columns, store.rows(name)));
+    written.push({
+      file: path.join("data", file),
+      rows: store.rows(name).length,
+    });
   }
   return written;
 }

@@ -17,6 +17,7 @@ import { parseSegments, parseKey } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
 import { applyCompute } from "./compute.ts";
 import { DeltaTokens, deltaChanges, type Removed } from "./delta.ts";
+import { addLink, linkedRows } from "./links.ts";
 import { applyTransformations, holdsEntities } from "./aggregation.ts";
 import { isHierarchyRow } from "./hierarchy.ts";
 import { create, update, deleteEntity } from "./writes.ts";
@@ -267,6 +268,8 @@ class ODataService {
         row,
       );
     const target = this.entitySet(nav.targetSet);
+    if ("links" in nav && nav.links)
+      return { ...target, rows: linkedRows(this.model, this.store, nav, row) };
     const rows = this.store
       .rows(nav.targetSet)
       .filter(
@@ -706,6 +709,9 @@ class ODataService {
           const created = this.model.entitySets[setName].draft
             ? this.drafts.create(setName, type, parentForCreate, body, preset)
             : create(this, setName, type, body, preset);
+          // Through a link set: the new entity is linked to the one it's created under
+          if (parent && "links" in parent.nav && parent.nav.links)
+            addLink(this.model, this.store, parent.nav, parent.row, created);
           const location = this.entityUri(setName, type, created);
           if (wantsMinimal)
             return {

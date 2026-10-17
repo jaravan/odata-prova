@@ -114,13 +114,15 @@ function emitV2(model: Model): string {
       const name = `${et.name}_${nav.name}`;
       const fromRole = `FromRole_${name}`,
         toRole = `ToRole_${name}`;
-      const fromMultiplicity = partner
-        ? partner.isCollection
+      // Through a link set, many on both ends
+      const fromMultiplicity =
+        partner?.isCollection || nav.links
           ? "*"
-          : "1"
-        : nav.isCollection
-          ? "1"
-          : "*";
+          : partner
+            ? "1"
+            : nav.isCollection
+              ? "1"
+              : "*";
       const toMultiplicity = nav.isCollection ? "*" : nav.hidden ? "0..1" : "1";
       const principalIsSource = nav.dependentSide === "target";
       const assoc: AssociationOut = {

@@ -13,6 +13,7 @@ import type {
   Row,
 } from "./model.ts";
 import type { Store } from "./store.ts";
+import { addLink, unlink } from "./links.ts";
 
 // What the writes use of the service (the ODataService in service.ts)
 export interface WriteHost {
@@ -116,8 +117,18 @@ function insertTree(
     const fk = Object.fromEntries(
       nav.join.map(([src, tgt]) => [tgt, row[src]]),
     );
-    for (const child of children)
-      insertTree(svc, nav.targetSet, target.type, child, fk, inserted, draft);
+    for (const child of children) {
+      const made = insertTree(
+        svc,
+        nav.targetSet,
+        target.type,
+        child,
+        fk,
+        inserted,
+        draft,
+      );
+      if (nav.links) addLink(svc.model, svc.store, nav, row, made);
+    }
   }
   return row;
 }
@@ -174,6 +185,7 @@ function deleteEntity(
           deleting,
         );
   }
+  unlink(svc.model, svc.store, setName, row);
   svc.store.remove(setName, entityType, key);
 }
 
