@@ -40,6 +40,8 @@ odata-prova listening on port 3000
   V4: http://localhost:3000/odata/v4/MySrv/
 ```
 
+> If port 3000 is already in use, pick another with `PORT`, e.g. `PORT=4004 npx odata-prova ./MySrv`
+
 Or with Docker, mounting the folder as `/models/<ServiceName>`:
 
 ```sh
