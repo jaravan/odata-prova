@@ -113,7 +113,7 @@ The image contains no model. Mount one as `/models/<ServiceName>`, and the serve
 - **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
 - **Delta links** (V4): read an entity set with `Prefer: odata.track-changes`, and its `@odata.deltaLink` later answers what was added, changed or deleted since. See [Delta links](docs/odata-support.md#delta-links).
 
-The rest of `$apply` is rejected with `501`.
+What `$apply` doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
 
 The tests load Northwind (V2 and V4) and TripPin unmodified.
 
