@@ -28,7 +28,7 @@ import type {
   PropertyValue,
   Row,
 } from "./model.ts";
-import type { RequestHeaders } from "./service.ts";
+import type { RequestHeaders } from "./protocol.ts";
 import { HttpError } from "./query.ts";
 
 const CONCURRENCY = "Org.OData.Core.V1.OptimisticConcurrency";

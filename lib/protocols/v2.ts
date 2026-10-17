@@ -10,7 +10,8 @@ import type {
   QueryNode,
   Row,
 } from "../model.ts";
-import type { ODataService, Protocol } from "../service.ts";
+import type { ODataService } from "../service.ts";
+import type { Protocol } from "../protocol.ts";
 import { toInternal, toMillis, timeOfDayToV2, specialFloat } from "../types.ts";
 import {
   HttpError,

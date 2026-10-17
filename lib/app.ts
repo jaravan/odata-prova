@@ -8,7 +8,7 @@ import { emitV2 } from "./emit-v2.ts";
 import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
-import type { Protocol, Rules } from "./service.ts";
+import type { Protocol, Rules } from "./protocol.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { ETAG_MODES } from "./etag.ts";

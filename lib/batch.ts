@@ -6,7 +6,8 @@
 import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
 import { HttpError, decodeUrl } from "./query.ts";
-import type { ODataService, Protocol } from "./service.ts";
+import type { ODataService } from "./service.ts";
+import type { Protocol } from "./protocol.ts";
 
 // One application/http part: the request line, its headers (lower-cased) and body
 interface HttpRequestPart {

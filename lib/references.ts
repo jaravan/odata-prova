@@ -12,6 +12,7 @@ import { parseSegments, parseKey } from "./resource-path.ts";
 import { renewETag } from "./etag.ts";
 import { addLink, removeLink } from "./links.ts";
 import type { LiteralSyntax } from "./filter.ts";
+import type { ODataService } from "./service.ts";
 import type {
   AnyNavigation,
   EntitySet,
@@ -19,6 +20,7 @@ import type {
   Key,
   Model,
   Navigation,
+  ODataResponse,
   Row,
 } from "./model.ts";
 import type { Store } from "./store.ts";
@@ -179,4 +181,74 @@ function unlink(
   for (const t of targets) unlinkTarget(svc, nav, targetType, t);
 }
 
-export { resolveReference, link, unlink, changeable };
+// The links of parent.row's navigation (see references.ts): GET reads them, PUT sets a
+// single-valued navigation's, POST adds one to a collection's, DELETE removes one. target:
+// the entity the path names (Nav(key), or a single-valued navigation's), keyed: by a key.
+// A link to set is the body's @odata.id (V4) or uri (V2); one to remove from a
+// collection, V4's $id too.
+function referenceRequest(
+  svc: ODataService,
+  method: string,
+  parent: { row: Row; type: EntityType; nav: AnyNavigation; setName: string },
+  target: Row | undefined,
+  keyed: boolean,
+  body: unknown,
+  query: Record<string, unknown>,
+): ODataResponse {
+  const { row, type, nav, setName } = parent;
+  if (!("dependentSide" in nav))
+    throw new HttpError(400, `${nav.name} is the draft's own: it has no links`);
+  const targetType = svc.entitySet(nav.targetSet).type;
+  const url = (field: string) =>
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>)[field]
+      : undefined;
+  const given = () =>
+    resolveReference(
+      svc,
+      url(svc.protocol.version === "4.0" ? "@odata.id" : "uri"),
+      nav,
+    );
+  switch (method) {
+    case "GET": {
+      const rows = target ? [target] : svc.related(row, type, nav).rows;
+      return svc.protocol.references(
+        svc,
+        rows.map((r) => svc.entityUri(nav.targetSet, targetType, r)),
+        !nav.isCollection || keyed,
+      );
+    }
+    case "PUT":
+      if (nav.isCollection)
+        throw new HttpError(405, `POST a link to the collection ${nav.name}`);
+      link(svc, setName, type, row, nav, given());
+      return { status: 204 };
+    case "POST":
+      if (!nav.isCollection)
+        throw new HttpError(405, `PUT the link of ${nav.name}`);
+      link(svc, setName, type, row, nav, given());
+      return { status: 204 };
+    case "DELETE": {
+      if (!nav.isCollection) {
+        unlink(svc, setName, type, row, nav);
+        return { status: 204 };
+      }
+      const which = keyed
+        ? target
+        : query.$id !== undefined
+          ? resolveReference(svc, query.$id, nav)
+          : undefined;
+      if (!which)
+        throw new HttpError(
+          400,
+          `Name the link to remove: ${nav.name}(key)/$ref, or $id`,
+        );
+      unlink(svc, setName, type, row, nav, which);
+      return { status: 204 };
+    }
+    default:
+      throw new HttpError(405, `${method} not allowed on links`);
+  }
+}
+
+export { resolveReference, link, unlink, changeable, referenceRequest };

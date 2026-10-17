@@ -11,7 +11,8 @@ import type {
   ResponseOptions,
   Row,
 } from "../model.ts";
-import type { ODataService, Protocol } from "../service.ts";
+import type { ODataService } from "../service.ts";
+import type { Protocol } from "../protocol.ts";
 import { toInternal, specialFloat } from "../types.ts";
 import {
   HttpError,
@@ -24,7 +25,7 @@ import {
   rejectUnsupported,
   errorCode,
 } from "../query.ts";
-import { parseApply } from "../aggregation.ts";
+import { parseApply } from "../apply-parse.ts";
 import { parseCompute } from "../compute.ts";
 
 const version = "4.0";

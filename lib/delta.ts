@@ -9,7 +9,15 @@
 // older one is a 410 Gone, and the client reads the entity set again.
 
 import { applyQuery, type QueryHost } from "./apply-query.ts";
-import type { EntityType, QueryNode, Row } from "./model.ts";
+import { HttpError } from "./query.ts";
+import type { ODataService } from "./service.ts";
+import type {
+  EntityType,
+  ODataResponse,
+  QueryNode,
+  ResponseOptions,
+  Row,
+} from "./model.ts";
 
 // How many delta tokens are kept, per service
 const KEPT = 100;
@@ -82,4 +90,53 @@ function deltaChanges(
   return { rows, removed };
 }
 
-export { DeltaTokens, deltaChanges };
+// Whether a GET of an entity set gets a delta link: a V4 client asks for one with Prefer:
+// odata.track-changes, and the query is one a delta can answer, without $apply, $compute,
+// $skip or $top. Otherwise the preference isn't applied, as the spec allows.
+function tracksChanges(
+  svc: ODataService,
+  prefer: string,
+  q: QueryNode,
+): boolean {
+  return (
+    !!svc.protocol.delta &&
+    /odata\.track-changes/i.test(prefer) &&
+    !q.apply &&
+    !q.compute &&
+    q.skip === undefined &&
+    q.top === undefined
+  );
+}
+
+// What changed in the entity set since the delta token (see delta.ts), with a new delta
+// link. A token that's unknown, no longer kept or from before a restart is a 410 Gone. Only
+// V4 parses a $deltatoken, and has delta().
+function deltaResponse(
+  svc: ODataService,
+  setName: string,
+  type: EntityType,
+  q: QueryNode,
+  opts: ResponseOptions,
+  link: (token: string) => string,
+): ODataResponse {
+  const before = svc.deltaTokens.rows(q.deltatoken!, setName);
+  if (!before)
+    throw new HttpError(
+      410,
+      "The delta link has expired: read the entity set again for a new one",
+      "DeltaLinkExpired",
+    );
+  const now = svc.store.rows(setName);
+  const changes = deltaChanges(svc, type, before, now, q);
+  const deltaLink = link(svc.deltaTokens.issue(setName, now));
+  return svc.protocol.delta!(
+    svc,
+    { ...changes, deltaLink },
+    setName,
+    type,
+    q,
+    opts,
+  );
+}
+
+export { DeltaTokens, deltaChanges, tracksChanges, deltaResponse };

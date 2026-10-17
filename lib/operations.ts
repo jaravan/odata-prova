@@ -15,7 +15,8 @@ import type {
   ResponseOptions,
   Row,
 } from "./model.ts";
-import type { ODataService, RequestHeaders } from "./service.ts";
+import type { ODataService } from "./service.ts";
+import type { RequestHeaders } from "./protocol.ts";
 
 // What an operation is called on: an entity (row) or a collection (rows)
 interface Binding {
