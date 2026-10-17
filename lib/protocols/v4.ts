@@ -277,12 +277,21 @@ function contextList(paths: string[]): string {
     .join(",");
 }
 
-// Sets out.Supplier.Name for "Supplier/Name"
-function setPath(out: Record<string, unknown>, path: string, value: unknown) {
+// Sets out.Supplier.Name for "Supplier/Name". A collection navigation on the way is a list
+// of the one entity the row was copied for (see withPaths in aggregation.ts):
+// "Items/Material" is {"Items":[{"Material":...}]}
+function setPath(
+  out: Record<string, unknown>,
+  path: string,
+  value: unknown,
+  collectionSegments: number[] = [],
+) {
   const parts = path.split("/");
   let at = out;
-  for (const part of parts.slice(0, -1))
-    at = (at[part] ??= {}) as Record<string, unknown>;
+  for (const [i, part] of parts.slice(0, -1).entries())
+    at = collectionSegments.includes(i)
+      ? ((at[part] ??= [{}]) as Record<string, unknown>[])[0]
+      : ((at[part] ??= {}) as Record<string, unknown>);
   at[parts[parts.length - 1]] = value;
 }
 
@@ -401,7 +410,13 @@ const v4: Protocol = {
         return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
-        if (p.name in r) setPath(out, p.name, toWire(r[p.name], p, opts));
+        if (p.name in r)
+          setPath(
+            out,
+            p.name,
+            toWire(r[p.name], p, opts),
+            p.collectionSegments,
+          );
       return out;
     });
     if (nextLink) body["@odata.nextLink"] = nextLink;

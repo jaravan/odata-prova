@@ -342,11 +342,68 @@ describe("$apply", () => {
     }
   });
 
+  it("groupby runs any sequence on each group", async () => {
+    // The highest order of each currency: still entities, which $expand expands
+    const top = await apply(
+      "$apply=groupby((Currency),topcount(1,TotalAmount))&$select=PurchaseOrderId&$expand=Items($select=Material)",
+    );
+    assert.equal(top.status, 200);
+    assert.deepEqual(
+      top.body.value.map((o: { PurchaseOrderId: string; Items: unknown[] }) => [
+        o.PurchaseOrderId,
+        o.Items.length,
+      ]),
+      [
+        ["4500000002", 2],
+        ["4500000003", 2],
+      ],
+    );
+
+    // Rows a sequence makes get the group's values
+    const totals = await apply(
+      "$apply=groupby((Currency),aggregate(TotalAmount with sum as Total)/filter(Total gt 10000))",
+    );
+    assert.deepEqual(totals.body.value, [
+      { Currency: "EUR", Total: "59800.50" },
+    ]);
+
+    // $these is the group in each filter of the sequence
+    const big = await apply(
+      "$apply=groupby((Currency),filter($these/aggregate($count) gt 2)/top(1))&$select=PurchaseOrderId",
+    );
+    assert.deepEqual(big.body.value, [{ PurchaseOrderId: "4500000001" }]);
+  });
+
+  it("a path through a collection navigation: a row for each related entity", async () => {
+    const r = await apply(
+      "$apply=groupby((Items/Currency),aggregate(Items/NetPrice with sum as Total,$count as Count))",
+    );
+    assert.equal(r.status, 200);
+    assert.equal(
+      r.body["@odata.context"],
+      "/odata/v4/T/$metadata#PurchaseOrderSet(Items(Currency),Total,Count)",
+    );
+    assert.deepEqual(r.body.value, [
+      { Items: [{ Currency: "EUR" }], Total: "7438.70", Count: "5" },
+      { Items: [{ Currency: "USD" }], Total: "969.24", Count: "3" },
+    ]);
+
+    // Aggregated without grouping by it: the values of all the related entities
+    const all = await apply(
+      "$apply=filter(Status eq 'Open')/aggregate(Items/NetPrice with max as Max,Items/NetPrice with sum as Total,$count as Orders)",
+    );
+    assert.deepEqual(all.body.value, [
+      { Max: "22.50", Total: "38.20", Orders: "2" },
+    ]);
+
+    const ranked = await apply("$apply=topcount(1,Items/NetPrice)");
+    assert.equal(ranked.status, 400);
+  });
+
   it("what isn't supported -> 501, never ignored", async () => {
     for (const query of [
-      "$apply=groupby((Currency),topcount(1,TotalAmount))",
       "$apply=aggregate(TotalAmount with Custom.median as M)",
-      "$apply=groupby((Items/Material))",
+      "$apply=groupby((Items/PurchaseOrder/Items/Material))",
     ]) {
       const r = await apply(query);
       assert.equal(r.status, 501, query);

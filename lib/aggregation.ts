@@ -6,12 +6,14 @@
 //
 // A groupby or aggregate gives rows of a type of its own (see resultType): the grouping
 // properties and the aliases, with no key. The query options after $apply refer to those.
-// Grouping or aggregating by a path through single-valued navigations, groupby((Supplier/
-// Name)), works on a property of that name holding the value it leads to (see withPaths),
-// which the response nests: {"Supplier":{"Name":"..."}}.
+// Grouping or aggregating by a path, groupby((Supplier/Name)), works on a property of that
+// name holding the value it leads to (see withPaths), which the response nests:
+// {"Supplier":{"Name":"..."}}. Through a collection navigation, groupby((Items/Material))
+// copies each row for each related entity, and aggregate(Items/NetPrice with sum as Total)
+// pools the values of all of them.
 //
 // Supported: filter, search, orderby, skip, top, identity, concat, compute (see compute.ts),
-// groupby (with an aggregate or a filter), aggregate with sum, min, max, average,
+// groupby (with an aggregate, or any sequence of transformations for each group), aggregate with sum, min, max, average,
 // countdistinct, $count and custom aggregates, topcount, bottomcount, topsum, bottomsum,
 // toppercent and bottompercent (by a property or an expression), and the hierarchy
 // transformations traverse, TopLevels, ancestors and descendants (see hierarchy.ts). Other
@@ -34,6 +36,7 @@
 
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
+import type { Resolve } from "./filter.ts";
 import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
 import {
   parseTopLevels,
@@ -179,26 +182,19 @@ function parseTransformation(text: string): Transformation {
       const props = list?.match(/^\((.*)\)$/s);
       if (!props || more.length)
         throw new HttpError(400, `Invalid $apply: ${text}`);
-      const nested = rest?.match(/^aggregate\s*\((.*)\)$/s);
-      // UI5's $$filterOnAggregate sends groupby((...),filter(...)), whose filter is on the
-      // groups' aggregated values: $these/aggregate(Amount) gt 1000
-      const filter = rest?.match(/^filter\s*\((.*)\)$/s);
-      if (filter)
+      const properties = splitTopLevel(props[1], ",");
+      const sequence = rest === undefined ? [] : parseApply(rest);
+      const [only, ...others] = sequence;
+      if (!only || (only.kind === "aggregate" && !others.length))
         return {
-          kind: "groupfilter",
-          properties: splitTopLevel(props[1], ","),
-          filter: filter[1],
+          kind: "groupby",
+          properties,
+          aggregates: only ? only.aggregates : [],
         };
-      if (rest && !nested)
-        throw new HttpError(
-          501,
-          `$apply: groupby supports only an aggregate or a filter after its properties: ${rest}`,
-        );
-      return {
-        kind: "groupby",
-        properties: splitTopLevel(props[1], ","),
-        aggregates: nested ? parseAggregates(nested[1]) : [],
-      };
+      // Any other sequence runs on each group, such as UI5's $$filterOnAggregate:
+      // groupby((...),filter(...)), whose filter is on the group's aggregated values,
+      // $these/aggregate(Amount) gt 1000
+      return { kind: "groupseq", properties, sequence };
     }
     default:
       throw new HttpError(501, `$apply: ${name} is not supported`);
@@ -262,20 +258,25 @@ function checkAlias(agg: Aggregate, expr: string): Aggregate {
 
 // --- Running -------------------------------------------------------------------------------
 
-// The rows and their type after each transformation in turn
+// The rows and their type after each transformation in turn. inGroup: they are a group's,
+// which a filter's $these/aggregate(...) aggregates
 function applyTransformations(
   svc: QueryHost,
   rows: Row[],
   type: EntityType,
   transformations: Transformation[],
+  inGroup = false,
 ): { rows: Row[]; type: EntityType } {
   for (const t of transformations) {
     switch (t.kind) {
       case "filter":
-        rows = applyQuery(svc, rows, type, {
-          expand: {},
-          filter: t.filter,
-        }).results;
+        rows = applyQuery(
+          svc,
+          rows,
+          type,
+          { expand: {}, filter: t.filter },
+          inGroup ? aggregateOf(type, rows) : undefined,
+        ).results;
         break;
       case "search":
         rows = applyQuery(svc, rows, type, {
@@ -317,7 +318,7 @@ function applyTransformations(
         break;
       case "concat": {
         const results = t.sequences.map((seq) =>
-          applyTransformations(svc, rows, type, seq),
+          applyTransformations(svc, rows, type, seq, inGroup),
         );
         rows = results.flatMap((r) => r.rows);
         type = unionType(
@@ -346,56 +347,149 @@ function applyTransformations(
         type = out.type;
         break;
       }
-      case "groupfilter": {
-        // The rows that pass are the entities themselves, not the copies withPaths makes
-        const paths = withPaths(svc, rows, type, t.properties, []);
-        const original = new Map(paths.rows.map((r, i) => [r, rows[i]]));
-        aggregated(paths.type, t.properties, []); // checks the grouping properties
-        rows = groupsOf(paths.rows, t.properties).flatMap((group) =>
-          applyQuery(
-            svc,
-            group,
-            paths.type,
-            { expand: {}, filter: t.filter },
-            aggregateOf(paths.type, group),
-          ).results.map((r) => original.get(r)!),
-        );
+      case "groupseq":
+        ({ rows, type } = eachGroup(svc, rows, type, t));
         break;
-      }
     }
   }
   return { rows, type };
 }
 
+// A groupby with a sequence: the sequence run on each group's rows, one group after the other.
+// A row it passes on is the entity itself, not the copy withPaths makes, and the type stays
+// the input's when the sequence keeps it. A row it makes, such as an aggregate's, gets the
+// group's values.
+function eachGroup(
+  svc: QueryHost,
+  rows: Row[],
+  type: EntityType,
+  t: Extract<Transformation, { kind: "groupseq" }>,
+): { rows: Row[]; type: EntityType } {
+  const paths = withPaths(svc, rows, type, t.properties, []);
+  const grouping = aggregated(paths.type, t.properties, []); // checks them, too
+  // The sequence's type, from no rows: a mistake in it is a 400 even when there are none
+  const shape = applyTransformations(
+    svc,
+    [],
+    paths.type,
+    t.sequence,
+    true,
+  ).type;
+  const out: Row[] = [];
+  for (const group of groupsOf(paths.rows, t.properties))
+    for (const row of applyTransformations(
+      svc,
+      group,
+      paths.type,
+      t.sequence,
+      true,
+    ).rows) {
+      const entity = paths.origin.get(row);
+      if (entity) {
+        out.push(entity);
+        continue;
+      }
+      const made = { ...row };
+      for (const name of t.properties)
+        if (!(name in made)) made[name] = group[0][name];
+      out.push(made);
+    }
+  if (shape === paths.type) return { rows: out, type };
+  return {
+    rows: out,
+    type: resultType(type, {
+      ...grouping.type.properties,
+      ...shape.properties,
+    }),
+  };
+}
+
 // The rows, and their type, with a property for each path among the grouping properties and
 // the aggregated ones ("Supplier/Name") holding the value it leads to, or null when a
-// navigation on the way leads nowhere
+// navigation on the way leads nowhere. A grouping path through a collection navigation
+// (Items/Material) copies each row for each entity the navigation leads to (or once, with
+// nulls, when it leads to none), and the other paths through it (Items/NetPrice) read that
+// entity. An aggregated path through one that isn't grouped by holds the values of all of
+// them. origin: the row each one comes from.
 function withPaths(
   svc: QueryHost,
   rows: Row[],
   type: EntityType,
   groupBy: string[],
   aggregates: Aggregate[],
-): { rows: Row[]; type: EntityType } {
-  const paths = [...groupBy, ...aggregates.map((a) => a.property ?? "")].filter(
-    (name) => name.includes("/") && !type.properties[name],
-  );
-  if (!paths.length) return { rows, type };
+): { rows: Row[]; type: EntityType; origin: Map<Row, Row> } {
+  const paths = [
+    ...new Set([...groupBy, ...aggregates.map((a) => a.property ?? "")]),
+  ].filter((name) => name.includes("/") && !type.properties[name]);
+  if (!paths.length)
+    return { rows, type, origin: new Map(rows.map((r) => [r, r])) };
   const properties = { ...type.properties };
   for (const path of paths) properties[path] = pathProperty(svc, type, path);
-  const resolve = resolver(svc, type);
-  return {
-    rows: rows.map((row) => {
-      const out = { ...row };
-      for (const path of paths)
-        out[path] = resolve(row, path).value as PropertyValue;
-      return out;
-    }),
-    type: { ...type, properties },
+  // The collection navigation a path goes through, with the single-valued ones before it:
+  // Items of Items/Material
+  const through = (path: string) => {
+    const at = properties[path].collectionSegments?.[0];
+    return at === undefined
+      ? undefined
+      : path
+          .split("/")
+          .slice(0, at + 1)
+          .join("/");
   };
+  const fanOuts = [
+    ...new Set(groupBy.map((p) => properties[p] && through(p))),
+  ].filter((p): p is string => p !== undefined);
+  const resolve = resolver(svc, type);
+  const related = (row: Row, navigation: string) => {
+    const coll = resolve.collection(row, navigation);
+    return "rows" in coll ? coll : { rows: [], resolve };
+  };
+  const origin = new Map<Row, Row>();
+  const out: Row[] = [];
+  for (const row of rows) {
+    // One entity, or none, for each fanned-out navigation, in each combination
+    let combinations: Record<string, { row: Row; resolve: Resolve } | null>[] =
+      [{}];
+    for (const navigation of fanOuts) {
+      const r = related(row, navigation);
+      const options = r.rows.length
+        ? r.rows.map((e) => ({ row: e, resolve: r.resolve }))
+        : [null];
+      combinations = combinations.flatMap((c) =>
+        options.map((o) => ({ ...c, [navigation]: o })),
+      );
+    }
+    for (const bound of combinations) {
+      const copy: Row = { ...row };
+      for (const path of paths) {
+        const navigation = through(path);
+        if (navigation === undefined) {
+          copy[path] = resolve(row, path).value as PropertyValue;
+          continue;
+        }
+        const rest = path.slice(navigation.length + 1);
+        let values: PropertyValue[];
+        if (navigation in bound) {
+          const entity = bound[navigation];
+          values = entity
+            ? [entity.resolve(entity.row, rest).value as PropertyValue]
+            : [null];
+        } else {
+          const r = related(row, navigation);
+          values = r.rows.map((e) => r.resolve(e, rest).value as PropertyValue);
+        }
+        // A grouping value is one value; an aggregated one is a list (see aggregateRow)
+        copy[path] = groupBy.includes(path) ? values[0] : values;
+      }
+      origin.set(copy, row);
+      out.push(copy);
+    }
+  }
+  return { rows: out, type: { ...type, properties }, origin };
 }
 
-// The property at the end of a path through single-valued navigations, named after the path
+// The property at the end of a path, named after the path. collectionSegments marks a
+// collection navigation in it; a path through more than one is a 501.
 function pathProperty(
   svc: QueryHost,
   type: EntityType,
@@ -403,24 +497,30 @@ function pathProperty(
 ): Property {
   const parts = path.split("/");
   let current = type;
-  for (const part of parts.slice(0, -1)) {
+  const collectionSegments: number[] = [];
+  for (const [i, part] of parts.slice(0, -1).entries()) {
     const nav = svc.navigation(current, part);
     if (!nav)
       throw new HttpError(
         400,
         `$apply: ${part} in ${path} is not a navigation of ${current.name}`,
       );
-    if (nav.isCollection)
-      throw new HttpError(
-        501,
-        `$apply: a path through a collection navigation (${path}) is not supported`,
-      );
+    if (nav.isCollection) collectionSegments.push(i);
     current = svc.model.entityTypes[nav.targetType];
   }
+  if (collectionSegments.length > 1)
+    throw new HttpError(
+      501,
+      `$apply: a path through more than one collection navigation (${path}) is not supported`,
+    );
   const prop = current.properties[parts[parts.length - 1]];
   if (!prop)
     throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
-  return { ...prop, name: path };
+  return {
+    ...prop,
+    name: path,
+    ...(collectionSegments.length ? { collectionSegments } : {}),
+  };
 }
 
 // The rows topcount and the others keep: the highest values first (top...) or the lowest
@@ -475,6 +575,11 @@ function rankedBy(
     const prop = by.includes("/")
       ? pathProperty(svc, type, by)
       : propertyOf(type, by);
+    if (prop.collectionSegments)
+      throw new HttpError(
+        400,
+        `$apply: ranking needs one value for each row, and ${by} goes through a collection navigation`,
+      );
     const resolve = resolver(svc, type);
     return { valueType: prop.type, valueOf: (row) => resolve(row, by).value };
   }
@@ -497,6 +602,8 @@ function holdsEntities(transformations: Transformation[]): boolean {
       entities = false;
     else if (t.kind === "concat")
       entities = entities && t.sequences.some(holdsEntities);
+    else if (t.kind === "groupseq")
+      entities = entities && holdsEntities(t.sequence);
   }
   return entities;
 }
@@ -690,10 +797,14 @@ function aggregateRow(rows: Row[], out: Aggregated): Row {
       row[agg.alias] = String(rows.length);
       continue;
     }
-    // Every aggregation method leaves out nulls
+    // Every aggregation method leaves out nulls. A path through a collection navigation
+    // holds a list of values for each row (see withPaths)
     const values = rows
-      .map((r) => r[input.name] as PrimitiveValue)
-      .filter((v) => v !== null && v !== undefined);
+      .flatMap((r) => {
+        const v = r[input.name];
+        return input.collectionSegments && Array.isArray(v) ? v : [v];
+      })
+      .filter((v) => v !== null && v !== undefined) as PrimitiveValue[];
     const value = aggregateValues(agg.method, values, input);
     // A sum is a decimal string; a custom aggregate's type may want a number
     row[agg.alias] =

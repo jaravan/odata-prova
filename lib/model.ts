@@ -114,6 +114,9 @@ export interface Property {
   concurrency?: boolean;
   // A collection-valued property, which V2 has no place for
   v2Omit?: boolean;
+  // A path's property in $apply (Items/Material): the indexes of its segments that are
+  // collection navigations (see withPaths in aggregation.ts)
+  collectionSegments?: number[];
 }
 
 // A parameter, binding parameter or return type of an operation: a property that can also be
@@ -299,9 +302,9 @@ export interface Computation {
 export type Transformation =
   | { kind: "filter"; filter: string }
   | { kind: "groupby"; properties: string[]; aggregates: Aggregate[] }
-  // groupby((Country),filter($these/aggregate(Amount) gt 1000)): the rows of each group that
-  // pass the filter, in which $these is the group
-  | { kind: "groupfilter"; properties: string[]; filter: string }
+  // groupby((Country),filter($these/aggregate(Amount) gt 1000)) or any other sequence: what
+  // the sequence gives for each group's rows, in which $these is the group
+  | { kind: "groupseq"; properties: string[]; sequence: Transformation[] }
   | { kind: "aggregate"; aggregates: Aggregate[] }
   | { kind: "search"; search: string }
   | { kind: "orderby"; orderby: string }
