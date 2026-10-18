@@ -107,7 +107,21 @@ GET /odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3
 
 The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`. Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
 
-A delta link is for an entity set, read without `$apply`, `$compute`, `$skip` or `$top`; for other reads the preference isn't applied, and `Preference-Applied` says so. The server keeps the latest 100 delta links, and none across a restart: an older one is a `410 Gone`, and the client reads the set again. A change inside an expanded navigation isn't a change of the entity. V2 has no delta links: `$deltatoken` there is a `501`.
+A delta link is for an entity set, read without `$apply`, `$compute`, `$skip` or `$top`; for other reads the preference isn't applied, and `Preference-Applied` says so. The server keeps the latest 100 delta links, and none across a restart: an older one is a `410 Gone`, and the client reads the set again. A change inside an expanded navigation isn't a change of the entity.
+
+V2 has delta links as SAP Gateway writes them. A V2 read of an entity set gets one with `Prefer: odata.track-changes`, or without asking when the V2 metadata marks the set `sap:change-tracking="true"`. It comes as `d.__delta`, the request with a `!deltatoken`:
+
+```
+GET /odata/v2/MySrv/PurchaseOrderSet?$select=Status&!deltatoken='m1x2k3-1'
+
+{ "d": {
+    "results": [ { "__metadata": { ... }, "Status": "Completed" } ],
+    "__deleted": [ { "__metadata": { "uri": "/odata/v2/MySrv/PurchaseOrderSet('4500000005')", ... },
+                     "PurchaseOrderId": "4500000005" } ],
+    "__delta": "/odata/v2/MySrv/PurchaseOrderSet?$select=Status&!deltatoken='m1x2k3-2'" } }
+```
+
+The entities added or changed are in `results`. The ones deleted, or that no longer match the link's `$filter`, are in `__deleted`, each with its URI, type and keys: SAP doesn't publish its JSON for those, so that list is this server's own. V4's `$deltatoken` is a `501` in V2.
 
 ### Aggregation (`$apply`)
 
@@ -241,7 +255,7 @@ Any other error's code is its status's: `BadRequest` (`400`), `NotFound` (`404`)
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, `$deltatoken` in V2, the parts of `$apply` listed under [Aggregation](#aggregation-apply), and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, V4's `$deltatoken` in V2 (which has `!deltatoken`), the parts of `$apply` listed under [Aggregation](#aggregation-apply), and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 
