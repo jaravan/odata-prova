@@ -88,7 +88,7 @@ GET /odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate      (PAGE_SIZE=2)
 
 The link is the request with a `$skiptoken`: where the next page starts among the rows the query options leave. A client sends it back as it is; a `$skiptoken` also works without paging. UI5's V2 and V4 models don't follow the link: they take it as a sign that there are more rows, and read the next ones with `$skip` and `$top`, which works as before.
 
-A V4 client can ask for smaller pages with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not. Paging applies to an entity set, a navigation's collection, a function's result and an `$apply` result, not to collections in an `$expand`. It's off by default, as a client that ignores the links would see only the first page.
+A V4 client can ask for smaller pages with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not. Paging applies to an entity set, a navigation's collection, a function's result and an `$apply` result, and to each collection in an `$expand`. An expanded collection's link, `Items@odata.nextLink` in V4 and `"Items": {"results": [...], "__next": ...}` in V2, is the navigation under its entity, with the expand's own options: `.../Orders(1)/Items?$select=Material&$skiptoken=2`. It's off by default, as a client that ignores the links would see only the first page.
 
 ### Delta links
 

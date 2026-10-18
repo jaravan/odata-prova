@@ -173,12 +173,15 @@ class ODataService {
   }
 
   // Related rows for an $expand node, with the node's own $filter/$orderby/$top/$skip applied.
+  // page: server-driven paging for an expanded collection (see paging.ts), the page's size
+  // and the link to the rest, which nextLink is when rows are left out
   expandRows(
     row: Row,
     entityType: EntityType,
     nav: AnyNavigation,
     node: QueryNode,
-  ): { rows: Row[]; count?: number; type: EntityType } {
+    page?: ResponseOptions["page"],
+  ): { rows: Row[]; count?: number; type: EntityType; nextLink?: string } {
     const { rows, type } = this.computed(
       this.related(row, entityType, nav),
       node,
@@ -187,7 +190,13 @@ class ODataService {
       ...node,
       count: node.count,
     });
-    return { rows: results, count, type };
+    if (!page || !nav.isCollection) return { rows: results, count, type };
+    const paged = paging(
+      results,
+      { ...node, skiptoken: undefined },
+      { ieee754: false, prefer: "", page },
+    );
+    return { ...paged, count, type };
   }
 
   // The navigation called `name` (SiblingEntity and DraftAdministrativeData included, see

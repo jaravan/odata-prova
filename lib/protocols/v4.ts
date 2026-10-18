@@ -27,6 +27,7 @@ import {
 } from "../query.ts";
 import { parseApply } from "../apply-parse.ts";
 import { parseCompute } from "../compute.ts";
+import { expandLink } from "../paging.ts";
 
 const version = "4.0";
 const headers: Record<string, string> = { "OData-Version": "4.0" };
@@ -246,20 +247,57 @@ function serialize(
         400,
         `${navName} is not a navigation property of ${type.name}`,
       );
+    // Paged as the response is (see paging.ts), with a link to the rest
+    const page = opts?.page && {
+      size: opts.page.size,
+      link: (skiptoken: number) =>
+        expandLink(
+          svc.entityUri(setName, type, row),
+          navName,
+          optionsOf(child),
+          skiptoken,
+        ),
+    };
     const {
       rows,
       count,
       type: targetType,
-    } = svc.expandRows(row, type, nav, child);
+      nextLink,
+    } = svc.expandRows(row, type, nav, child, page);
     const nested = (r: Row) =>
       serialize(svc, r, nav.targetSet, targetType, child, opts);
     if (nav.isCollection) {
       if (child.count) out[`${navName}@odata.count`] = count;
       out[navName] = rows.map(nested);
+      if (nextLink) out[`${navName}@odata.nextLink`] = nextLink;
     } else {
       out[navName] = rows[0] ? nested(rows[0]) : null;
     }
   }
+  return out;
+}
+
+// An $expand node's options as a request writes them, for the link to the rest of an expanded
+// collection: [["$filter", "..."], ["$expand", "Items($select=A;$top=2)"], ...]
+function optionsOf(node: QueryNode): [string, string][] {
+  const out: [string, string][] = [];
+  if (node.filter) out.push(["$filter", node.filter]);
+  if (node.search) out.push(["$search", node.search]);
+  if (node.compute)
+    out.push([
+      "$compute",
+      node.compute.map((c) => `${c.expression} as ${c.alias}`).join(","),
+    ]);
+  if (node.orderby) out.push(["$orderby", node.orderby]);
+  if (node.skip !== undefined) out.push(["$skip", String(node.skip)]);
+  if (node.top !== undefined) out.push(["$top", String(node.top)]);
+  if (node.count) out.push(["$count", "true"]);
+  if (node.select) out.push(["$select", [...node.select].join(",")]);
+  const expand = Object.entries(node.expand).map(([name, child]) => {
+    const inner = optionsOf(child).map(([k, v]) => `${k}=${v}`);
+    return inner.length ? `${name}(${inner.join(";")})` : name;
+  });
+  if (expand.length) out.push(["$expand", expand.join(",")]);
   return out;
 }
 

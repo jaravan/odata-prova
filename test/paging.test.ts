@@ -80,7 +80,7 @@ describe("server-driven paging with PAGE_SIZE", () => {
     assert.equal(r.body["@odata.nextLink"], undefined);
   });
 
-  it("a navigation's collection; an expanded one isn't paged", async () => {
+  it("a navigation's collection; an expanded one that fits its page has no link", async () => {
     const pages = await v4Pages(
       s,
       `${s.v4}/PurchaseOrderSet('4500000001')/Items`,
@@ -182,5 +182,82 @@ describe("without PAGE_SIZE", () => {
     const v2 = await get(`${s.v2}/PurchaseOrderSet`, prefer);
     assert.equal(v2.body.d.results.length, 5);
     assert.equal(v2.body.d.__next, undefined);
+  });
+});
+
+// Order 4500000001 has two items, 0001 and 0002
+describe("server-driven paging of an expanded collection", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(undefined, { pageSize: 1 });
+  });
+  after(() => s.close());
+
+  const ORDER = "PurchaseOrderSet('4500000001')";
+
+  it("V4: Nav@odata.nextLink, with the expand's own options, leads to the rest", async () => {
+    const r = await get(
+      `${s.v4}/${ORDER}?$select=PurchaseOrderId&$expand=Items($select=ItemPosition;$orderby=ItemPosition desc;$count=true)`,
+    );
+    assert.deepEqual(r.body.Items, [{ ItemPosition: "0002" }]);
+    assert.equal(r.body["Items@odata.count"], 2);
+    const next = r.body["Items@odata.nextLink"];
+    assert.equal(
+      next,
+      `/odata/v4/T/${ORDER}/Items?$orderby=ItemPosition%20desc&$count=true&$select=ItemPosition&$skiptoken=1`,
+    );
+    const rest = await get(s.base + next);
+    assert.deepEqual(rest.body.value, [{ ItemPosition: "0001" }]);
+    assert.equal(rest.body["@odata.count"], 2);
+    assert.equal(rest.body["@odata.nextLink"], undefined);
+  });
+
+  it("V2: the expanded results' __next", async () => {
+    const r = await get(
+      `${s.v2}/${ORDER}?$expand=Items&$select=PurchaseOrderId,Items/ItemPosition`,
+    );
+    assert.equal(r.body.d.Items.results.length, 1);
+    assert.equal(
+      r.body.d.Items.__next,
+      `/odata/v2/T/${ORDER}/Items?$select=ItemPosition&$skiptoken=1`,
+    );
+    const rest = await get(s.base + r.body.d.Items.__next);
+    assert.equal(rest.body.d.results.length, 1);
+    assert.equal(rest.body.d.__next, undefined);
+  });
+
+  it("nested: each level's link, under its own entity", async () => {
+    const r = await get(
+      `${s.v4}/PurchaseOrderItemSet(PurchaseOrderId='4500000001',ItemPosition='0001')?$expand=PurchaseOrder($expand=Items($select=ItemPosition))`,
+    );
+    assert.equal(r.body.PurchaseOrder.Items.length, 1);
+    assert.equal(
+      r.body.PurchaseOrder["Items@odata.nextLink"],
+      `/odata/v4/T/${ORDER}/Items?$select=ItemPosition&$skiptoken=1`,
+    );
+  });
+});
+
+describe("an expanded collection without paging", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("has every row and no link, unless the client asks for smaller pages", async () => {
+    const all = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$expand=Items`,
+    );
+    assert.equal(all.body.Items.length, 2);
+    assert.equal(all.body["Items@odata.nextLink"], undefined);
+    const asked = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$expand=Items`,
+      {
+        prefer: "odata.maxpagesize=1",
+      },
+    );
+    assert.equal(asked.body.Items.length, 1);
+    assert.ok(asked.body["Items@odata.nextLink"]);
   });
 });

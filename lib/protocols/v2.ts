@@ -8,11 +8,13 @@ import type {
   Property,
   PropertyValue,
   QueryNode,
+  ResponseOptions,
   Row,
 } from "../model.ts";
 import type { ODataService } from "../service.ts";
 import type { Protocol } from "../protocol.ts";
 import { toInternal, toMillis, timeOfDayToV2, specialFloat } from "../types.ts";
+import { expandLink } from "../paging.ts";
 import {
   HttpError,
   newNode,
@@ -152,6 +154,7 @@ function serialize(
   setName: string,
   type: EntityType,
   node: QueryNode,
+  opts?: ResponseOptions,
 ): Record<string, unknown> {
   const uri = svc.entityUri(setName, type, row);
   const etag = svc.etag(setName, row);
@@ -179,11 +182,24 @@ function serialize(
     if (!selectAll && !node.select?.has(nav.name) && !expanded) continue;
     if (expanded) {
       const child = node.expand[nav.name];
-      const { rows, type: targetType } = svc.expandRows(row, type, nav, child);
+      // Paged as the response is (see paging.ts), with a __next link to the rest
+      const page = opts?.page && {
+        size: opts.page.size,
+        link: (skiptoken: number) =>
+          expandLink(uri, nav.name, pathsOf(child), skiptoken),
+      };
+      const {
+        rows,
+        type: targetType,
+        nextLink,
+      } = svc.expandRows(row, type, nav, child, page);
       const nested = (r: Row) =>
-        serialize(svc, r, nav.targetSet, targetType, child);
+        serialize(svc, r, nav.targetSet, targetType, child, opts);
       out[nav.name] = nav.isCollection
-        ? { results: rows.map(nested) }
+        ? {
+            results: rows.map(nested),
+            ...(nextLink ? { __next: nextLink } : {}),
+          }
         : rows[0]
           ? nested(rows[0])
           : null;
@@ -191,6 +207,25 @@ function serialize(
       out[nav.name] = { __deferred: { uri: `${uri}/${nav.name}` } };
     }
   }
+  return out;
+}
+
+// An $expand node's $select and $expand as V2 writes them, paths from the node, for the link
+// to the rest of an expanded collection
+function pathsOf(node: QueryNode): [string, string][] {
+  const select: string[] = [];
+  const expand: string[] = [];
+  const walk = (at: QueryNode, prefix: string) => {
+    for (const name of at.select ?? []) select.push(prefix + name);
+    for (const [name, child] of Object.entries(at.expand)) {
+      expand.push(prefix + name);
+      walk(child, `${prefix}${name}/`);
+    }
+  };
+  walk(node, "");
+  const out: [string, string][] = [];
+  if (expand.length) out.push(["$expand", expand.join(",")]);
+  if (select.length) out.push(["$select", select.join(",")]);
   return out;
 }
 
@@ -220,21 +255,21 @@ const v2: Protocol = {
     );
     return json(200, { d: { EntitySets: sets.map((es) => es.name) } });
   },
-  collection(svc, { rows, count, nextLink }, setName, type, node) {
+  collection(svc, { rows, count, nextLink }, setName, type, node, opts) {
     checkSelect(svc, type, node);
     const d: Record<string, unknown> = {
-      results: rows.map((r) => serialize(svc, r, setName, type, node)),
+      results: rows.map((r) => serialize(svc, r, setName, type, node, opts)),
     };
     if (count !== undefined) d.__count = String(count);
     if (nextLink) d.__next = nextLink;
     return json(200, { d });
   },
-  entity(svc, row, setName, type, node, status = 200, extra) {
+  entity(svc, row, setName, type, node, status = 200, extra, opts) {
     checkSelect(svc, type, node);
     const etag = svc.etag(setName, row);
     return json(
       status,
-      { d: serialize(svc, row, setName, type, node) },
+      { d: serialize(svc, row, setName, type, node, opts) },
       etag ? { ...extra, ETag: etag } : extra,
     );
   },

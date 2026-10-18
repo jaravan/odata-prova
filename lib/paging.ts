@@ -1,5 +1,6 @@
 // Server-driven paging (see paging below), and the links a response gives to the rest of
-// a collection: the next page's, and a delta link's (see delta.ts).
+// a collection: the next page's, an expanded collection's, and a delta link's (see
+// delta.ts).
 
 import type { ODataVersion, QueryNode, ResponseOptions, Row } from "./model.ts";
 
@@ -32,11 +33,29 @@ function requestLink(
 ): string {
   const options = Object.entries({ ...query, ...changes })
     .filter(([, value]) => value !== undefined)
-    .map(
-      ([name, value]) =>
-        `${name}=${encodeURIComponent(String(value)).replace(/%(24|2C|2F|3A)/g, (e) => decodeURIComponent(e))}`,
-    );
+    .map(([name, value]) => `${name}=${optionValue(value)}`);
   return `${encodeURI(path)}?${options.join("&")}`;
+}
+
+// A query option's value in a link, kept readable: $, commas, slashes and colons unescaped
+function optionValue(value: unknown): string {
+  return encodeURIComponent(String(value)).replace(/%(24|2C|2F|3A)/g, (e) =>
+    decodeURIComponent(e),
+  );
+}
+
+// The link to the rest of an expanded collection: the navigation under its entity's URL,
+// with the expand's own options (options) and the $skiptoken of the next page
+function expandLink(
+  entityUri: string,
+  navigation: string,
+  options: [string, string][],
+  skiptoken: number,
+): string {
+  const query = [...options, ["$skiptoken", String(skiptoken)]].map(
+    ([name, value]) => `${name}=${optionValue(value)}`,
+  );
+  return `${encodeURI(`${entityUri}/${navigation}`)}?${query.join("&")}`;
 }
 
 // The page size of a GET (see paging): the server's, or the smaller one a V4 client asks for
@@ -56,4 +75,4 @@ function pageSizeFor(
   return { size: serverSize, applied: false };
 }
 
-export { paging, requestLink, pageSizeFor };
+export { paging, requestLink, expandLink, pageSizeFor };
