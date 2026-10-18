@@ -1,6 +1,8 @@
-// V4 delta links: a client that reads an entity set with Prefer: odata.track-changes gets an
-// @odata.deltaLink with its last page, and reading that link later answers what has changed
-// since: the entities added or changed, and the ones deleted, as $deletedEntity entries.
+// Delta links: a client that reads an entity set with Prefer: odata.track-changes gets a
+// delta link with its last page, and reading that link later answers what has changed since:
+// the entities added or changed, and the ones deleted. V4 writes it as @odata.deltaLink, with
+// $deletedEntity entries; V2 as SAP Gateway does, d.__delta with !deltatoken='...', for an
+// entity set with sap:change-tracking="true" too, with the deleted ones in d.__deleted.
 //
 // A delta token stands for a copy of the entity set's rows when it was handed out, and the
 // changes are what differs from it now. A copy rather than a log of the writes: rows change in
@@ -90,17 +92,22 @@ function deltaChanges(
   return { rows, removed };
 }
 
-// Whether a GET of an entity set gets a delta link: a V4 client asks for one with Prefer:
-// odata.track-changes, and the query is one a delta can answer, without $apply, $compute,
+// Whether a GET of an entity set gets a delta link: a client asks for one with Prefer:
+// odata.track-changes, or, in V2, the set is delta-enabled (sap:change-tracking="true", as
+// SAP Gateway marks it), and the query is one a delta can answer, without $apply, $compute,
 // $skip or $top. Otherwise the preference isn't applied, as the spec allows.
 function tracksChanges(
   svc: ODataService,
+  setName: string,
   prefer: string,
   q: QueryNode,
 ): boolean {
+  const enabled =
+    svc.protocol.version === "2.0" &&
+    svc.model.entitySets[setName]?.sap?.["change-tracking"] === "true";
   return (
     !!svc.protocol.delta &&
-    /odata\.track-changes/i.test(prefer) &&
+    (enabled || /odata\.track-changes/i.test(prefer)) &&
     !q.apply &&
     !q.compute &&
     q.skip === undefined &&

@@ -262,11 +262,14 @@ function handle(
 
   if (q.deltatoken !== undefined) {
     if (method !== "GET" || row !== undefined || segments.length !== 1)
-      throw new HttpError(400, "$deltatoken applies to reading an entity set");
+      throw new HttpError(
+        400,
+        "A delta token applies to reading an entity set",
+      );
     return deltaResponse(svc, setName, type, q, opts, (token) =>
       requestLink(path, query, {
         $skiptoken: undefined,
-        $deltatoken: token,
+        ...protocol.deltaOption!(token),
       }),
     );
   }
@@ -348,14 +351,13 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
   switch (method) {
     case "GET": {
       const tracked =
-        segments.length === 1 && tracksChanges(svc, opts.prefer, q);
+        segments.length === 1 && tracksChanges(svc, setName, opts.prefer, q);
       if (tracked)
         opts.deltaLink = () =>
           requestLink(path, query, {
             $skiptoken: undefined,
-            $deltatoken: svc.deltaTokens.issue(
-              setName,
-              svc.store.rows(setName),
+            ...protocol.deltaOption!(
+              svc.deltaTokens.issue(setName, svc.store.rows(setName)),
             ),
           });
       const response = svc.collectionResponse(rows, setName, type, q, opts);

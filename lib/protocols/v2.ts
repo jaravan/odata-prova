@@ -141,6 +141,8 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     top: parseInt10(q.$top, "$top"),
     skip: parseInt10(q.$skip, "$skip"),
     skiptoken: parseInt10(q.$skiptoken, "$skiptoken"),
+    // SAP Gateway's delta token, quoted: !deltatoken='...' (see delta.ts)
+    deltatoken: q["!deltatoken"]?.replace(/^'(.*)'$/, "$1"),
     count: q.$inlinecount === "allpages",
     search: undefined,
     select: root.select,
@@ -255,14 +257,47 @@ const v2: Protocol = {
     );
     return json(200, { d: { EntitySets: sets.map((es) => es.name) } });
   },
-  collection(svc, { rows, count, nextLink }, setName, type, node, opts) {
+  collection(
+    svc,
+    { rows, count, nextLink, deltaLink },
+    setName,
+    type,
+    node,
+    opts,
+  ) {
     checkSelect(svc, type, node);
     const d: Record<string, unknown> = {
       results: rows.map((r) => serialize(svc, r, setName, type, node, opts)),
     };
     if (count !== undefined) d.__count = String(count);
     if (nextLink) d.__next = nextLink;
+    if (deltaLink) d.__delta = deltaLink;
     return json(200, { d });
+  },
+  deltaOption(token) {
+    return { "!deltatoken": `'${token}'` };
+  },
+  // A delta response, as SAP Gateway writes one: the entities added or changed in results,
+  // and the next delta link. The deleted ones, and those that no longer match the link's
+  // $filter, are in __deleted, each with its URI, type and keys: SAP's own JSON for those
+  // isn't public, so this is the mock's (see docs/odata-support.md).
+  delta(svc, { rows, removed, deltaLink }, setName, type, node, opts) {
+    checkSelect(svc, type, node);
+    return json(200, {
+      d: {
+        results: rows.map((r) => serialize(svc, r, setName, type, node, opts)),
+        __deleted: removed.map(({ row }) => {
+          const uri = svc.entityUri(setName, type, row);
+          return {
+            __metadata: { id: uri, uri, type: type.fullName },
+            ...Object.fromEntries(
+              type.keys.map((k) => [k, toWire(row[k], type.properties[k])]),
+            ),
+          };
+        }),
+        __delta: deltaLink,
+      },
+    });
   },
   entity(svc, row, setName, type, node, status = 200, extra, opts) {
     checkSelect(svc, type, node);

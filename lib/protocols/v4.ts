@@ -401,6 +401,9 @@ const v4: Protocol = {
     if (deltaLink) body["@odata.deltaLink"] = deltaLink;
     return json(200, body, opts);
   },
+  deltaOption(token) {
+    return { $deltatoken: token };
+  },
   // A delta response, in the OData 4.0 JSON format: the entities added or changed, then one
   // $deletedEntity entry for each that's gone, and the next delta link
   delta(svc, { rows, removed, deltaLink }, setName, type, node, opts) {

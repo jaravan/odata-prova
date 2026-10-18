@@ -1,6 +1,16 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, send, ORDER, type TestServer } from "./helpers.ts";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  start,
+  get,
+  send,
+  ORDER,
+  PO_MODEL,
+  type TestServer,
+} from "./helpers.ts";
 
 // Delta links, on the PurchaseOrderSrv fixture's 5 orders (1 and 4 are Open, 3 is Completed)
 const TRACK = { prefer: "odata.track-changes" };
@@ -148,14 +158,91 @@ describe("delta links", () => {
     assert.equal((await get(link)).status, 410);
   });
 
-  it("V2 has none: $deltatoken -> 501, and the preference is ignored", async () => {
+  it("V2: $deltatoken is V4's -> 501; SAP's is !deltatoken", async () => {
     const r = await get(`${s.v2}/PurchaseOrderSet?$deltatoken=abc`);
     assert.equal(r.status, 501);
     assert.match(
       r.body.error.message.value,
       /\$deltatoken is not supported in OData V2/,
     );
-    const tracked = await get(`${s.v2}/PurchaseOrderSet`, TRACK);
-    assert.equal(tracked.headers.get("preference-applied"), null);
+    const expired = await get(`${s.v2}/PurchaseOrderSet?!deltatoken='nope'`);
+    assert.equal(expired.status, 410);
+    assert.equal(expired.body.error.code, "DeltaLinkExpired");
+  });
+});
+
+// SAP Gateway's V2 delta queries: d.__delta with !deltatoken='...', and the deleted entities
+// in d.__deleted
+describe("V2 delta links", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start();
+  });
+  afterEach(() => s.close());
+
+  it("Prefer: odata.track-changes gets d.__delta, and following it the changes", async () => {
+    const r = await get(`${s.v2}/PurchaseOrderSet?$select=Status`, TRACK);
+    assert.equal(r.headers.get("preference-applied"), "odata.track-changes");
+    const link = r.body.d.__delta as string;
+    assert.match(
+      link,
+      /^\/odata\/v2\/T\/PurchaseOrderSet\?\$select=Status&!deltatoken='[\w-]+'$/,
+    );
+
+    await send("PATCH", `${s.v4}/${order(2)}`, { Status: "Completed" });
+    await send("POST", `${s.v4}/PurchaseOrderSet`, {
+      ...ORDER,
+      PurchaseOrderId: "4500000006",
+    });
+    await send("DELETE", `${s.v4}/${order(5)}`);
+
+    const delta = await get(s.base + link);
+    assert.equal(delta.status, 200);
+    assert.deepEqual(
+      delta.body.d.results.map((o: { Status: string }) => o.Status),
+      ["Completed", "Open"],
+    );
+    assert.deepEqual(delta.body.d.__deleted, [
+      {
+        __metadata: {
+          id: `/odata/v2/T/${order(5)}`,
+          uri: `/odata/v2/T/${order(5)}`,
+          type: "com.example.po.PurchaseOrder",
+        },
+        PurchaseOrderId: "4500000005",
+      },
+    ]);
+    // The next link starts from here
+    const next = await get(s.base + delta.body.d.__delta);
+    assert.deepEqual(next.body.d.results, []);
+    assert.deepEqual(next.body.d.__deleted, []);
+  });
+
+  it('an entity set with sap:change-tracking="true" gets one without asking', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "delta-v2-"));
+    fs.cpSync(PO_MODEL, dir, { recursive: true });
+    const file = path.join(dir, "metadata.xml");
+    fs.writeFileSync(
+      file,
+      fs
+        .readFileSync(file, "utf8")
+        .replace(
+          '<EntitySet Name="PurchaseOrderSet"',
+          '<EntitySet sap:change-tracking="true" Name="PurchaseOrderSet"',
+        ),
+    );
+    const tracked = await start(dir);
+    try {
+      const orders = await get(`${tracked.v2}/PurchaseOrderSet`);
+      assert.match(orders.body.d.__delta, /!deltatoken='/);
+      const items = await get(`${tracked.v2}/PurchaseOrderItemSet`);
+      assert.equal(items.body.d.__delta, undefined);
+      // V4 has no sap: attributes: it asks with Prefer
+      const v4 = await get(`${tracked.v4}/PurchaseOrderSet`);
+      assert.equal(v4.body["@odata.deltaLink"], undefined);
+    } finally {
+      await tracked.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

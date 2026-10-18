@@ -89,7 +89,9 @@ export interface Protocol extends LiteralSyntax {
   ): ODataResponse;
   // code: what a client can branch on, by default the status's (see errorCode in query.ts)
   error(status: number, message: string, code?: string): ODataResponse;
-  // What changed in an entity set since a delta token (see delta.ts); V4 only
+  // The query option of a delta link: V4's $deltatoken=..., SAP's V2 !deltatoken='...'
+  deltaOption?(token: string): Record<string, string>;
+  // What changed in an entity set since a delta token (see delta.ts)
   delta?(
     svc: ODataService,
     result: { rows: Row[]; removed: Removed[]; deltaLink: string },
