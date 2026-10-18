@@ -444,15 +444,16 @@ describe("ETag values: a write gives each of the ETag's properties a new one", (
   });
 
   it("a date moves to today, or a day on from a later one", () => {
-    assert.equal(
-      renewed("Edm.Date", "2020-01-01"),
-      new Date().toISOString().slice(0, 10),
-    );
+    // Today before and after: a run across midnight (UTC) may see either
+    const today = () => new Date().toISOString().slice(0, 10);
+    const between = (renew: () => unknown) => {
+      const before = today();
+      const v = String(renew());
+      assert.ok(v === before || v === today(), `${v} is today`);
+    };
+    between(() => renewed("Edm.Date", "2020-01-01"));
     assert.equal(renewed("Edm.Date", "2999-01-01"), "2999-01-02");
-    assert.equal(
-      renewed("Edm.Date", null),
-      new Date().toISOString().slice(0, 10),
-    );
+    between(() => renewed("Edm.Date", null));
   });
 
   it("an integer counts up, from 0 when it has no value", () => {

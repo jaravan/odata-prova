@@ -46,8 +46,11 @@ describe(
         child.on("exit", resolve),
       );
 
+      // 0: it closed by itself, before its own 10-second deadline, which exits with 1. The
+      // time only has to be well inside a container's grace period, with room for a slow
+      // CI runner under coverage.
       assert.equal(code, 0, output);
-      assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+      assert.ok(Date.now() - started < 8000, `took ${Date.now() - started} ms`);
       assert.match(output, /SIGTERM received, shutting down/);
     });
   },

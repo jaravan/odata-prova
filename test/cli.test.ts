@@ -13,7 +13,8 @@ const run = (args: string[], env: Record<string, string> = {}) =>
   spawnSync(process.execPath, [SERVER, ...args], {
     encoding: "utf8",
     env: { ...process.env, ...env },
-    timeout: 10000,
+    // Generous: a CI runner under coverage starts processes slowly
+    timeout: 30000,
   });
 
 // Starts it: the port it listens on, what it has printed so far, and a way to stop it
@@ -28,7 +29,7 @@ async function started(args: string[], env: Record<string, string> = {}) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`did not start:\n${output}`));
-    }, 10000);
+    }, 30000);
     child.stdout.on("data", () => {
       const m = output.match(/listening on port (\d+)/);
       if (!m) return;
@@ -66,17 +67,27 @@ describe("the odata-prova command", () => {
   });
 
   it("--port, before or after the model folder, over PORT", async () => {
-    // A free port: listen on 0, note it, and let it go again
-    const free = await new Promise<number>((resolve) => {
-      const probe = net.createServer().listen(0, () => {
-        const { port } = probe.address() as net.AddressInfo;
-        probe.close(() => resolve(port));
+    // A free port: listen on 0, note it, and let it go again. Another test's process can be
+    // given it in between, so a port in use is tried again with another one.
+    for (let attempt = 1; ; attempt++) {
+      const free = await new Promise<number>((resolve) => {
+        const probe = net.createServer().listen(0, () => {
+          const { port } = probe.address() as net.AddressInfo;
+          probe.close(() => resolve(port));
+        });
       });
-    });
-    assert.equal(
-      await listeningPort([PO_MODEL, "--port", String(free)], { PORT: "1" }),
-      free,
-    );
+      try {
+        assert.equal(
+          await listeningPort([PO_MODEL, "--port", String(free)], {
+            PORT: "1",
+          }),
+          free,
+        );
+        break;
+      } catch (e) {
+        if (attempt === 3 || !/is in use/.test(String(e))) throw e;
+      }
+    }
     assert.equal((await listeningPort(["-p", "0", PO_MODEL])) > 0, true);
   });
 
