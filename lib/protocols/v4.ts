@@ -263,6 +263,19 @@ function serialize(
   return out;
 }
 
+// The select-list of a context URL, as $select and $expand shape the response (OData 4.0
+// Part 1, 10.9): "(Name,Total,Category(Name))" for $select=Name,Total&$expand=Category(
+// $select=Name), with $compute's aliases among the names when they're selected. An expanded
+// navigation is listed, with its own list or "()", where the level has a $select; a level
+// without one has every property, and no list.
+function selectList(node: QueryNode): string {
+  if (!node.select) return "";
+  const names = [...node.select].filter((name) => !(name in node.expand));
+  for (const [name, child] of Object.entries(node.expand))
+    names.push(`${name}(${selectList(child).slice(1, -1)})`);
+  return `(${names.join(",")})`;
+}
+
 // ["Supplier/Name", "Supplier/City", "Total"] -> "Supplier(Name,City),Total"
 function contextList(paths: string[]): string {
   const nested = new Map<string, string[]>();
@@ -342,7 +355,7 @@ const v4: Protocol = {
   ) {
     checkSelect(svc, type, node);
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}`,
+      "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => serialize(svc, r, setName, type, node, opts));
@@ -429,7 +442,7 @@ const v4: Protocol = {
   entity(svc, row, setName, type, node, status = 200, extra, opts) {
     checkSelect(svc, type, node);
     const body = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}/$entity`,
+      "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}/$entity`,
       ...serialize(svc, row, setName, type, node, opts),
     };
     const etag = svc.etag(setName, row);

@@ -57,7 +57,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.equal(r.status, 200);
     assert.equal(
       r.body["@odata.context"],
-      "/odata/v4/T/$metadata#PurchaseOrderSet",
+      "/odata/v4/T/$metadata#PurchaseOrderSet(PurchaseOrderId,TotalAmount)",
     );
     assert.equal(typeof r.body["@odata.count"], "number");
     assert.ok(r.body.value.length <= 2);
@@ -109,7 +109,8 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
       `${v4}/PurchaseOrderItemSet(PurchaseOrderId='4500000001',ItemPosition='0002')/PurchaseOrder?$select=Supplier`,
     );
     assert.deepEqual(parent.body, {
-      "@odata.context": "/odata/v4/T/$metadata#PurchaseOrderSet/$entity",
+      "@odata.context":
+        "/odata/v4/T/$metadata#PurchaseOrderSet(Supplier)/$entity",
       Supplier: "Acme Components Ltd",
     });
     const prop = await get(`${v4}/PurchaseOrderSet('4500000001')/Supplier`);

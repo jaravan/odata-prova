@@ -46,6 +46,31 @@ describe("$compute", () => {
     assert.deepEqual(r.body.value, [{ Material: "MAT-5001" }]);
   });
 
+  it("a context URL lists the selected properties, computed ones and expanded navigations", async () => {
+    const r = await get(
+      `${s.v4}/PurchaseOrderSet?$compute=TotalAmount mul 2 as Doubled&$select=PurchaseOrderId,Doubled&$expand=Items($select=Material)&$top=1`,
+    );
+    assert.equal(
+      r.body["@odata.context"],
+      "/odata/v4/T/$metadata#PurchaseOrderSet(PurchaseOrderId,Doubled,Items(Material))",
+    );
+    // An expanded navigation without its own $select: (); a level without $select: no list
+    const nested = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$select=Supplier&$expand=Items`,
+    );
+    assert.equal(
+      nested.body["@odata.context"],
+      "/odata/v4/T/$metadata#PurchaseOrderSet(Supplier,Items())/$entity",
+    );
+    const all = await get(
+      `${s.v4}/PurchaseOrderSet?$expand=Items($select=Material)&$top=1`,
+    );
+    assert.equal(
+      all.body["@odata.context"],
+      "/odata/v4/T/$metadata#PurchaseOrderSet",
+    );
+  });
+
   it("a single entity, $count and an $expand", async () => {
     const one = await get(
       `${s.v4}/PurchaseOrderSet('4500000002')?$compute=length(Supplier) as NameLength&$select=NameLength`,

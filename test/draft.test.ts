@@ -254,7 +254,10 @@ describe("draft: edit, change and activate (V4)", () => {
       { PreserveChanges: true },
     );
     assert.equal(r.status, 200);
-    assert.match(r.body["@odata.context"], /#Books\/\$entity$/);
+    assert.match(
+      r.body["@odata.context"],
+      /#Books\(title,IsActiveEntity,HasActiveEntity,HasDraftEntity\)\/\$entity$/,
+    );
     assert.deepEqual(
       {
         title: r.body.title,
