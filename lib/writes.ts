@@ -2,16 +2,18 @@
 // rollback, links to existing entities (see references.ts), and cascading deletes. Drafts
 // write through here too (see draft.ts).
 
-import { propToInternal } from "./types.ts";
+import { isNumericType, propToInternal } from "./types.ts";
 import { HttpError, own } from "./query.ts";
 import { renewETag } from "./etag.ts";
 import type {
   AnyNavigation,
+  ComplexType,
   EntitySet,
   EntityType,
   Key,
   Model,
   Navigation,
+  Property,
   Row,
 } from "./model.ts";
 import type { Store } from "./store.ts";
@@ -99,6 +101,68 @@ function boundValues(binds: ReturnType<typeof bindsOf>): Row {
   return values;
 }
 
+// A body is checked against its type before anything in it is converted, as a real service
+// does: a field the type doesn't have, or a value of the wrong JSON type (123 for a string,
+// "true" for a boolean), is a 400. The conversion alone would drop the one and store the
+// other as "123", since it also reads CSV cells, where every value is a string. A field
+// with an @ is an annotation (@odata.etag, Nav@odata.bind), and __metadata is V2's.
+// An open type may hold undeclared properties, and so may a value naming its own type with
+// @odata.type (a derived type's): those are let through, and not stored, as before.
+function checkFields(
+  type: EntityType | ComplexType,
+  fields: Record<string, unknown>,
+): void {
+  const open = type.openType || "@odata.type" in fields;
+  for (const [name, value] of Object.entries(fields)) {
+    if (name.includes("@") || name === "__metadata") continue;
+    if ("navigations" in type) {
+      if (own(type.navigations, name)) continue;
+      if (type.disabledNavigations && own(type.disabledNavigations, name))
+        continue;
+    }
+    const prop = own(type.properties, name);
+    if (!prop && open) continue;
+    if (!prop)
+      throw new HttpError(
+        400,
+        `${type.name} has no property ${name}`,
+        "InvalidProperty",
+      );
+    if (prop.isCollection && value !== null && !Array.isArray(value))
+      throw new HttpError(400, `${name}: expected an array`, "InvalidValue");
+    for (const v of prop.isCollection ? (value as unknown[]) || [] : [value])
+      checkValue(prop, v);
+  }
+}
+
+// Numbers may come as strings: Int64 and Decimal do in V2 and with IEEE754Compatible, and
+// V2 clients send the others so too. Whether the text is a number is the conversion's check.
+function checkValue(prop: Property, value: unknown): void {
+  if (value === null) return;
+  if (prop.complexType) {
+    if (typeof value !== "object" || Array.isArray(value))
+      throw new HttpError(
+        400,
+        `${prop.name}: expected an object`,
+        "InvalidValue",
+      );
+    checkFields(prop.complexType, value as Record<string, unknown>);
+    return;
+  }
+  const expected =
+    prop.elementType === "Edm.Boolean"
+      ? ["boolean"]
+      : isNumericType(prop.elementType)
+        ? ["number", "string"]
+        : ["string"];
+  if (!expected.includes(typeof value))
+    throw new HttpError(
+      400,
+      `${prop.name}: expected ${expected.map((t) => `a ${t}`).join(" or ")}, got ${JSON.stringify(value)}`,
+      "InvalidValue",
+    );
+}
+
 // A Nullable="false" property a write leaves null is a 400. Keys are checked on their own,
 // and a property the client may not set (Core.Computed, sap:creatable or sap:updatable
 // "false") is left to the server. Only `names` are checked: an update can't fail on a
@@ -166,6 +230,7 @@ function insertTree(
   if (!body || typeof body !== "object")
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
+  checkFields(entityType, fields);
   // Links to existing entities: a foreign key on this side before the required values are
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
@@ -245,6 +310,7 @@ function update(
   if (!body || typeof body !== "object")
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
+  checkFields(entityType, fields);
   const changes: Row = {};
   for (const p of Object.values(entityType.properties)) {
     if (entityType.keys.includes(p.name)) continue;

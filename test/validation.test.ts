@@ -29,6 +29,7 @@ function editedModel(modelDir: string, edit: (xml: string) => string) {
 }
 
 const ORDER = "Orders(11111111-1111-1111-1111-111111111111)";
+const ORDER_V2 = "Orders(guid'11111111-1111-1111-1111-111111111111')";
 
 // A value that doesn't fit its property's type is a 400, not a 500 and not stored as is
 describe("values are checked against their Edm type", () => {
@@ -88,9 +89,9 @@ describe("values are checked against their Edm type", () => {
     assert.deepEqual([after.body.Total, after.body.Qty], ["100.50", 3]);
   });
 
-  it("accepts what the types allow: TRUE, numbers as strings, exponents", async () => {
+  it("accepts what the types allow: numbers as strings, exponents", async () => {
     const r = await send("PATCH", `${s.v4}/${ORDER}`, {
-      Closed: "TRUE",
+      Closed: true,
       Qty: "7",
       Total: "-1.5e2",
     });
@@ -102,6 +103,134 @@ describe("values are checked against their Edm type", () => {
       [after.body.Total, after.body.Qty, after.body.Closed],
       ["-1.5e2", 7, true],
     );
+  });
+});
+
+// A body is checked against the type as a real service checks it, so a client sending
+// what Gateway or CAP would reject fails here too
+describe("a body is checked against its type", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(SALES_MODEL);
+  });
+  after(() => s.close());
+
+  it("a value of the wrong JSON type -> 400 on both protocols, and nothing is written", async () => {
+    for (const [prop, value] of [
+      ["OrderNo", 123],
+      ["Closed", "true"],
+      ["Closed", 1],
+      ["OrderDate", 20250120],
+      ["Qty", true],
+      ["Total", {}],
+    ] as const) {
+      const v4 = await send("PATCH", `${s.v4}/${ORDER}`, { [prop]: value });
+      assert.equal(v4.status, 400, `V4 ${prop}: ${value}`);
+      assert.match(v4.body.error.message, new RegExp(`^${prop}: expected`));
+      const v2 = await send("PATCH", `${s.v2}/${ORDER_V2}`, {
+        [prop]: value,
+      });
+      assert.equal(v2.status, 400, `V2 ${prop}: ${value}`);
+      assert.match(
+        v2.body.error.message.value,
+        new RegExp(`^${prop}: expected`),
+      );
+    }
+    const r = await get(`${s.v4}/${ORDER}?$select=OrderNo,Qty,Closed`);
+    assert.deepEqual(
+      [r.body.OrderNo, r.body.Qty, r.body.Closed],
+      ["SO-1", 3, false],
+    );
+  });
+
+  it("a property the type doesn't have -> 400 naming it, and nothing is created", async () => {
+    const ID = "44444444-4444-4444-4444-444444444444";
+    const v4 = await send("POST", `${s.v4}/Orders`, { ID, Bogus: 1 });
+    assert.equal(v4.status, 400);
+    assert.equal(v4.body.error.message, "Orders has no property Bogus");
+    const v2 = await send("POST", `${s.v2}/Orders`, { ID, Bogus: 1 });
+    assert.equal(v2.status, 400);
+    assert.equal(v2.body.error.message.value, "Orders has no property Bogus");
+    assert.equal((await get(`${s.v4}/Orders(${ID})`)).status, 404);
+  });
+
+  it("a deep insert's child is checked too: the whole insert fails", async () => {
+    const ID = "55555555-5555-5555-5555-555555555555";
+    const r = await send("POST", `${s.v4}/Orders`, {
+      ID,
+      Items: [
+        {
+          ID: "66666666-6666-6666-6666-666666666666",
+          Price: "1.00",
+          Colour: "red",
+        },
+      ],
+    });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.message, "Items has no property Colour");
+    assert.equal((await get(`${s.v4}/Orders(${ID})`)).status, 404);
+  });
+
+  it("annotations, V2's __metadata and navigations aren't unknown properties", async () => {
+    const v4 = await send("PATCH", `${s.v4}/${ORDER}`, {
+      "@odata.type": "#SalesSrv.Orders",
+      "Qty@odata.type": "#Int32",
+      Qty: 4,
+    });
+    assert.equal(v4.status, 204);
+    const v2 = await send("PATCH", `${s.v2}/${ORDER_V2}`, {
+      __metadata: { uri: `${s.v2}/${ORDER_V2}`, type: "SalesSrv.Orders" },
+      Items: { __deferred: { uri: `${s.v2}/${ORDER_V2}/Items` } },
+      Qty: 5,
+    });
+    assert.equal(v2.status, 204);
+  });
+});
+
+// TripPin's Person and Location are OpenType="true"; City isn't
+describe("a body of an open type", () => {
+  const TRIPPIN = path.join(import.meta.dirname, "fixtures", "real", "TripPin");
+  const PERSON = { FirstName: "Ann", LastName: "Lee" };
+  let s: TestServer;
+  before(async () => {
+    s = await start(TRIPPIN);
+  });
+  after(() => s.close());
+
+  it("may hold properties the metadata doesn't declare", async () => {
+    const r = await send("POST", `${s.v4}/People`, {
+      ...PERSON,
+      UserName: "open1",
+      Nickname: "annie",
+      AddressInfo: [{ Address: "1 Main St", Floor: 3 }],
+    });
+    assert.equal(r.status, 201);
+  });
+
+  it("still checks the declared ones, and the closed types in it", async () => {
+    const city = { Name: "Oslo", CountryRegion: "Norway", Region: "Oslo" };
+    for (const [body, message] of [
+      [{ FirstName: 123 }, /^FirstName: expected a string, got 123$/],
+      [{ Emails: "a@b.c" }, /^Emails: expected an array$/],
+      [{ Emails: [1] }, /^Emails: expected a string/],
+      [
+        { AddressInfo: [{ City: { ...city, Name: 7 } }] },
+        /^Name: expected a string/,
+      ],
+      [
+        { AddressInfo: [{ City: { ...city, Zip: "0150" } }] },
+        /^City has no property Zip$/,
+      ],
+      [{ AddressInfo: ["1 Main St"] }, /^AddressInfo: expected an object$/],
+    ] as const) {
+      const r = await send("POST", `${s.v4}/People`, {
+        ...PERSON,
+        UserName: "closed1",
+        ...body,
+      });
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.match(r.body.error.message, message);
+    }
   });
 });
 
