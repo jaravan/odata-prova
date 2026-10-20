@@ -144,4 +144,16 @@ describe("$filter errors", () => {
     assert.throws(() => run(v2, "nope(Name)"), /Unsupported \$filter function/);
     assert.throws(() => compileFilter("Name eq 'x' 'y'", v2), /trailing/);
   });
+
+  it("rejects an expression nested too deeply, rather than passing on V8's error", () => {
+    const parens = "(".repeat(50000) + "true" + ")".repeat(50000);
+    assert.throws(
+      () => run(v4, parens),
+      /^Error: Expression nested too deeply/,
+    );
+    const ors = Array(50000).fill("Qty eq 1").join(" or ");
+    assert.throws(() => run(v4, ors), /^Error: Expression nested too deeply/);
+    // A value help's long list of ors is fine
+    assert.equal(run(v4, Array(500).fill("Qty eq 7").join(" or ")), true);
+  });
 });

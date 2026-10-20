@@ -626,6 +626,19 @@ function callFunction(name: string, args: Value[]): Value {
   }
 }
 
+// Parsing and evaluating recurse once per level of the expression, so one nested deeply
+// enough - thousands of parentheses, or of ors in a row - runs out of stack. That's the
+// client's expression, not a bug here: say so instead of passing V8's message on.
+function bounded<T>(run: () => T): T {
+  try {
+    return run();
+  } catch (e) {
+    if (e instanceof RangeError && /call stack/i.test(e.message))
+      throw new Error("Expression nested too deeply in $filter", { cause: e });
+    throw e;
+  }
+}
+
 // Caller (the protocol module) needs to give us parseLiteral(text) and a
 // typedLiteralPrefixes set; matchBareLiteral(text) -> { value, type, length } | undefined
 // is optional, only V4 needs it since V2 always types its literals explicitly.
@@ -633,8 +646,8 @@ function compileFilter(
   text: string,
   protocol: LiteralSyntax,
 ): (row: Row, resolve: Resolve) => boolean {
-  const ast = new Parser(tokenize(text, protocol)).parse();
-  return (row, resolve) => truthy(evaluate(ast, row, resolve));
+  const ast = bounded(() => new Parser(tokenize(text, protocol)).parse());
+  return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
 }
 
 // The Edm type each function gives; round, floor and ceiling give their argument's
@@ -703,10 +716,10 @@ function compileExpression(
   evaluate(row: Row, resolve: Resolve): Value;
   type(typeOf: (path: string) => string): string | null;
 } {
-  const ast = new Parser(tokenize(text, protocol)).parse();
+  const ast = bounded(() => new Parser(tokenize(text, protocol)).parse());
   return {
-    evaluate: (row, resolve) => evaluate(ast, row, resolve),
-    type: (typeOf) => expressionType(ast, typeOf),
+    evaluate: (row, resolve) => bounded(() => evaluate(ast, row, resolve)),
+    type: (typeOf) => bounded(() => expressionType(ast, typeOf)),
   };
 }
 
