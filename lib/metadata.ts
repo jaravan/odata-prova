@@ -111,6 +111,7 @@ function parseMetadata(
         fullName,
         namespace: ns,
         baseType: et.BaseType,
+        openType: et.OpenType === "true",
         keys: (et.Key?.[0]?.PropertyRef || []).map((k: Xml) => k.Name),
         properties,
         navigationProperties: (et.NavigationProperty || []).map(
@@ -152,6 +153,7 @@ function parseMetadata(
         fullName,
         namespace: ns,
         baseType: ct.BaseType,
+        openType: ct.OpenType === "true",
         properties,
       };
     }
@@ -363,6 +365,8 @@ function flattenInheritance(
       );
     flatten(base, seen);
     type.properties = { ...base.properties, ...type.properties };
+    // A type derived from an open type is open too
+    if (base.openType) type.openType = true;
     // An entity type's base is an entity type, so it has both
     if (type.keys && type.keys.length === 0) type.keys = [...base.keys!];
     if (type.navigationProperties)

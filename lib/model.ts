@@ -57,6 +57,8 @@ export interface EntityType {
   fullName: string;
   namespace: string;
   baseType?: string;
+  // OpenType="true": properties the metadata doesn't declare are allowed too
+  openType?: boolean;
   // Inherited ones included (see flattenInheritance)
   keys: string[];
   properties: Record<string, Property>;
@@ -100,6 +102,8 @@ export interface ComplexType {
   fullName: string;
   namespace: string;
   baseType?: string;
+  // OpenType="true", as for an entity type
+  openType?: boolean;
   properties: Record<string, Property>;
 }
 
