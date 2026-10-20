@@ -185,6 +185,25 @@ describe("a body is checked against its type", () => {
     });
     assert.equal(v2.status, 204);
   });
+
+  it("a string longer than its MaxLength -> 400 on both protocols; one that fits is fine", async () => {
+    // OrderNo has MaxLength="10"
+    const tooLong = { OrderNo: "SO-12345678" };
+    const v4 = await send("PATCH", `${s.v4}/${ORDER}`, tooLong);
+    assert.equal(v4.status, 400);
+    assert.equal(v4.body.error.code, "InvalidValue");
+    assert.equal(
+      v4.body.error.message,
+      "OrderNo: longer than its MaxLength of 10",
+    );
+    const v2 = await send("PATCH", `${s.v2}/${ORDER_V2}`, tooLong);
+    assert.equal(v2.status, 400);
+    // Characters count, not UTF-16 code units: ten emoji fit
+    for (const OrderNo of ["SO-1234567", "😀".repeat(10)]) {
+      const r = await send("PATCH", `${s.v4}/${ORDER}`, { OrderNo });
+      assert.equal(r.status, 204, OrderNo);
+    }
+  });
 });
 
 // TripPin's Person and Location are OpenType="true"; City isn't

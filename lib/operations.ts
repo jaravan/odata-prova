@@ -5,6 +5,7 @@ import { toInternal, propToInternal } from "./types.ts";
 import { HttpError, own, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
+import { checkProperty } from "./writes.ts";
 import type {
   EntityType,
   ODataResponse,
@@ -114,6 +115,20 @@ function operationParameters(
       string,
       unknown
     >;
+    // Checked as an entity's body is (see checkFields in writes.ts): a parameter the action
+    // doesn't have, or a value of the wrong JSON type, is a 400. A field with an @ is an
+    // annotation.
+    for (const [name, value] of Object.entries(input)) {
+      if (name.includes("@")) continue;
+      const p = op.parameters.find((p) => p.name === name);
+      if (!p)
+        throw new HttpError(
+          400,
+          `${op.name} has no parameter ${name}`,
+          "InvalidParameter",
+        );
+      checkProperty(p, value);
+    }
     for (const p of op.parameters)
       params[p.name] = propToInternal(input[p.name], p);
     return params;

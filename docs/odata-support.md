@@ -11,7 +11,7 @@ All primitive Edm types, plus:
 
 In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
 
-Writes are checked against the metadata: a value that doesn't fit its type, or a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, is a `400`. So is a value of the wrong JSON type (`123` for a string, `"true"` for a boolean; numbers may come as strings), and a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored). Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required, and neither is anything in a draft, which may be incomplete until it is activated.
+Writes are checked against the metadata: a value that doesn't fit its type, or a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, is a `400`. So is a value of the wrong JSON type (`123` for a string, `"true"` for a boolean; numbers may come as strings), a string longer than its `MaxLength`, and a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored). Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required, and neither is anything in a draft, which may be incomplete until it is activated.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
 
@@ -245,6 +245,7 @@ An error answers in the protocol's shape: `{"error":{"code":...,"message":...}}`
 | `RequiredProperty` | `400`  | a create or update leaves a `Nullable="false"` property or a key null |
 | `InvalidValue`     | `400`  | a value doesn't fit its property's type                               |
 | `InvalidProperty`  | `400`  | a body has a field its type doesn't have                              |
+| `InvalidParameter` | `400`  | an action's body has a parameter the action doesn't have              |
 | `DuplicateKey`     | `409`  | a create's key is already taken                                       |
 | `DraftExists`      | `409`  | an edit draft of the entity already exists                            |
 | `ETagMismatch`     | `412`  | the `If-Match` ETag has gone stale: read the entity again             |

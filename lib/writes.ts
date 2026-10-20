@@ -13,8 +13,8 @@ import type {
   Key,
   Model,
   Navigation,
-  Property,
   Row,
+  TypedElement,
 } from "./model.ts";
 import type { Store } from "./store.ts";
 import { addLink, unlink } from "./links.ts";
@@ -128,27 +128,47 @@ function checkFields(
         `${type.name} has no property ${name}`,
         "InvalidProperty",
       );
-    if (prop.isCollection && value !== null && !Array.isArray(value))
-      throw new HttpError(400, `${name}: expected an array`, "InvalidValue");
-    for (const v of prop.isCollection ? (value as unknown[]) || [] : [value])
-      checkValue(prop, v);
+    checkProperty(prop, value);
   }
+}
+
+// A property's value in a body, or an action parameter's (see operations.ts): a collection
+// is an array, and each of its items is checked
+function checkProperty(prop: TypedElement, value: unknown): void {
+  if (prop.isCollection && value !== null && !Array.isArray(value))
+    throw new HttpError(400, `${prop.name}: expected an array`, "InvalidValue");
+  for (const v of prop.isCollection ? (value as unknown[]) || [] : [value])
+    checkValue(prop, v);
 }
 
 // Numbers may come as strings: Int64 and Decimal do in V2 and with IEEE754Compatible, and
 // V2 clients send the others so too. Whether the text is a number is the conversion's check.
-function checkValue(prop: Property, value: unknown): void {
+// A string longer than its MaxLength is a 400 too, as CAP has it ("max" has no limit).
+function checkValue(prop: TypedElement, value: unknown): void {
   if (value === null) return;
-  if (prop.complexType) {
+  // A complex type's value, or an entity's (an action's parameter can be one)
+  const structured = prop.complexType || prop.entityType;
+  if (structured) {
     if (typeof value !== "object" || Array.isArray(value))
       throw new HttpError(
         400,
         `${prop.name}: expected an object`,
         "InvalidValue",
       );
-    checkFields(prop.complexType, value as Record<string, unknown>);
+    checkFields(structured, value as Record<string, unknown>);
     return;
   }
+  const max = Number(prop.maxLength);
+  if (
+    prop.elementType === "Edm.String" &&
+    typeof value === "string" &&
+    [...value].length > max
+  )
+    throw new HttpError(
+      400,
+      `${prop.name}: longer than its MaxLength of ${max}`,
+      "InvalidValue",
+    );
   const expected =
     prop.elementType === "Edm.Boolean"
       ? ["boolean"]
@@ -358,4 +378,4 @@ function deleteEntity(
   svc.store.remove(setName, entityType, key);
 }
 
-export { checkRequired, create, update, deleteEntity };
+export { checkProperty, checkRequired, create, update, deleteEntity };

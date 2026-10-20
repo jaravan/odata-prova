@@ -67,6 +67,39 @@ describe("V4 actions and functions (TripPin)", () => {
     );
   });
 
+  it("an action's body is checked as an entity's is: wrong JSON types and unknown parameters -> 400", async () => {
+    const url = `${s.v4}/People('${user}')/${NS}.ShareTrip`;
+    for (const [body, code, message] of [
+      [
+        { userName: 123, tripId: 1 },
+        "InvalidValue",
+        /^userName: expected a string, got 123$/,
+      ],
+      [
+        { userName: "bob", tripId: true },
+        "InvalidValue",
+        /^tripId: expected a number or a string/,
+      ],
+      [
+        { userName: "bob", tripId: 1, bogus: 1 },
+        "InvalidParameter",
+        /^ShareTrip has no parameter bogus$/,
+      ],
+    ] as const) {
+      const r = await send("POST", url, body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal(r.body.error.code, code);
+      assert.match(r.body.error.message, message);
+    }
+    // Annotations aren't parameters
+    const r = await send("POST", url, {
+      "@odata.context": "$metadata#Edm.Untyped",
+      userName: "bob",
+      tripId: 1,
+    });
+    assert.equal(r.status, 204);
+  });
+
   it("wrong method -> 405, naming the right one", async () => {
     const getAction = await get(`${s.v4}/People('${user}')/${NS}.ShareTrip`);
     assert.equal(getAction.status, 405);
