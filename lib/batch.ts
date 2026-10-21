@@ -112,14 +112,14 @@ function renderHttpResponsePart(
 
 function createBatchHandler(
   service: ODataService,
-): (req: Request, res: Response) => void {
+): (req: Request, res: Response) => Promise<void> {
   const { store, protocol } = service;
 
   // contentIdRefs: { "1": "/odata/v4/Srv/PurchaseOrderSet('x')" } within the current changeset.
-  function executeHttpPart(
+  async function executeHttpPart(
     { method, rawUrl, headers, bodyText }: HttpRequestPart,
     contentIdRefs: Record<string, string>,
-  ): ODataResponse {
+  ): Promise<ODataResponse> {
     let url = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
@@ -148,7 +148,7 @@ function createBatchHandler(
       const err = e as HttpError;
       return protocol.error(err.status, err.message, err.code);
     }
-    const result = service.dispatch(
+    const result = await service.execute(
       method,
       resourcePath,
       query,
@@ -162,7 +162,7 @@ function createBatchHandler(
 
   // A batch part is either a single "application/http" request, or a nested
   // "multipart/mixed" changeset containing several write requests.
-  function processBatchPart(rawPart: string): ProcessedPart {
+  async function processBatchPart(rawPart: string): Promise<ProcessedPart> {
     const [outerHeadBlock, remainder] = splitOnceOnBlankLine(rawPart);
     const outerContentType = parseHeaders(outerHeadBlock)["content-type"] || "";
 
@@ -182,7 +182,7 @@ function createBatchHandler(
             parseHeaders(innerHead)["content-id"] ||
             request.headers["content-id"];
           if (contentId) request.headers["content-id"] = contentId;
-          const result = executeHttpPart(request, refs);
+          const result = await executeHttpPart(request, refs);
           results.push({ result, contentId });
           if (result.status >= 400) {
             failed = true;
@@ -194,13 +194,17 @@ function createBatchHandler(
         throw e;
       }
       if (failed) store.rollback(mark);
-      else if (store.commit(mark)) store.settle(true);
+      else {
+        // Saved as one: a changeset that can't be is undone, and answers as a failed one
+        const error = await service.save(store.commit(mark)!);
+        if (error) results.push({ result: error });
+      }
       return { changeset: true, results };
     }
     return {
       changeset: false,
       results: [
-        { result: executeHttpPart(parseHttpRequestPart(remainder), {}) },
+        { result: await executeHttpPart(parseHttpRequestPart(remainder), {}) },
       ],
     };
   }
@@ -235,7 +239,7 @@ function createBatchHandler(
   }
 
   // Express handler for POST $batch (expects express.raw() to have run first).
-  return (req: Request, res: Response) => {
+  return async (req: Request, res: Response) => {
     const boundary = extractBoundary(req.headers["content-type"]);
     if (!boundary) {
       const err = protocol.error(
@@ -246,14 +250,20 @@ function createBatchHandler(
         .status(err.status)
         .set(protocol.headers)
         .setHeader("Content-Type", err.contentType!); // error() answers JSON
-      return res.end(JSON.stringify(err.body));
+      res.end(JSON.stringify(err.body));
+      return;
     }
     const bodyText = Buffer.isBuffer(req.body)
       ? req.body.toString("utf8")
       : String(req.body || "");
-    const processedParts = splitMultipart(bodyText, boundary).map(
-      processBatchPart,
-    );
+    // The whole batch takes one turn in the queue, and runs its parts in order: one outside
+    // a changeset is saved before the next runs, and sees what the ones before it saved
+    const processedParts = await service.queue.run(async () => {
+      const out: ProcessedPart[] = [];
+      for (const part of splitMultipart(bodyText, boundary))
+        out.push(await processBatchPart(part));
+      return out;
+    });
 
     const responseBoundary = `batchresponse_${Math.random().toString(36).slice(2)}`;
     res

@@ -8,6 +8,8 @@ import { emitV2 } from "./emit-v2.ts";
 import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
+import { Queue } from "./queue.ts";
+import type { Persistence } from "./persistence.ts";
 import type { Protocol, Rules } from "./protocol.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
@@ -101,6 +103,9 @@ export interface AppOptions {
   // The most rows a collection's response holds, with a next link to the rest (server-driven
   // paging, see service.ts); 0, the default: every row
   pageSize?: number;
+  // What saves each commit (see persistence.ts). Not documented yet: the options that set it
+  // come with the first backend.
+  persistence?: Persistence;
 }
 
 function createApp({
@@ -112,6 +117,7 @@ function createApp({
   etags = "lenient",
   joins = "guess",
   pageSize = 0,
+  persistence,
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -148,6 +154,8 @@ function createApp({
     v4: model.sourceVersion === "4.0" ? metadataXml : emitV4(model),
   };
 
+  // One queue for every service on the store (see queue.ts)
+  const queue = new Queue();
   const services: ODataService[] = [];
   for (const [name, servicePath] of [
     ["v2", v2Path],
@@ -165,6 +173,8 @@ function createApp({
         rules,
         etags,
         pageSize,
+        queue,
+        persistence,
       }),
     );
   }
@@ -255,11 +265,11 @@ function createApp({
   for (const service of services) {
     app.all(
       new RegExp(`^${escapeRegex(service.servicePath)}(/|$)`),
-      (req, res) => {
+      async (req, res) => {
         sendResult(
           res,
           service.protocol,
-          service.dispatch(
+          await service.dispatch(
             // HEAD is GET without a body (Node drops the body itself). UI5 sends
             // HEAD to the service root, e.g. to fetch a CSRF token.
             req.method === "HEAD" ? "GET" : req.method,

@@ -2,10 +2,12 @@
 // sharing one store. Everything here is driven by the parsed model; the protocol object
 // decides how literals are read and how responses are written.
 //
-// dispatch(method, path, query, body, headers) -> { status, body?, contentType?, headers? }
-// is the single entry point, used both by the Express routes and by $batch parts: it hands
-// the request to dispatch.ts, which walks the resource path. The service keeps what every
-// part of the work shares: the model's lookups, navigations, and a collection's response.
+// dispatch(method, path, query, body, headers) -> Promise<{ status, body?, contentType?,
+// headers? }> is the entry point of the Express routes: it runs the request in its turn in
+// the queue (see queue.ts), through execute(), which $batch calls for its parts. That hands
+// the request to dispatch.ts, which walks the resource path, and saves what it changed.
+// The service keeps what every part of the work shares: the model's lookups,
+// navigations, and a collection's response.
 import { HttpError, own } from "./query.ts";
 import { draftMatch, Drafts } from "./draft.ts";
 import { etagOf } from "./etag.ts";
@@ -36,7 +38,9 @@ import type {
   ResponseOptions,
   Row,
 } from "./model.ts";
-import type { Store } from "./store.ts";
+import type { Change, Store } from "./store.ts";
+import type { Queue } from "./queue.ts";
+import { netChanges, type Persistence } from "./persistence.ts";
 
 export interface ServiceOptions {
   model: Model;
@@ -51,6 +55,10 @@ export interface ServiceOptions {
   etags?: ETagMode;
   // The most rows a collection's response holds (see paging); 0, the default: every row
   pageSize?: number;
+  // Runs the requests of every service on the store one at a time (see queue.ts)
+  queue: Queue;
+  // Saves each outermost commit, if anything does (see persistence.ts)
+  persistence?: Persistence;
 }
 
 class ODataService {
@@ -63,6 +71,8 @@ class ODataService {
   rules: Rules;
   etags: ETagMode;
   pageSize: number;
+  queue: Queue;
+  persistence: Persistence | undefined;
   deltaTokens = new DeltaTokens();
   operations: OperationView;
   drafts: Drafts;
@@ -77,6 +87,8 @@ class ODataService {
     rules = {},
     etags = "lenient",
     pageSize = 0,
+    queue,
+    persistence,
   }: ServiceOptions) {
     this.model = model;
     this.store = store;
@@ -87,6 +99,8 @@ class ODataService {
     this.rules = rules;
     this.etags = etags;
     this.pageSize = pageSize;
+    this.queue = queue;
+    this.persistence = persistence;
     // The operations as this protocol serves them (see operationViews in metadata.ts)
     this.operations = model.operationViews[protocol.version];
     this.drafts = new Drafts(this);
@@ -299,13 +313,28 @@ class ODataService {
 
   // --- Dispatch --------------------------------------------------------------------------
 
+  // A request, in its turn in the queue
   dispatch(
     method: string,
     path: string,
     query: Record<string, unknown> = {},
     body?: unknown,
     headers: RequestHeaders = {},
-  ): ODataResponse {
+  ): Promise<ODataResponse> {
+    return this.queue.run(() =>
+      this.execute(method, path, query, body, headers),
+    );
+  }
+
+  // A request, run now: by dispatch(), and by $batch for its parts, the batch having taken
+  // its turn in the queue
+  async execute(
+    method: string,
+    path: string,
+    query: Record<string, unknown> = {},
+    body?: unknown,
+    headers: RequestHeaders = {},
+  ): Promise<ODataResponse> {
     // Each request is a transaction: an error leaves the store as it found it, whatever
     // the request had changed before it failed
     const mark = this.store.begin();
@@ -319,10 +348,31 @@ class ODataService {
       console.error(e);
       return this.protocol.error(500, (e as Error).message);
     }
-    if (response.status >= 400) this.store.rollback(mark);
-    // The outermost commit holds its changes until they are saved; nothing saves them yet
-    else if (this.store.commit(mark)) this.store.settle(true);
-    return response;
+    if (response.status >= 400) {
+      this.store.rollback(mark);
+      return response;
+    }
+    // Inside a changeset the commit is the changeset's to save (see batch.ts)
+    const changes = this.store.commit(mark);
+    return (changes && (await this.save(changes))) || response;
+  }
+
+  // Saves the changes of an outermost commit (see Store.commit), and settles it: kept once
+  // saved, undone when they couldn't be. Returns the error to answer with then.
+  async save(changes: Change[]): Promise<ODataResponse | undefined> {
+    try {
+      if (this.persistence && changes.length)
+        await this.persistence.commit(netChanges(this.model, changes));
+    } catch (e) {
+      this.store.settle(false);
+      console.error(e);
+      return this.protocol.error(
+        500,
+        `The changes could not be saved: ${(e as Error).message}`,
+      );
+    }
+    this.store.settle(true);
+    return undefined;
   }
 }
 
