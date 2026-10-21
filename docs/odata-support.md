@@ -11,13 +11,21 @@ All primitive Edm types, plus:
 
 In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
 
-Writes are checked against the metadata: a value that doesn't fit its type, or a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, is a `400`. So is a value of the wrong JSON type (`123` for a string, `"true"` for a boolean; numbers may come as strings), a string longer than its `MaxLength`, and a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored). Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required, and neither is anything in a draft, which may be incomplete until it is activated.
+Writes are checked against the metadata. Each of these is a `400`:
+
+- a value that doesn't fit its type
+- a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null
+- a value of the wrong JSON type: `123` for a string, `"true"` for a boolean (numbers may come as strings)
+- a string longer than its `MaxLength`
+- a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored)
+
+Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required. Neither is anything in a draft, which may be incomplete until it is activated.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
 
 ## SAP annotations in the generated V4 metadata
 
-For a V2 `metadata.xml`, the V4 service's `$metadata` carries its `sap:` attributes as the V4 annotations SAP names for them in [SAP Annotations for OData Version 2.0](https://sap.github.io/odata-vocabularies/docs/v2-annotations.html), so a Fiori Elements V4 app gets the same texts, units and restrictions as a V2 app:
+For a V2 `metadata.xml`, the V4 service's `$metadata` carries its `sap:` attributes as V4 annotations: the ones SAP names for them in [SAP Annotations for OData Version 2.0](https://sap.github.io/odata-vocabularies/docs/v2-annotations.html). So a Fiori Elements V4 app gets the same texts, units and restrictions as a V2 app:
 
 | V2                                                                                                                | V4                                                                                                    |
 | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -36,13 +44,15 @@ For a V2 `metadata.xml`, the V4 service's `$metadata` carries its `sap:` attribu
 | `sap:requires-filter`, and `sap:filterable`, `sap:required-in-filter`, `sap:filter-restriction` on its properties | `Capabilities.FilterRestrictions`                                                                     |
 | `sap:sortable` on its properties                                                                                  | `Capabilities.SortRestrictions`                                                                       |
 
-As in SAP Gateway, an entity set with `sap:` attributes but no `sap:searchable="true"` is not searchable, so a Fiori Elements V4 app shows no search field for it. A term the document's own `<Annotations>` blocks already set on the same target is left out, and the terms use the document's alias for a vocabulary it references.
+As in SAP Gateway, an entity set with `sap:` attributes but no `sap:searchable="true"` is not searchable, so a Fiori Elements V4 app shows no search field for it.
+
+A term the document's own `<Annotations>` blocks already set on the same target is left out. The terms use the document's alias for a vocabulary it references.
 
 These annotations only describe the service: the server itself still accepts a `$search`, a filter on a non-filterable property or a create in a non-creatable entity set.
 
 ## V4 annotations in the generated V2 metadata
 
-For a V4 `metadata.xml`, the V2 service's `$metadata` carries all of its annotations, which UI5's V2 model reads and puts before anything it derives from `sap:` attributes. They are written the way UI5 reads them:
+For a V4 `metadata.xml`, the V2 service's `$metadata` carries all of its annotations. UI5's V2 model reads them, and puts them before anything it derives from `sap:` attributes. They are written the way UI5 reads them:
 
 - Every `<Annotations>` block is in the V4 namespace (`xmlns="http://docs.oasis-open.org/odata/ns/edm"`): UI5 skips blocks in any other.
 - Every `<edmx:Reference>` declares V4's edmx namespace, as SAP Gateway writes them: UI5 resolves a term's alias (`UI.Hidden` to `com.sap.vocabularies.UI.v1.Hidden`) only from references in it.
@@ -57,11 +67,17 @@ Two `sap:` attributes are written as well, where UI5 reads an attribute and not 
 
 ## Query options
 
-Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand` (including nested V4 options like `$expand=Items($select=Material;$top=2)`), `$count`/`$inlinecount`, `$search`, and `$batch` (with atomic changesets) all work, on both protocols. A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
+Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`/`$inlinecount`, `$search`, and `$batch` with atomic changesets all work, on both protocols. `$expand` takes nested V4 options too: `$expand=Items($select=Material;$top=2)`.
 
-`$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`, over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nested, and with `$it` for the entity outside the lambda.
+A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
 
-Arithmetic in `$filter` follows the spec's numeric promotion: `div` of two integers rounds towards zero (`Quantity div 2`), `divby` doesn't, and an operation with a null is null, which no comparison matches. A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
+`$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`. They work over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nest, and take `$it` for the entity outside the lambda.
+
+Arithmetic in `$filter` follows the spec's numeric promotion:
+
+- `div` of two integers rounds towards zero (`Quantity div 2`); `divby` doesn't.
+- An operation with a null is null, which no comparison matches.
+- A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
 
 ### Computed properties (`$compute`)
 
@@ -71,13 +87,22 @@ V4's `$compute` adds properties to each entity, from an expression written as in
 GET /odata/v4/MySrv/PurchaseOrderItemSet?$compute=Quantity mul NetPrice as LineTotal&$filter=LineTotal gt 5000&$orderby=LineTotal desc
 ```
 
-A computed property is in the response, and `$filter`, `$orderby` and `$select` use it like one of the entity's own. The expression can use the entity's properties, paths through single-valued navigations (`PurchaseOrder/Status`), arithmetic and the `$filter` functions, and its type follows from them: `Quantity mul NetPrice` of two decimals is an `Edm.Decimal`, `year(OrderDate)` an `Edm.Int32`. It works on a collection, a single entity, `/$count`, and in an `$expand` (`Items($compute=...;$select=LineTotal)`).
+A computed property is in the response, and `$filter`, `$orderby` and `$select` use it like one of the entity's own.
+
+The expression can use the entity's properties, paths through single-valued navigations (`PurchaseOrder/Status`), arithmetic and the `$filter` functions. Its type follows from them: `Quantity mul NetPrice` of two decimals is an `Edm.Decimal`, `year(OrderDate)` an `Edm.Int32`.
+
+It works on a collection, a single entity, `/$count`, and in an `$expand` (`Items($compute=...;$select=LineTotal)`).
 
 A mistake in it (an unknown property, an alias that is already a property, arithmetic on text) is a `400`. It isn't supported together with `$apply`, nor in V2, which has no `$compute`: both are a `501`.
 
 ### Server-driven paging
 
-With `PAGE_SIZE` set (`createApp`'s `pageSize` option), a collection's response holds at most that many rows, and a link to the next page: `@odata.nextLink` in V4, `d.__next` in V2. Following the links gives every row the query asks for, `$skip` and `$top` included. The count from `$count=true` or `$inlinecount=allpages` stays the total on every page. That's how SAP Gateway and CAP answer a large collection, so an app can be tried against a backend that pages.
+With `PAGE_SIZE` set (`createApp`'s `pageSize` option), a collection's response holds at most that many rows, and a link to the next page: `@odata.nextLink` in V4, `d.__next` in V2.
+
+- Following the links gives every row the query asks for, `$skip` and `$top` included.
+- The count from `$count=true` or `$inlinecount=allpages` stays the total on every page.
+
+That's how SAP Gateway and CAP answer a large collection, so an app can be tried against a backend that pages. It's off by default, as a client that ignores the links would see only the first page.
 
 ```
 GET /odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate      (PAGE_SIZE=2)
@@ -86,9 +111,13 @@ GET /odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate      (PAGE_SIZE=2)
   "@odata.nextLink": "/odata/v4/MySrv/PurchaseOrderSet?$orderby=OrderDate&$skiptoken=2" }
 ```
 
-The link is the request with a `$skiptoken`: where the next page starts among the rows the query options leave. A client sends it back as it is; a `$skiptoken` also works without paging. UI5's V2 and V4 models don't follow the link: they take it as a sign that there are more rows, and read the next ones with `$skip` and `$top`, which works as before.
+The link is the request with a `$skiptoken`: where the next page starts among the rows the query options leave. A client sends it back as it is. A `$skiptoken` also works without paging.
 
-A V4 client can ask for smaller pages with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not. Paging applies to an entity set, a navigation's collection, a function's result and an `$apply` result, and to each collection in an `$expand`. An expanded collection's link, `Items@odata.nextLink` in V4 and `"Items": {"results": [...], "__next": ...}` in V2, is the navigation under its entity, with the expand's own options: `.../Orders(1)/Items?$select=Material&$skiptoken=2`. It's off by default, as a client that ignores the links would see only the first page.
+UI5's V2 and V4 models don't follow the link. They take it as a sign that there are more rows, and read the next ones with `$skip` and `$top`, which works as before.
+
+- **Smaller pages:** a V4 client can ask for them with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not.
+- **What's paged:** an entity set, a navigation's collection, a function's result, an `$apply` result, and each collection in an `$expand`.
+- **An expanded collection's link** (`Items@odata.nextLink` in V4, `"Items": {"results": [...], "__next": ...}` in V2) is the navigation under its entity, with the expand's own options: `.../Orders(1)/Items?$select=Material&$skiptoken=2`.
 
 ### Delta links
 
@@ -105,9 +134,13 @@ GET /odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3
   "@odata.deltaLink": "/odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3-2" }
 ```
 
-The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`. Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
+The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`.
 
-A delta link is for an entity set, read without `$apply`, `$compute`, `$skip` or `$top`; for other reads the preference isn't applied, and `Preference-Applied` says so. The server keeps the latest 100 delta links, and none across a restart: an older one is a `410 Gone`, and the client reads the set again. A change inside an expanded navigation isn't a change of the entity.
+Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
+
+- **What gets one:** an entity set, read without `$apply`, `$compute`, `$skip` or `$top`. For other reads the preference isn't applied, and `Preference-Applied` says so.
+- **How long it lasts:** the server keeps the latest 100 delta links, and none across a restart, even with `--persist`. An older one is a `410 Gone`, and the client reads the set again.
+- A change inside an expanded navigation isn't a change of the entity.
 
 V2 has delta links as SAP Gateway writes them. A V2 read of an entity set gets one with `Prefer: odata.track-changes`, or without asking when the V2 metadata marks the set `sap:change-tracking="true"`. It comes as `d.__delta`, the request with a `!deltatoken`:
 
@@ -121,32 +154,70 @@ GET /odata/v2/MySrv/PurchaseOrderSet?$select=Status&!deltatoken='m1x2k3-1'
     "__delta": "/odata/v2/MySrv/PurchaseOrderSet?$select=Status&!deltatoken='m1x2k3-2'" } }
 ```
 
-The entities added or changed are in `results`. The ones deleted, or that no longer match the link's `$filter`, are in `__deleted`, each with its URI, type and keys: SAP doesn't publish its JSON for those, so that list is this server's own. V4's `$deltatoken` is a `501` in V2.
+The entities added or changed are in `results`. The ones deleted, or that no longer match the link's `$filter`, are in `__deleted`, each with its URI, type and keys. SAP doesn't publish its JSON for those, so that list is this server's own.
+
+V4's `$deltatoken` is a `501` in V2.
 
 ### Aggregation (`$apply`)
 
-V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals: `$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))`. Transformations are separated by `/` and run in order, before the other query options, which then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
+V4's `$apply` groups and aggregates, as UI5's V4 model asks for grouped tables and totals:
+
+```
+$apply=filter(Status ne 'Cancelled')/groupby((Currency),aggregate(TotalAmount with sum as Total,$count as Count))
+```
+
+Transformations are separated by `/` and run in order, before the other query options. Those then work on the result, its aliases included (`&$filter=Total gt 10000&$orderby=Total desc`).
 
 - `filter(...)`, `search(...)`, `orderby(...)`, `skip(n)` and `top(n)`: as the query options of the same names. `identity` leaves the rows as they are.
 - `compute(Amount mul 2 as Double,...)`: a property for each row, as [`$compute`](#computed-properties-compute) adds it, which the transformations after it use: `compute(month(OrderDate) as Month)/groupby((Month),aggregate($count as Count))`. Its rows are copies, written as the result's rows, not entities to expand.
-- `topcount(n,P)` and `bottomcount(n,P)`: the `n` rows with the highest or lowest values of `P`, a property, an alias, a path or an expression (`TotalAmount mul Quantity`, `length(Name)`), in that order. `P` can be any value with an order: text goes alphabetically, dates by time. `topsum(s,P)` and `bottomsum(s,P)`: the fewest of them, from the highest or the lowest, whose values add up to at least `s`. `toppercent(p,P)` and `bottompercent(p,P)`: the same, up to `p` percent of the total, where `P` is a number. Rows whose value is null are left out.
+- Ranks, where `P` is a property, an alias, a path or an expression (`TotalAmount mul Quantity`, `length(Name)`). Rows whose value is null are left out.
+  - `topcount(n,P)` and `bottomcount(n,P)`: the `n` rows with the highest or lowest values of `P`, in that order. `P` can be any value with an order: text goes alphabetically, dates by time.
+  - `topsum(s,P)` and `bottomsum(s,P)`: the fewest of them, from the highest or the lowest, whose values add up to at least `s`.
+  - `toppercent(p,P)` and `bottompercent(p,P)`: the same, up to `p` percent of the total, where `P` is a number.
 - `groupby((A,B))`: one row per distinct combination of `A` and `B`, with an `aggregate(...)` after the properties to aggregate each group. Any other sequence after them runs on each group's rows, one group after the other: `groupby((Currency),topcount(1,TotalAmount))` gives the highest order of each currency, still entities. Rows the sequence makes, such as an aggregate's, get the group's values: `groupby((Currency),aggregate(TotalAmount with sum as Total)/filter(Total gt 10000))`.
 - Paths through single-valued navigations, to group or aggregate by a related entity's property, as UI5 groups by a text it reaches through a navigation: on order items, `groupby((PurchaseOrder/Status),aggregate(NetPrice with sum as Total))`. The response nests the path, `{"PurchaseOrder":{"Status":"Open"},"Total":"38.20"}`, and the other query options use it as it is: `$orderby=PurchaseOrder/Status`. A navigation that leads nowhere gives `null`.
 - Paths through a collection navigation. Grouping by one copies each row for each entity the navigation leads to, and the other paths through it read that entity: on orders, `groupby((Items/Currency),aggregate(Items/NetPrice with sum as Total,$count as Count))` sums and counts the items of each currency. The response nests the path as a list, `{"Items":[{"Currency":"EUR"}],"Total":"7438.70","Count":"5"}`. Aggregating one without grouping by it takes the values of all the related entities: `aggregate(Items/NetPrice with sum as Total)` sums the items of all the orders.
 - `groupby((A,B),filter(...))`: the rows of each group that pass the filter, in which `$these/aggregate(...)` is an aggregate over the group's rows (in any filter of a groupby's sequence). That's how UI5 filters groups on their totals (`$$filterOnAggregate`): `groupby((Country),filter($these/aggregate(Amount) gt 1000))/groupby((Country),aggregate(Amount))` gives the countries whose amounts add up to more than 1000. `$these/aggregate` takes a custom aggregate (`Amount`), `Amount with sum` (or any other method), or `$count`.
-- `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out. Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`), and decimals add up exactly. So does their average, rounded when it doesn't end: 16 digits more than the values have.
+- `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out.
+  - Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`).
+  - Decimals add up exactly. So does their average, rounded when it doesn't end: 16 digits more than the values have.
 - Custom aggregates, which UI5 asks for with no `with` when the metadata declares them (`Aggregation.CustomAggregate`, on the entity type or set): `aggregate(Amount,Currency)`, or `aggregate(Amount as Total)`. The metadata says what type the result is but not how it is computed, so the server aggregates the property of the same name: a number is summed, and anything else, such as a currency or a unit, is the value all the rows share, or `null` when they differ, which is how UI5 shows amounts in mixed currencies.
 - `concat(A,B,...)`: runs each sequence on the same rows and puts their results one after the other. UI5 uses it for the rows it needs besides the ones it shows: `concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))` answers with the minimum and the count in a first row, then a page of rows. Each row has only the properties of its own sequence.
 
-The result rows have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. `$select` picks among them, as UI5 sends it with `identity`. A row that is still one of the entities, which `identity`, `filter`, `search`, `orderby`, `skip`, `top`, the ranks, `traverse` and a groupby's sequence of those pass on, is written as an entity, with its ETag, and `$expand` expands it: `$apply=concat(aggregate($count as UI5__count),identity)&$expand=Items($select=Material)`. `$expand` on a result with no entities left, after an `aggregate`, `groupby` or `compute`, is a `400`. `$apply` works on an operation's result too, when it's a collection of entities: `GetOpenOrders()?$apply=groupby((Status),aggregate(Amount with sum as Total))`. On any other result it's a `400`, checked before an action runs. A mistake in `$apply` (an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare) is a `400`.
+The result:
 
-`501`, never ignored: a custom aggregation method (`Amount with Custom.median`) or a custom aggregate with no property of its name, which the metadata doesn't say how to compute, a path through more than one collection navigation, and `$apply` in V2, which has none. Ranking by a path through a collection navigation, which has no single value for a row, is a `400`.
+- **Rows that aren't entities** have no key, so no ETag, and the context lists their properties: `$metadata#PurchaseOrderSet(Currency,Total,Count)`. `$select` picks among them, as UI5 sends it with `identity`.
+- **Rows that are still entities** are written as entities, with their ETag, and `$expand` expands them: `$apply=concat(aggregate($count as UI5__count),identity)&$expand=Items($select=Material)`. `identity`, `filter`, `search`, `orderby`, `skip`, `top`, the ranks, `traverse` and a groupby's sequence of those keep rows entities.
+- `$expand` on a result with no entities left, after an `aggregate`, `groupby` or `compute`, is a `400`.
+- **On an operation's result:** `$apply` works when it's a collection of entities: `GetOpenOrders()?$apply=groupby((Status),aggregate(Amount with sum as Total))`. On any other result it's a `400`, checked before an action runs.
+
+A mistake in `$apply` is a `400`: an unknown property, a sum of a string, an alias that is already a property, a custom aggregate the metadata doesn't declare, or ranking by a path through a collection navigation (which has no single value for a row).
+
+These are a `501`, never ignored:
+
+- a custom aggregation method (`Amount with Custom.median`)
+- a custom aggregate with no property of its name, which the metadata doesn't say how to compute
+- a path through more than one collection navigation
+- `$apply` in V2, which has none
 
 ### Hierarchies
 
-A recursive hierarchy, as UI5's tree tables show one, is declared on an entity type by two annotations with the same qualifier, which CAP writes for `@hierarchy`: `Aggregation.RecursiveHierarchy`, with the node property and the navigation to a node's parent, and `Hierarchy.RecursiveHierarchy`, with the properties the server fills in for each node it answers with: `DrillState`, `DistanceFromRoot`, `LimitedDescendantCount` and `LimitedRank`.
+A recursive hierarchy, as UI5's tree tables show one, is declared on an entity type by two annotations with the same qualifier. CAP writes them for `@hierarchy`:
 
-UI5 asks for the first levels with `TopLevels`: `$apply=com.sap.vocabularies.Hierarchy.v1.TopLevels(HierarchyNodes=$root/Genres,HierarchyQualifier='GenresHierarchy',NodeProperty='ID',Levels=2)`. The answer is the nodes with fewer ancestors than `Levels` (all of them without it) in preorder, siblings in the order of the rows before it (`orderby(name)/TopLevels(...)`). `ExpandLevels=[{"NodeID":"4","Levels":1}]` shows more levels below a node, all of them with `"Levels":null`, or collapses it with `0`. Each node's `DrillState` is `expanded` when its children are in the answer, `collapsed` when it has some that aren't, and `leaf` when it has none. The nodes are still entities, with their key, ETag and `$expand`.
+- `Aggregation.RecursiveHierarchy`, with the node property and the navigation to a node's parent
+- `Hierarchy.RecursiveHierarchy`, with the properties the server fills in for each node it answers with: `DrillState`, `DistanceFromRoot`, `LimitedDescendantCount` and `LimitedRank`
+
+UI5 asks for the first levels with `TopLevels`:
+
+```
+$apply=com.sap.vocabularies.Hierarchy.v1.TopLevels(HierarchyNodes=$root/Genres,HierarchyQualifier='GenresHierarchy',NodeProperty='ID',Levels=2)
+```
+
+The answer is the nodes with fewer ancestors than `Levels` (all of them without it), in preorder. Siblings come in the order of the rows before it (`orderby(name)/TopLevels(...)`).
+
+- `ExpandLevels=[{"NodeID":"4","Levels":1}]` shows more levels below a node, all of them with `"Levels":null`, or collapses it with `0`.
+- Each node's `DrillState` is `expanded` when its children are in the answer, `collapsed` when it has some that aren't, and `leaf` when it has none.
+- The nodes are still entities, with their key, ETag and `$expand`.
 
 To expand a node, UI5 asks for its children with `descendants`, and to search or filter, for the matching nodes and their ancestors with `ancestors`, followed by `TopLevels`:
 
@@ -157,9 +228,15 @@ To expand a node, UI5 asks for its children with `descendants`, and to search or
 
 `Show=["5","8"]` in `TopLevels` shows those nodes: every ancestor of each is expanded, even one `ExpandLevels` collapses. A node ID that isn't among the rows is left alone.
 
-`traverse($root/Genres,GenresHierarchy,ID,preorder)` puts the rows in the hierarchy's order, each parent before its children, or after them with `postorder`. Expressions after the order sort the roots and siblings: `traverse(...,preorder,name desc)`. The order is the whole hierarchy's, so a row keeps its place when its parent isn't among the rows (`filter(ID ne 4)/traverse(...)`). Unlike `TopLevels`, nothing is filled in, and the rows stay entities. Parents come from the whole hierarchy (`$root/Genres`), and the properties are filled in relative to the answer: `DistanceFromRoot` is the depth from the real root.
+`traverse($root/Genres,GenresHierarchy,ID,preorder)` puts the rows in the hierarchy's order, each parent before its children, or after them with `postorder`. Expressions after the order sort the roots and siblings: `traverse(...,preorder,name desc)`.
 
-A node whose parent isn't among the rows is a root. Parents that go round in a cycle, as generated rows can have them, are broken at the first node in the rows' order, so every node shows once. Hierarchy nodes other than an entity set (`$root/Genres`) are a `501`.
+The order is the whole hierarchy's, so a row keeps its place when its parent isn't among the rows (`filter(ID ne 4)/traverse(...)`). Unlike `TopLevels`, nothing is filled in, and the rows stay entities.
+
+Parents come from the whole hierarchy (`$root/Genres`), and the properties are filled in relative to the answer: `DistanceFromRoot` is the depth from the real root.
+
+- A node whose parent isn't among the rows is a root.
+- Parents that go round in a cycle, as generated rows can have them, are broken at the first node in the rows' order, so every node shows once.
+- Hierarchy nodes other than an entity set (`$root/Genres`) are a `501`.
 
 ## Drafts
 
@@ -183,9 +260,15 @@ Creating and editing work the way Fiori Elements drives them, with the actions t
 | `DELETE` on a draft root                           | Discards the draft.                                                                                                                                                                                                                                                |
 | `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                                                                                                                                       |
 
-Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`. Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft; `DraftAdministrativeData` says so, and is read-only.
+Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`.
 
-**V2.** SAP Gateway and RAP put the same annotations in V2 metadata, with the actions as function import paths (`Srv.Srv_Entities/TravelEdit`); those are read too. Whichever version the metadata is, the V2 service calls the actions as function imports (`POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`) and the V4 service as bound actions. The V4 service's `$metadata` names them as bound actions too (`EditAction="Srv.TravelEdit"`), since Fiori Elements V4 calls them by that name, and an annotation on a function import targets its bound action (`Srv.TravelEdit(Srv.TravelType)`).
+Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft. `DraftAdministrativeData` says so, and is read-only.
+
+**V2.** SAP Gateway and RAP put the same annotations in V2 metadata, with the actions as function import paths (`Srv.Srv_Entities/TravelEdit`). Those are read too. Whichever version the metadata is:
+
+- the V2 service calls the actions as function imports: `POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`
+- the V4 service calls them as bound actions, and its `$metadata` names them so (`EditAction="Srv.TravelEdit"`), since Fiori Elements V4 calls them by that name
+- an annotation on a function import targets its bound action (`Srv.TravelEdit(Srv.TravelType)`)
 
 Limits:
 
@@ -214,7 +297,15 @@ A write can link an entity to existing ones, whatever the navigation joins on: a
   | `DELETE People('ann')/Photo/$ref`                                  | removes a single-valued navigation's link             |
   | `DELETE Orders(1)/Lines('C')/$ref`, or `Lines/$ref?$id=Lines('C')` | removes one of a collection's links                   |
 
-A URL can be relative to the service (`Photos(1)`), from the server's root (`/odata/v4/MySrv/Photos(1)`) or whole, and names an entity of the navigation's target set by its key. A foreign key on the entity's side is set from it, so `"PurchaseOrder@odata.bind"` creates an item under its order, even when the order's key is part of the item's. One on the target's side is set on the target, which leaves the entity it linked to before. An unknown entity, another entity set, or a list for a single-valued navigation is a `400` with the code `InvalidReference`, and nothing changes. So is a link that can't change: one through a key (an existing item's order), removing one through a required property, and a containment or draft navigation, whose targets are created through it.
+A URL can be relative to the service (`Photos(1)`), from the server's root (`/odata/v4/MySrv/Photos(1)`) or whole. It names an entity of the navigation's target set by its key.
+
+- **A foreign key on the entity's side** is set from it. So `"PurchaseOrder@odata.bind"` creates an item under its order, even when the order's key is part of the item's.
+- **A foreign key on the target's side** is set on the target, which leaves the entity it linked to before.
+
+These are a `400` with the code `InvalidReference`, and nothing changes:
+
+- an unknown entity, another entity set, or a list for a single-valued navigation
+- a link that can't change: one through a key (an existing item's order), removing one through a required property, and a containment or draft navigation, whose targets are created through it
 
 ## ETags
 
@@ -222,7 +313,13 @@ An entity set has ETags when the metadata names the properties they're made of: 
 
 - **Reading.** An entity's ETag is in the `ETag` header of a single-entity response, and in the payload as `@odata.etag` (V4) or `__metadata.etag` (V2), expanded entities included. It is those properties' values, e.g. `W/"2026-01-01T10:00:00.000Z"`.
 - **Writing.** A `PUT`, `PATCH`, `MERGE` or `DELETE`, or an action on the entity, sent with an `If-Match` that holds neither the entity's current ETag nor `*` is a `412`: the entity has changed since it was read, and nothing changes. A successful update answers with the new ETag.
-- **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp, so another client's ETag goes stale: a timestamp moves to now, a number counts up (an integer at the top of its type's range starts again at the bottom), a GUID or string is new. A boolean or a time of day has no next value and keeps its own. A value the client sends for one is replaced.
+- **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp. So another client's ETag goes stale:
+  - a timestamp moves to now
+  - a number counts up (an integer at the top of its type's range starts again at the bottom)
+  - a GUID or string is new
+  - a boolean or a time of day has no next value, and keeps its own
+
+  A value the client sends for one is replaced.
 
 `ETAGS` sets how strict the checks are:
 
@@ -232,7 +329,9 @@ An entity set has ETags when the metadata names the properties they're made of: 
 | `strict`            | `428` for an update or a delete | `412`            |
 | `off`               | the change goes through         | ignored          |
 
-`strict` is what the OData spec asks of a service with ETags; an action still runs without `If-Match`, which the spec leaves to the service, and so does a change to a draft. `off` still sends the ETags, so a client that reads them works as before. In code, it's `createApp`'s `etags` option.
+`strict` is what the OData spec asks of a service with ETags. An action still runs without `If-Match`, which the spec leaves to the service, and so does a change to a draft.
+
+`off` still sends the ETags, so a client that reads them works as before. In code, it's `createApp`'s `etags` option.
 
 UI5 sends the ETag it read on its own, so a Fiori app needs nothing more. To try a `412` by hand, read an entity, change it from another client (`If-Match: *`), and then change it with the first ETag.
 
@@ -257,13 +356,26 @@ Any other error's code is its status's: `BadRequest` (`400`), `NotFound` (`404`)
 
 ## Not supported
 
-Rejected with `501 Not Implemented`: `$apply` and `$compute` in V2, `$compute` with `$apply`, V4's `$deltatoken` in V2 (which has `!deltatoken`), the parts of `$apply` listed under [Aggregation](#aggregation-apply), and any `$format` other than JSON. `If-None-Match` is ignored: a read always answers with the entity.
+Rejected with `501 Not Implemented`:
+
+- `$apply` and `$compute` in V2
+- `$compute` with `$apply`
+- V4's `$deltatoken` in V2, which has `!deltatoken`
+- the parts of `$apply` listed under [Aggregation](#aggregation-apply)
+- any `$format` other than JSON
+
+`If-None-Match` is ignored: a read always answers with the entity.
 
 ## Navigations without a ReferentialConstraint
 
-A navigation without a `ReferentialConstraint` (on either side) is joined by naming: on the source's key names when the target has them (an item keyed by `SalesOrder` + `ItemNo` under a sales order keyed by `SalesOrder`), or on a foreign key named after the other side (`Item.OrderID`, `Item.Order_ID`, CAP's `author_ID`). Each such join is logged as `navigation joined by naming: ...`, since it's a guess. A match that would join two types' whole keys to each other (an order's `ID` to its items' `ID`) is only taken for a one-to-one link, never for one with a "many" side or from a type to itself.
+A navigation without a `ReferentialConstraint` (on either side) is joined by naming:
 
-A navigation with nothing to join on, such as TripPin's `Person.Photo`, gets a key of its own: a hidden column for each of the target's keys, named `<Navigation>_<Key>` (`Photo_Id`), the name a guess would have looked for. A data file fills it like any other column, and generated rows point it at real ones:
+- on the source's key names, when the target has them: an item keyed by `SalesOrder` + `ItemNo` under a sales order keyed by `SalesOrder`
+- or on a foreign key named after the other side: `Item.OrderID`, `Item.Order_ID`, CAP's `author_ID`
+
+Each such join is logged as `navigation joined by naming: ...`, since it's a guess. A match that would join two types' whole keys to each other (an order's `ID` to its items' `ID`) is only taken for a one-to-one link. It's never taken for one with a "many" side, or from a type to itself.
+
+A navigation with nothing to join on, such as TripPin's `Person.Photo`, gets a key of its own. That's a hidden column for each of the target's keys, named `<Navigation>_<Key>` (`Photo_Id`), the name a guess would have looked for. A data file fills it like any other column, and generated rows point it at real ones:
 
 ```
 data/People.csv
@@ -271,9 +383,11 @@ UserName;FirstName;Photo_Id
 russellwhyte;Russell;1
 ```
 
-Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column. The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. A write sets it as any link, see [Links between entities](#links-between-entities).
+Its partner, a collection (an order's `Lines`, for a line's `Order`), joins back on the same column.
 
-A collection with nothing to join on, a many-to-many link such as TripPin's `Person.Friends` or Northwind's `Customer.CustomerDemographics`, gets links of its own: a link set of key pairs, named after the source's entity set and the navigation. A navigation and its partner share one. A data file fills it, and generated data links each row to up to three others:
+The column is the server's, not the service's: no response or `$metadata` shows it, and the generated `$metadata` has no constraint for the navigation. Each one is logged as `navigation with a key of its own: ...`. A write sets it as any link, see [Links between entities](#links-between-entities).
+
+A collection with nothing to join on, a many-to-many link such as TripPin's `Person.Friends` or Northwind's `Customer.CustomerDemographics`, gets links of its own. That's a link set of key pairs, named after the source's entity set and the navigation, which a navigation and its partner share. A data file fills it, and generated data links each row to up to three others:
 
 ```
 data/People-Friends.csv
@@ -282,9 +396,15 @@ russellwhyte;scottketchum
 russellwhyte;ronaldmundy
 ```
 
-Each one is logged as `navigation with links of its own: Person.Friends in People-Friends`, which names its file. Creating an entity through the navigation (`POST People('russellwhyte')/Friends`, or a deep insert) links it, deleting an entity removes its links, and a failed `$batch` changeset takes them back.
+Each one is logged as `navigation with links of its own: Person.Friends in People-Friends`, which names its file.
 
-A containment navigation (`ContainsTarget`) whose target no entity set holds, such as TripPin's `Person.Trips`, gets an entity set of its own, named after the parent's set and the navigation (`People-Trips`, and `People-Trips-PlanItems` below it). It's in no service document or `$metadata`, and is reached only through its parent: `People('russellwhyte')/Trips(1001)/PlanItems`. A contained entity's key is unique only under its parent, so its rows keep their parent's keys in hidden columns, named after the parent's type (`Person_UserName`, then `Trip_TripId`), which a data file fills:
+- Creating an entity through the navigation (`POST People('russellwhyte')/Friends`, or a deep insert) links it.
+- Deleting an entity removes its links.
+- A failed `$batch` changeset takes them back.
+
+A containment navigation (`ContainsTarget`) whose target no entity set holds, such as TripPin's `Person.Trips`, gets an entity set of its own. It's named after the parent's set and the navigation (`People-Trips`, and `People-Trips-PlanItems` below it). It's in no service document or `$metadata`, and is reached only through its parent: `People('russellwhyte')/Trips(1001)/PlanItems`.
+
+A contained entity's key is unique only under its parent. So its rows keep their parent's keys in hidden columns, named after the parent's type (`Person_UserName`, then `Trip_TripId`), which a data file fills:
 
 ```
 data/People-Trips.csv
@@ -293,8 +413,10 @@ russellwhyte;1001;Trip in US
 scottketchum;1001;Trip in Beijing
 ```
 
-Creating one through the navigation puts it under that parent, at the parent's URL (`Location: .../People('russellwhyte')/Trips(1002)`), and deleting the parent deletes everything it contains. V2 has no containment, so these navigations aren't in the V2 service. Each one is logged as `navigation with an entity set of its own: ...`.
+Creating one through the navigation puts it under that parent, at the parent's URL (`Location: .../People('russellwhyte')/Trips(1002)`). Deleting the parent deletes everything it contains. V2 has no containment, so these navigations aren't in the V2 service. Each one is logged as `navigation with an entity set of its own: ...`.
 
-A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none: such a navigation gets a key of its own instead, which links nothing until a data file fills it, or is disabled as below when it can't have one. A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner in either mode.
+A guess can be wrong, and then the navigation shows other entities' rows, which look just as real. `JOINS=strict` (`createApp`'s `joins` option) guesses none. Such a navigation gets a key of its own instead, which links nothing until a data file fills it, or is disabled as below when it can't have one.
+
+A constraint on one side only, as CAP writes them, is not a guess: the other side takes it from its partner, in either mode.
 
 A navigation the server can't join (one to an entity type no entity set holds, outside containment) doesn't stop the service from starting. It is disabled with a `navigation disabled: ...` line in the startup log, and requests that use it get a `501` saying why.

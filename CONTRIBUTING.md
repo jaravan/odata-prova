@@ -24,7 +24,9 @@ yarn format:check   # yarn format fixes it
 yarn test:coverage  # the tests, with a coverage report per file
 ```
 
-CI runs the checks on every push and pull request, with the tests run as `yarn test:coverage`: below 95% of lines, 85% of branches or 90% of functions, it fails. It also builds the Docker image and runs it the way users do, which you can do locally too (Docker needed):
+CI runs these checks on every push and pull request. Its tests run as `yarn test:coverage`, which fails below 95% of lines, 85% of branches or 90% of functions.
+
+CI also builds the Docker image and runs it the way users do. You can do that locally too, with Docker:
 
 ```sh
 docker build -t odata-prova:test .
