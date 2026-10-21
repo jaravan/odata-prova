@@ -682,6 +682,7 @@ class Drafts {
 }
 
 export {
+  ADMIN,
   parseDraftAnnotations,
   isDraftNavigation,
   resolveDraftNavigations,
