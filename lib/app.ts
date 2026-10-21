@@ -10,6 +10,7 @@ import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
 import { Queue } from "./queue.ts";
 import { open, type Persistence } from "./persistence.ts";
+import { SqlitePersistence } from "./sqlite.ts";
 import type { Protocol, Rules } from "./protocol.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
@@ -103,8 +104,12 @@ export interface AppOptions {
   // The most rows a collection's response holds, with a next link to the rest (server-driven
   // paging, see service.ts); 0, the default: every row
   pageSize?: number;
-  // What saves each commit (see persistence.ts). Not documented yet: the options that set it
-  // come with the first backend.
+  // A SQLite file that keeps the data, so writes survive a restart (created if there's none);
+  // none: in memory only
+  persist?: string;
+  // With persist: replace what the file holds with the seed data, rather than load it
+  persistReset?: boolean;
+  // What saves each commit, instead of persist's file (see persistence.ts): for the tests
   persistence?: Persistence;
 }
 
@@ -117,7 +122,9 @@ function createApp({
   etags = "lenient",
   joins = "guess",
   pageSize = 0,
-  persistence,
+  persist,
+  persistReset = false,
+  persistence = persist ? new SqlitePersistence(persist) : undefined,
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -159,7 +166,9 @@ function createApp({
 
   // One queue for every service on the store (see queue.ts). With persistence, the saved state
   // replaces the seeded one first, or the seeded one is saved: requests wait for that.
-  const ready = persistence ? open(persistence, store, log) : Promise.resolve();
+  const ready = persistence
+    ? open(persistence, store, log, { reset: persistReset })
+    : Promise.resolve();
   const queue = new Queue(ready);
   const services: ODataService[] = [];
   for (const [name, servicePath] of [

@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # engines.node in package.json says >=22: the lowest and the current LTS
+        # engines.node in package.json says >=22.13: the lowest line and the current LTS
         node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4

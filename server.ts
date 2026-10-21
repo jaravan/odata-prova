@@ -24,11 +24,15 @@ Options (default):
       --page-size <n>        The most rows in a response, with a link to the rest (0: all)
       --etags <mode>         lenient, strict or off (lenient)
       --joins <mode>         guess or strict (guess)
+      --persist <file>       Keep the data in a SQLite file, so writes survive a restart
+                             (none: in memory only, reset at every start)
+      --persist-reset        Start over: replace what the file holds with the seed data
   -h, --help                 Show this help
   -v, --version              Show the version
 
 Each option can also be set with its environment variable instead: --mock-rows with
-MOCK_ROWS, and so on, and modelDir with MODEL_DIR. The option wins.
+MOCK_ROWS, and so on, --persist-reset with PERSIST_RESET=1, and modelDir with MODEL_DIR.
+The option wins.
 See https://github.com/jaravan/odata-prova#configuration`;
 
 // Each setting's option and the environment variable it falls back to
@@ -41,19 +45,33 @@ const SETTINGS = {
   "page-size": "PAGE_SIZE",
   etags: "ETAGS",
   joins: "JOINS",
+  persist: "PERSIST",
 } as const;
 type Setting = keyof typeof SETTINGS;
+
+// --persist with no value is in memory only: last, or before another option, it gets an
+// empty one, as parseArgs would refuse it without
+function bareFlags(argv: string[]): string[] {
+  return argv.flatMap((arg, i) =>
+    arg === "--persist" &&
+    (i === argv.length - 1 || argv[i + 1].startsWith("-"))
+      ? [arg, ""]
+      : [arg],
+  );
+}
 
 // Options work in every shell, where PORT=4004 npx ... doesn't (Windows' cmd and PowerShell)
 let args: ReturnType<typeof readArgs>;
 function readArgs() {
   return parseArgs({
+    args: bareFlags(process.argv.slice(2)),
     allowPositionals: true,
     options: {
       ...(Object.fromEntries(
         Object.keys(SETTINGS).map((name) => [name, { type: "string" }]),
       ) as Record<Setting, { type: "string" }>),
       port: { type: "string", short: "p" },
+      "persist-reset": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -116,6 +134,30 @@ const PORT_TEXT = setting("port") ?? "3000";
 const PORT = Number(PORT_TEXT);
 if (!/^\d+$/.test(PORT_TEXT) || PORT > 65535)
   badSetting("port", `must be a number from 0 to 65535, got '${PORT_TEXT}'`);
+
+// The SQLite file that keeps the data; none (or an empty value): in memory only. A folder is
+// refused: `--persist ./MySrv` would otherwise take the model folder for the file. Checked
+// before the model is looked for, which that mistake leaves without a folder.
+const PERSIST_TEXT = setting("persist");
+const PERSIST = PERSIST_TEXT ? path.resolve(PERSIST_TEXT) : undefined;
+if (PERSIST && fs.statSync(PERSIST, { throwIfNoEntry: false })?.isDirectory())
+  badSetting(
+    "persist",
+    `is a folder, '${PERSIST_TEXT}': give the file to keep the data in, e.g. --persist ./MySrv.db (no value: in memory only)`,
+  );
+const PERSIST_RESET =
+  args.values["persist-reset"] ??
+  /^(1|true|yes)$/i.test(process.env.PERSIST_RESET ?? "");
+if (PERSIST_RESET && !PERSIST)
+  exitWithError(
+    "bad --persist-reset",
+    Object.assign(
+      new Error(
+        "--persist-reset needs --persist <file> (or PERSIST): there's no saved data to reset",
+      ),
+      { code: "ESETTING" },
+    ),
+  );
 
 // The model to serve: the argument, else MODEL_DIR (the image sets /models), else the
 // current directory. findModelDir picks the one model in a folder that holds only one.
@@ -189,6 +231,8 @@ try {
     etags: ETAGS,
     joins: JOINS,
     pageSize: PAGE_SIZE,
+    persist: PERSIST,
+    persistReset: PERSIST_RESET,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);

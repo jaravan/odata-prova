@@ -187,6 +187,16 @@ describe("SqlitePersistence", () => {
     await assert.rejects(other.load(), /has format 9/);
   });
 
+  it("a file that can't be opened: says where, and what to check", async () => {
+    const missing = path.join(dir, "no", "such", "folder", "state.db");
+    await assert.rejects(
+      new SqlitePersistence(missing).load(),
+      new RegExp(
+        `cannot open ${missing}: unable to open database file \\(does its folder exist, and can this process write to it\\?\\)`,
+      ),
+    );
+  });
+
   it("a commit when not open is refused", async () => {
     await assert.rejects(new SqlitePersistence(file).commit([]), /is not open/);
   });

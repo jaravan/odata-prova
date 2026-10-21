@@ -35,6 +35,8 @@ interface Saved {
 }
 
 interface Persistence {
+  // Where it keeps the state, for the startup log: a file's path
+  name?: string;
   // What was saved, or undefined when there is nothing yet (the store is seeded as without
   // persistence, and that state saved)
   load(model: Model): Promise<Saved | undefined>;
@@ -235,13 +237,17 @@ function adapt(
 // first. From then on every change has to be in a transaction, for persistence to see it. An
 // error is a 503 for every request (see Queue): answering from a state that isn't saved would
 // lose what they change.
+// reset: the seeded state replaces the saved one, which isn't even read (a reset is what to do
+// when it can't be used).
 async function open(
   persistence: Persistence,
   store: Store,
   log: (message: string) => void = () => {},
+  { reset = false }: { reset?: boolean } = {},
 ): Promise<void> {
   const model = store.model;
   const shape = shapeOf(model);
+  const where = persistence.name ? ` ${persistence.name}` : "";
   let saved: Saved | undefined;
   try {
     saved = await persistence.load(model);
@@ -251,9 +257,15 @@ async function open(
       `The saved state could not be loaded: ${(e as Error).message}`,
     );
   }
-  if (saved && (!saved.shape || sameShape(saved.shape, shape)))
+  if (reset) {
+    log(`Saved state: reset in${where}, the rows above saved over it`);
+    saved = undefined;
+  } else if (!saved)
+    log(`Saved state: none in${where} yet, the rows above saved as the first`);
+  if (saved && (!saved.shape || sameShape(saved.shape, shape))) {
     store.load(saved.state);
-  else {
+    log(`Saved state: loaded from${where} (the rows above are not used)`);
+  } else {
     if (saved) {
       let adapted: ReturnType<typeof adapt>;
       try {
@@ -265,6 +277,7 @@ async function open(
         );
       }
       store.load(adapted.state);
+      log(`Saved state: loaded from${where} (the rows above are not used)`);
       log("The metadata changed since the state was saved:");
       for (const note of adapted.notes) log(`  ${note}`);
     }
@@ -273,7 +286,7 @@ async function open(
     } catch (e) {
       throw new HttpError(
         503,
-        `The ${saved ? "adapted" : "first"} state could not be saved: ${(e as Error).message}`,
+        `The ${saved ? "adapted" : reset ? "reset" : "first"} state could not be saved: ${(e as Error).message}`,
       );
     }
   }

@@ -28,7 +28,7 @@ It's not a backend: no business logic beyond required values and `config.json` r
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) 22+ or [Docker](https://www.docker.com/)
+- [Node.js](https://nodejs.org/) 22.13+ or [Docker](https://www.docker.com/)
 
 ## Quick start
 

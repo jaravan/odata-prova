@@ -95,3 +95,45 @@ describe("the Docker image on docker stop", () => {
     assert.ok(Date.now() - start < 5_000, `took ${Date.now() - start} ms`);
   });
 });
+
+describe("the Docker image with PERSIST", () => {
+  it("keeps a write in /state across a restart, without SQLite's ExperimentalWarning", async () => {
+    const container = await new GenericContainer(IMAGE)
+      .withCopyDirectoriesToContainer([
+        { source: MODEL, target: "/models/PurchaseOrderSrv" },
+      ])
+      .withEnvironment({ PERSIST: "/state/MySrv.db" })
+      .withExposedPorts(3000)
+      .withWaitStrategy(Wait.forHttp("/healthz", 3000))
+      .start();
+    try {
+      const order = () =>
+        `http://${container.getHost()}:${container.getMappedPort(3000)}/odata/v4/PurchaseOrderSrv/PurchaseOrderSet('4500000001')`;
+      const patched = await fetch(order(), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ Status: "Kept" }),
+      });
+      assert.equal(patched.status, 204);
+      // The same container again: what's in /state stays, the process starts over
+      await container.restart();
+      const r = await fetch(order());
+      assert.equal(((await r.json()) as { Status: string }).Status, "Kept");
+      const logs = await new Promise<string>((resolve, reject) => {
+        let text = "";
+        void container.logs().then((stream) => {
+          stream.on("data", (d: Buffer) => (text += d.toString()));
+          stream.on("error", reject);
+          setTimeout(() => {
+            stream.destroy();
+            resolve(text);
+          }, 500);
+        });
+      });
+      assert.match(logs, /Saved state: loaded from \/state\/MySrv\.db/);
+      assert.doesNotMatch(logs, /ExperimentalWarning/);
+    } finally {
+      await container.stop();
+    }
+  });
+});

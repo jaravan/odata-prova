@@ -38,7 +38,14 @@ async function started(args: string[], env: Record<string, string> = {}) {
       setTimeout(() => resolve(Number(m[1])), 100);
     });
   });
-  return { port, output: () => output, stop: () => child.kill() };
+  // stopped(): once it has exited, letting go of what it held (a --persist file)
+  const stopped = async () => {
+    if (child.exitCode !== null) return;
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill();
+    await exited;
+  };
+  return { port, output: () => output, stop: () => child.kill(), stopped };
 }
 
 // Starts it, and resolves with the port it listens on, then stops it
@@ -219,5 +226,144 @@ describe("the odata-prova command", () => {
       assert.equal(r.status, 1, args.join(" "));
       assert.match(r.stderr, message, args.join(" "));
     }
+  });
+});
+
+describe("odata-prova --persist", () => {
+  let dir: string;
+  let file: string;
+  const order = (port: number) =>
+    `http://127.0.0.1:${port}/odata/v4/PurchaseOrderSrv/PurchaseOrderSet('4500000001')`;
+  const status = async (port: number) =>
+    ((await (await fetch(order(port))).json()) as { Status: string }).Status;
+  const patch = (port: number, Status: string) =>
+    fetch(order(port), {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ Status }),
+    });
+  const model = () => path.join(dir, "PurchaseOrderSrv");
+  // A copy of the model, named for its paths, and a file next to it
+  const setUp = () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-persist-"));
+    fs.cpSync(PO_MODEL, model(), { recursive: true });
+    file = path.join(dir, "state.db");
+  };
+  const tearDown = () => fs.rmSync(dir, { recursive: true, force: true });
+
+  it("keeps a write across a restart, in the file, and says where the state comes from", async () => {
+    setUp();
+    try {
+      const first = await started([model(), "--port=0", "--persist", file]);
+      assert.match(
+        first.output(),
+        new RegExp(
+          `Saved state: none in ${file} yet, the rows above saved as the first`,
+        ),
+      );
+      assert.equal((await patch(first.port, "Kept")).status, 204);
+      await first.stopped();
+      assert.ok(fs.existsSync(file));
+
+      const second = await started([model(), "--port=0", "--persist", file]);
+      try {
+        assert.match(
+          second.output(),
+          new RegExp(
+            `Saved state: loaded from ${file} \\(the rows above are not used\\)`,
+          ),
+        );
+        assert.equal(await status(second.port), "Kept");
+      } finally {
+        await second.stopped();
+      }
+    } finally {
+      tearDown();
+    }
+  });
+
+  it("PERSIST and PERSIST_RESET: a reset starts over from the seed data", async () => {
+    setUp();
+    try {
+      const first = await started([model(), "--port=0"], { PERSIST: file });
+      const seeded = await status(first.port);
+      await patch(first.port, "Changed");
+      await first.stopped();
+
+      const reset = await started([model(), "--port=0"], {
+        PERSIST: file,
+        PERSIST_RESET: "1",
+      });
+      try {
+        assert.match(
+          reset.output(),
+          new RegExp(
+            `Saved state: reset in ${file}, the rows above saved over it`,
+          ),
+        );
+        assert.equal(await status(reset.port), seeded);
+      } finally {
+        await reset.stopped();
+      }
+      // The reset state is what's saved now
+      const after = await started([model(), "--port=0", "--persist", file]);
+      try {
+        assert.equal(await status(after.port), seeded);
+      } finally {
+        await after.stopped();
+      }
+    } finally {
+      tearDown();
+    }
+  });
+
+  it("one server per file: a second one is refused while the first runs", async () => {
+    setUp();
+    try {
+      const first = await started([model(), "--port=0", "--persist", file]);
+      try {
+        const second = run([model(), "--port=0", "--persist", file]);
+        assert.equal(second.status, 1);
+        assert.match(
+          second.stderr,
+          /cannot load the saved state\n.*is in use by another process: one server per file/,
+        );
+      } finally {
+        await first.stopped();
+      }
+    } finally {
+      tearDown();
+    }
+  });
+
+  it("no value is in memory only: last, before another option, or empty", async () => {
+    for (const args of [
+      [PO_MODEL, "--port=0", "--persist"],
+      [PO_MODEL, "--persist", "--port=0"],
+      [PO_MODEL, "--port=0", "--persist="],
+    ]) {
+      const s = await started(args);
+      await s.stopped();
+      assert.doesNotMatch(s.output(), /Saved state/, args.join(" "));
+    }
+  });
+
+  it("a folder for the file, or a reset without one, is refused", () => {
+    // --persist ./MySrv would take the model folder for the file
+    const folder = run(["--persist", PO_MODEL, "--port=0"]);
+    assert.equal(folder.status, 1);
+    assert.match(
+      folder.stderr,
+      /bad --persist\n--persist is a folder, '.*PurchaseOrderSrv': give the file to keep the data in, e.g. --persist .\/MySrv.db \(no value: in memory only\)/,
+    );
+    const reset = run([PO_MODEL, "--persist-reset"]);
+    assert.equal(reset.status, 1);
+    assert.match(
+      reset.stderr,
+      /--persist-reset needs --persist <file> \(or PERSIST\)/,
+    );
+    const help = run(["--help"]);
+    assert.match(help.stdout, /--persist <file>/);
+    assert.match(help.stdout, /--persist-reset/);
   });
 });

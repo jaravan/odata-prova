@@ -1,5 +1,6 @@
-# Pinned by digest for reproducible builds. Update: docker buildx imagetools inspect node:22-alpine
-ARG NODE_IMAGE=node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+# Pinned by digest for reproducible builds. Update: docker buildx imagetools inspect node:24-alpine
+# Node 24: node:sqlite (--persist) prints an ExperimentalWarning on 22
+ARG NODE_IMAGE=node:24.22.1-alpine3.24@sha256:6a1c190e17215d844926b0677f4bf87273ff7d5e54db06d3b5b5863ab0b09a3d
 
 # ---- builder ----
 FROM ${NODE_IMAGE} AS builder
@@ -34,6 +35,10 @@ COPY --from=builder /app/node_modules ./node_modules
 # them ES modules.
 COPY --from=builder /app/dist ./
 COPY package.json ./
+
+# Where --persist keeps the data: PERSIST=/state/<name>.db, with a volume at /state. Owned by
+# the user the server runs as, so a named volume mounted there can be written to.
+RUN mkdir /state && chown node:node /state
 
 USER node
 

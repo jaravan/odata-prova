@@ -42,6 +42,7 @@ const fromJson = (text: string) =>
 
 class SqlitePersistence implements Persistence {
   file: string;
+  name: string;
   private db: DatabaseSync | undefined;
   private statements:
     | { known: StatementSync; remove: StatementSync; write: StatementSync }
@@ -49,13 +50,23 @@ class SqlitePersistence implements Persistence {
 
   constructor(file: string) {
     this.file = file;
+    this.name = file;
   }
 
   // Opens the file, creating it if there's none, and keeps it locked until close(): one
   // server per file, since each keeps its own copy of the state in memory
   async load(): Promise<Saved | undefined> {
     const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(this.file);
+    let db: DatabaseSync;
+    try {
+      db = new DatabaseSync(this.file);
+    } catch (e) {
+      // SQLite says only "unable to open database file"
+      throw new Error(
+        `cannot open ${this.file}: ${(e as Error).message} (does its folder exist, and can this process write to it?)`,
+        { cause: e },
+      );
+    }
     try {
       db.exec("PRAGMA locking_mode = EXCLUSIVE");
       try {
