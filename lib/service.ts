@@ -263,7 +263,8 @@ class ODataService {
           400,
           "$expand needs entities in the $apply result, which an aggregate or groupby replaces",
         );
-      if (!this.navigation(type, name))
+      // * is every navigation (see expandAll in protocols/v4.ts)
+      if (name !== "*" && !this.navigation(type, name))
         throw new HttpError(
           400,
           `${name} is not a navigation property of ${type.name}`,

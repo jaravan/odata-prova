@@ -16,6 +16,7 @@ import type { Protocol } from "../protocol.ts";
 import { toInternal, specialFloat } from "../types.ts";
 import {
   HttpError,
+  own,
   newNode,
   addExpandPath,
   addSelectPath,
@@ -155,9 +156,47 @@ function parseExpand(text: string | undefined, node: QueryNode): void {
   for (const item of splitTopLevel(text || "", ",")) {
     const m = item.match(/^([^(]+?)\s*(?:\((.*)\))?$/s);
     if (!m) throw new HttpError(400, `Invalid $expand: ${item}`);
+    // * expands every navigation (see expandAll). The spec's */$ref and *($levels=n) need
+    // $ref and $levels in $expand, which aren't supported.
+    if (
+      m[1].trim().startsWith("*") &&
+      (m[1].trim() !== "*" || m[2] !== undefined)
+    )
+      throw new HttpError(
+        501,
+        `$expand=${item.trim()} is not supported: only * on its own`,
+      );
     const child = addExpandPath(node, m[1]);
     if (m[2] !== undefined) applyNestedOptions(child, m[2]);
   }
+}
+
+// $expand=*: every navigation of the type, as if each were named on its own, with no options.
+// A navigation also named on its own keeps its options (*,Items($top=2)), and one the server
+// can't serve (disabled, see navigations.ts) is left out, rather than fail the request. Done
+// for each level's type, before the response is written, so nothing after sees the *.
+function expandAll(
+  svc: ODataService,
+  type: EntityType,
+  node: QueryNode,
+): QueryNode {
+  // No prototype, as newNode's: a name like __proto__ stays a name, which is then refused
+  const expand = newNode().expand;
+  for (const [name, child] of Object.entries(node.expand)) {
+    if (name === "*") continue;
+    const nav = svc.navigation(type, name);
+    expand[name] = nav
+      ? expandAll(svc, svc.model.entityTypes[nav.targetType], child)
+      : child;
+  }
+  if ("*" in node.expand)
+    for (const name of [
+      ...Object.keys(type.navigations),
+      ...Object.keys(type.draftNavigations ?? {}),
+    ])
+      if (!(name in expand) && !own(type.disabledNavigations, name))
+        expand[name] = newNode();
+  return { ...node, expand };
 }
 
 function applyNestedOptions(node: QueryNode, text: string): void {
@@ -391,6 +430,7 @@ const v4: Protocol = {
     node,
     opts,
   ) {
+    node = expandAll(svc, type, node);
     checkSelect(svc, type, node);
     const body: Record<string, unknown> = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}`,
@@ -407,6 +447,7 @@ const v4: Protocol = {
   // A delta response, in the OData 4.0 JSON format: the entities added or changed, then one
   // $deletedEntity entry for each that's gone, and the next delta link
   delta(svc, { rows, removed, deltaLink }, setName, type, node, opts) {
+    node = expandAll(svc, type, node);
     checkSelect(svc, type, node);
     const context = `${svc.servicePath}/$metadata#${setName}`;
     return json(
@@ -441,6 +482,7 @@ const v4: Protocol = {
     entities,
     opts,
   ) {
+    node = expandAll(svc, entities.type, node);
     const select = node.select;
     const names = Object.keys(type.properties);
     // A $select of a navigation (Supplier) picks the paths through it
@@ -481,6 +523,7 @@ const v4: Protocol = {
     return json(200, body, opts);
   },
   entity(svc, row, setName, type, node, status = 200, extra, opts) {
+    node = expandAll(svc, type, node);
     checkSelect(svc, type, node);
     const body = {
       "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}/$entity`,
