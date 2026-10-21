@@ -455,7 +455,7 @@ function entityRequest(
         method === "PUT",
         !!draft,
       );
-      renewETag(svc.model, setName, type, updated);
+      renewETag(svc.store, setName, type, updated);
       if (draft) svc.drafts.afterUpdate(updated);
       if (wantsRepresentation)
         return protocol.entity(

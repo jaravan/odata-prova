@@ -4,7 +4,7 @@
 
 import { isNumericType, propToInternal } from "./types.ts";
 import { HttpError, own } from "./query.ts";
-import { renewETag } from "./etag.ts";
+import { nextETag } from "./etag.ts";
 import type {
   AnyNavigation,
   ComplexType,
@@ -275,7 +275,7 @@ function insertTree(
       "DuplicateKey",
     );
   }
-  renewETag(svc.model, setName, entityType, row);
+  Object.assign(row, nextETag(svc.model, setName, entityType, row));
   svc.store.insert(setName, row);
   inserted.push({ setName, type: entityType, row });
 
@@ -342,7 +342,7 @@ function update(
   // collection's besides the others. Resolved before anything changes, so a bad one changes
   // nothing.
   const binds = bindsOf(svc, entityType, fields);
-  Object.assign(row, changes);
+  svc.store.update(setName, row, changes);
   for (const { nav, targets } of binds)
     for (const target of targets)
       link(svc, setName, entityType, row, nav, target);

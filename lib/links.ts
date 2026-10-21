@@ -55,21 +55,20 @@ function removeLink(
   target: Row,
 ): void {
   const [from, to] = endsOf(model, nav);
-  const links = store.rows(nav.links!.set);
-  const kept = links.filter(
-    (l) => !(holds(l, from, row) && holds(l, to, target)),
-  );
-  links.splice(0, Infinity, ...kept);
+  const set = nav.links!.set;
+  for (const l of store
+    .rows(set)
+    .filter((l) => holds(l, from, row) && holds(l, to, target)))
+    store.removeRow(set, l);
 }
 
 // Removes the links of a row of the entity set that is being deleted
 function unlink(model: Model, store: Store, setName: string, row: Row): void {
   for (const set of Object.values(model.linkSets))
     for (const end of set.ends)
-      if (end.set === setName) {
-        const kept = store.rows(set.name).filter((l) => !holds(l, end, row));
-        store.rows(set.name).splice(0, Infinity, ...kept);
-      }
+      if (end.set === setName)
+        for (const l of store.rows(set.name).filter((l) => holds(l, end, row)))
+          store.removeRow(set.name, l);
 }
 
 export { linkedRows, addLink, removeLink, unlink };

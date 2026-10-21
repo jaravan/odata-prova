@@ -319,6 +319,9 @@ class Drafts {
     this.svc = svc;
     this.model = svc.model;
     this.store = svc.store;
+    // Created here, not on the first draft: a set created inside a transaction would outlive
+    // its rollback
+    this.store.data[ADMIN] ||= [];
   }
 
   draftOf(setName: string): DraftInfo | undefined {
@@ -371,7 +374,7 @@ class Drafts {
   // --- Administrative data ---
 
   admins(): Row[] {
-    return (this.store.data[ADMIN] ||= []);
+    return this.store.rows(ADMIN);
   }
 
   // The record for row: its own for a draft, its draft's for an active entity being edited
@@ -395,19 +398,18 @@ class Drafts {
       InProcessByUser: USER,
       DraftIsProcessedByMe: true,
     };
-    this.admins().push(record);
+    this.store.insert(ADMIN, record);
     return record.DraftUUID;
   }
 
   touch(row: Row): void {
     const record = this.admins().find((a) => a.DraftUUID === row[UUID]);
-    if (record) record.LastChangeDateTime = now();
+    if (record) this.store.update(ADMIN, record, { LastChangeDateTime: now() });
   }
 
   removeAdmin(uuid: PropertyValue | undefined): void {
-    const list = this.admins();
-    const idx = list.findIndex((a) => a.DraftUUID === uuid);
-    if (idx !== -1) list.splice(idx, 1);
+    const record = this.admins().find((a) => a.DraftUUID === uuid);
+    if (record) this.store.removeRow(ADMIN, record);
   }
 
   // DraftAdministrativeData of row, as related() answers a navigation
@@ -482,7 +484,7 @@ class Drafts {
     }
     const uuid = this.newAdmin();
     const drafts = this.tree(setName, type, row).map((n) => {
-      n.row.HasDraftEntity = true;
+      this.store.update(n.setName, n.row, { HasDraftEntity: true });
       const draft: Row = {
         ...n.row,
         IsActiveEntity: false,
@@ -530,10 +532,10 @@ class Drafts {
     this.store.remove(setName, type, this.svc.keyOf(type, draft));
     const values: Row = { ...draft, ...ACTIVE };
     delete values[UUID];
-    if (active) Object.assign(active, values);
+    if (active) this.store.update(setName, active, values);
     else this.store.insert(setName, (active = values));
     // The active entity changed: a client holding its old ETag must read it again
-    renewETag(this.model, setName, type, active);
+    renewETag(this.store, setName, type, active);
 
     compositions.forEach((nav, i) => {
       const kept = new Set(
@@ -553,7 +555,8 @@ class Drafts {
     for (const n of this.tree(setName, type, draft)) {
       this.store.remove(n.setName, n.type, this.svc.keyOf(n.type, n.row));
       const active = this.sibling(n.setName, n.type, n.row, true);
-      if (active) active.HasDraftEntity = false;
+      if (active)
+        this.store.update(n.setName, active, { HasDraftEntity: false });
     }
     this.removeAdmin(draft[UUID]);
   }
@@ -637,7 +640,7 @@ class Drafts {
       );
       // Deep-inserted compositions join the draft too
       for (const n of this.tree(setName, type, row))
-        Object.assign(n.row, NEW_DRAFT, { [UUID]: uuid });
+        this.store.update(n.setName, n.row, { ...NEW_DRAFT, [UUID]: uuid });
       if (composed) this.touch(composed.row);
       return row;
     });

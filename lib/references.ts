@@ -87,7 +87,13 @@ function changeable(type: EntityType, nav: AnyNavigation): Navigation {
 
 // Clears columns that hold a link, which they must be able to: a key or a required property
 // can't be null, so the link can only be replaced
-function clear(type: EntityType, row: Row, columns: string[]): void {
+function clear(
+  store: Store,
+  setName: string,
+  type: EntityType,
+  row: Row,
+  columns: string[],
+): void {
   for (const c of columns) {
     const prop = own(type.properties, c);
     if (type.keys.includes(c) || (prop && !prop.nullable))
@@ -95,7 +101,7 @@ function clear(type: EntityType, row: Row, columns: string[]): void {
         `${type.name}.${c} is required: the link can be replaced, not removed`,
       );
   }
-  for (const c of columns) row[c] = null;
+  store.update(setName, row, Object.fromEntries(columns.map((c) => [c, null])));
 }
 
 // Links row (of setName, type) to target through nav: for a single-valued navigation instead
@@ -122,8 +128,12 @@ function link(
         throw invalid(
           `${nav.name} links through ${type.name}'s key, which can't change`,
         );
-    for (const [src, tgt] of nav.join) row[src] = target[tgt];
-    renewETag(svc.model, setName, type, row);
+    svc.store.update(
+      setName,
+      row,
+      Object.fromEntries(nav.join.map(([src, tgt]) => [src, target[tgt]])),
+    );
+    renewETag(svc.store, setName, type, row);
     return;
   }
   for (const [, tgt] of nav.join)
@@ -134,8 +144,12 @@ function link(
   if (!nav.isCollection)
     for (const other of svc.related(row, type, nav).rows)
       if (other !== target) unlinkTarget(svc, nav, targetType, other);
-  for (const [src, tgt] of nav.join) target[tgt] = row[src];
-  renewETag(svc.model, nav.targetSet, targetType, target);
+  svc.store.update(
+    nav.targetSet,
+    target,
+    Object.fromEntries(nav.join.map(([src, tgt]) => [tgt, row[src]])),
+  );
+  renewETag(svc.store, nav.targetSet, targetType, target);
 }
 
 function unlinkTarget(
@@ -145,11 +159,13 @@ function unlinkTarget(
   target: Row,
 ): void {
   clear(
+    svc.store,
+    nav.targetSet,
     targetType,
     target,
     nav.join.map(([, tgt]) => tgt),
   );
-  renewETag(svc.model, nav.targetSet, targetType, target);
+  renewETag(svc.store, nav.targetSet, targetType, target);
 }
 
 // Removes row's link to target through nav, or, for a single-valued navigation without a
@@ -170,11 +186,13 @@ function unlink(
   }
   if (nav.dependentSide === "source") {
     clear(
+      svc.store,
+      setName,
       type,
       row,
       nav.join.map(([src]) => src),
     );
-    renewETag(svc.model, setName, type, row);
+    renewETag(svc.store, setName, type, row);
     return;
   }
   const targetType = svc.entitySet(nav.targetSet).type;

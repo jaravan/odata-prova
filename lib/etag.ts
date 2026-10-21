@@ -30,6 +30,7 @@ import type {
 } from "./model.ts";
 import type { RequestHeaders } from "./protocol.ts";
 import { HttpError } from "./query.ts";
+import type { Store } from "./store.ts";
 
 const CONCURRENCY = "Org.OData.Core.V1.OptimisticConcurrency";
 
@@ -206,18 +207,38 @@ function nextValue(value: PropertyValue, p: Property): PropertyValue {
   }
 }
 
-// Gives the entity new values for its ETag's properties, after a write. A key property in
-// the ETag keeps its value: changing it would make it another entity.
-function renewETag(
+// New values for the entity's ETag properties, after a write. A key property in the ETag
+// keeps its value: changing it would make it another entity.
+function nextETag(
   model: Model,
   setName: string,
   type: EntityType,
   row: Row,
-): void {
+): Row {
+  const values: Row = {};
   for (const name of model.entitySets[setName]?.concurrency || [])
     if (!type.keys.includes(name))
-      row[name] = nextValue(row[name], type.properties[name]);
+      values[name] = nextValue(row[name], type.properties[name]);
+  return values;
+}
+
+// Gives an entity in the store new values for its ETag's properties
+function renewETag(
+  store: Store,
+  setName: string,
+  type: EntityType,
+  row: Row,
+): void {
+  const values = nextETag(store.model, setName, type, row);
+  if (Object.keys(values).length) store.update(setName, row, values);
 }
 
 export type { ETagMode };
-export { ETAG_MODES, parseConcurrency, etagOf, checkIfMatch, renewETag };
+export {
+  ETAG_MODES,
+  parseConcurrency,
+  etagOf,
+  checkIfMatch,
+  nextETag,
+  renewETag,
+};

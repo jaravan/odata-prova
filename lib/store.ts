@@ -307,13 +307,17 @@ class Store {
   }
 
   remove(setName: string, entityType: EntityType, key: Key): Row | undefined {
-    const idx = this.data[setName].findIndex((row) =>
-      this.matchesKey(entityType, row, key),
-    );
-    if (idx === -1) return undefined;
-    const [row] = this.data[setName].splice(idx, 1);
-    this.record({ op: "remove", set: setName, row, index: idx });
+    const row = this.find(setName, entityType, key);
+    if (row) this.removeRow(setName, row);
     return row;
+  }
+
+  // Removes row itself, for the rows a key doesn't find: links, draft administrative data
+  removeRow(setName: string, row: Row): void {
+    const index = this.data[setName].indexOf(row);
+    if (index === -1) return;
+    this.data[setName].splice(index, 1);
+    this.record({ op: "remove", set: setName, row, index });
   }
 
   // --- Transactions ---

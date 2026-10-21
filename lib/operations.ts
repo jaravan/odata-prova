@@ -237,9 +237,11 @@ function callOperation(
   }
   const rule = svc.rules[op.name];
   if (rule?.set && binding?.row) {
+    const values: Row = {};
     for (const [name, value] of Object.entries(rule.set))
-      binding.row[name] = propToInternal(value, binding.type.properties[name]);
-    renewETag(svc.model, binding.setName, binding.type, binding.row);
+      values[name] = propToInternal(value, binding.type.properties[name]);
+    svc.store.update(binding.setName, binding.row, values);
+    renewETag(svc.store, binding.setName, binding.type, binding.row);
   }
   return operationResult(svc, op, binding, params, q, opts);
 }

@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { parseMetadata } from "../lib/metadata.ts";
 import { emitV2 } from "../lib/emit-v2.ts";
 import { emitV4 } from "../lib/emit-v4.ts";
-import { renewETag } from "../lib/etag.ts";
+import { nextETag } from "../lib/etag.ts";
 import type { Row } from "../lib/model.ts";
 import {
   start,
@@ -419,8 +419,7 @@ describe("ETag values: a write gives each of the ETag's properties a new one", (
   </edmx:DataServices>
 </edmx:Edmx>`);
     const row = { ID: 1, V: value } as Row;
-    renewETag(model, "Ts", model.entityTypes["S.T"], row);
-    return row.V;
+    return nextETag(model, "Ts", model.entityTypes["S.T"], row).V;
   };
 
   it("a timestamp moves to now, or a second on from a later one", () => {
