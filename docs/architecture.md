@@ -28,7 +28,11 @@ flowchart LR
     SVC -- "read/write rows" --> ST
 ```
 
-One model, parsed once at startup, backs a V2 service and a V4 service sharing the same in-memory `Store`. Each protocol module only knows how its own wire format looks (literals, JSON envelope, query option names); `dispatch.ts` walks the resource path and follows navigations, protocol-agnostically, and hands each part of the work to its own module. `service.ts` keeps what they all share: the model's lookups, navigations, and a collection's response.
+One model, parsed once at startup, backs a V2 service and a V4 service. Both share the same in-memory `Store`.
+
+- **Each protocol module** only knows how its own wire format looks: literals, JSON envelope, query option names.
+- **`dispatch.ts`** walks the resource path and follows navigations, whatever the protocol, and hands each part of the work to its own module.
+- **`service.ts`** keeps what they all share: the model's lookups, navigations, and a collection's response.
 
 | Module                                                                           | What it does                                                        |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -44,13 +48,18 @@ One model, parsed once at startup, backs a V2 service and a V4 service sharing t
 | `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets        |
 | `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                |
 | `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data    |
+| `queue.ts`, `persistence.ts`, `sqlite.ts`                                        | requests one at a time; saving the data, in a SQLite file           |
 | `types.ts`, `model.ts`                                                           | Edm values, the model's types                                       |
 
-The sources are TypeScript, in `lib/`; `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
+The sources are TypeScript, in `lib/`, and `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
 ## Writes and transactions
 
-The `Store` is the only thing that changes rows. Every change goes through `store.insert`, `store.update` or `store.remove`; the rows are private to it, and `rows()` and `lookup()` hand them out as read-only arrays, so a `push` or `splice` from outside is a compile error. Rows change in place: a module keeps the row object it found, and sees what the store writes into it.
+The `Store` is the only thing that changes rows. Every change goes through `store.insert`, `store.update` or `store.remove`.
+
+The rows are private to it. `rows()` and `lookup()` hand them out as read-only arrays, so a `push` or `splice` from outside is a compile error.
+
+Rows change in place: a module keeps the row object it found, and sees what the store writes into it.
 
 Each change made inside a transaction is logged with what it takes to undo it, and a rollback replays the log backwards:
 
@@ -65,12 +74,53 @@ try {
 }
 ```
 
-- **Every request is a transaction.** `ODataService.dispatch()` begins one, commits it when the request succeeds, and rolls it back when the request throws or its response is a status of 400 or more. A request that fails leaves the data as it found it, whatever it had changed before failing. A handler that changes rows and then answers with an error loses those changes, by design.
-- **Transactions nest.** A `$batch` changeset is one, and each of its requests one inside it, so a failing request rolls back the whole changeset; a draft action (`draft.ts` `atomic()`) and a deep insert (`writes.ts` `create`) are one inside their request's. An inner rollback undoes only its own changes; an inner commit keeps them for the outer transaction to keep or undo.
+- **Every request is a transaction.** `ODataService.execute()` begins one. It commits it when the request succeeds, and rolls it back when the request throws or its response is a status of 400 or more. So a request that fails leaves the data as it found it, whatever it had changed before failing. A handler that changes rows and then answers with an error loses those changes, by design.
+- **Transactions nest.**
+  - A `$batch` changeset is one, and each of its requests one inside it, so a failing request rolls back the whole changeset.
+  - A draft action (`draft.ts` `atomic()`) and a deep insert (`writes.ts` `create`) are one inside their request's.
+  - An inner rollback undoes only its own changes. An inner commit keeps them for the outer transaction to keep or undo.
 - **Only the logged changes are undone.** Nothing is copied: the log holds the rows and the old values of the fields that changed, so a transaction costs what it touches, not what the store holds.
-- **Navigations use an index.** `store.lookup()` finds the rows of a set whose columns hold given values, for `related()` and `$expand`, from an index built on first use. The store drops an index whenever a change could make it wrong, which it can tell because every change goes through it.
+- **Navigations use an index.** `store.lookup()` finds the rows of a set whose columns hold given values, for `related()` and `$expand`. Its index is built on first use. The store drops it whenever a change could make it wrong, which it can tell, because every change goes through it.
 
-**A change that bypasses the store** (`row.X = ...` on a row of the store) compiles, but escapes rollback. The tests catch it: `test/helpers.ts` turns on `store.audit`, which checks at the end of every transaction that undoing its log gives back the data as the transaction found it. New code that changes a row uses `store.update(setName, row, changes)`.
+**A change that bypasses the store** (`row.X = ...` on a row of the store) compiles, but escapes rollback, and persistence. The tests catch it: `test/helpers.ts` turns on `store.audit`. At the end of every transaction, it checks that undoing the log gives back the data as the transaction found it.
+
+New code that changes a row uses `store.update(setName, row, changes)`.
+
+## Persistence
+
+With `--persist` (or `persist` in code), the data is saved to a SQLite file, so writes survive a restart.
+
+The store in memory still answers every request. The file only keeps its state: loaded once at startup, and written after every change.
+
+**Why queries stay in memory.** `$filter`, `$apply`, hierarchies, `$search`, `$compute` and delta links all run in JavaScript over the rows. Running them in a database would mean translating all of that, with its differences in null ordering, collation, decimals and dates. Every later feature would have to be written twice. And the data of a mock fits in memory, where loading it once is cheap.
+
+### How a write is saved
+
+- **The net change per row.** The outermost transaction's log (see above) is reduced to what the file needs: each row written once, as it ends up, and the rows deleted. A row inserted and removed again in one transaction is nothing. That's `netChanges()` in `persistence.ts`.
+- **Rows by identity.** An entity's keys, with a contained entity's parent's keys too; a link's columns; a draft's `DraftUUID`.
+- **Saved before it's answered.** `persistence.commit()` writes the changes in one database transaction. Until it succeeds, the store holds them (`store.commit()`, then `store.settle()`). If it fails, they're undone with the same log, and the request answers `500`. Memory and the file never disagree.
+- **One request at a time.** Saving is async. While one request's changes are being saved, another must not see them, since they may yet be undone. So `queue.ts` runs the requests of every service on a store one at a time, each after the one before it has been saved.
+- **Reads wait too,** because a GET can write: a function with a `config.json` rule. They wait only while a save runs, about a millisecond with SQLite.
+- **A `$batch`** takes one turn for all its parts. A changeset is saved once, at its end.
+
+### Startup and shutdown
+
+- **`ready`.** `createApp()` stays synchronous, and returns `ready` with the app. The queue starts behind it, so a request that arrives early waits.
+- **The first start** saves the seeded state to the file. **Later starts** replace the seeded state with the saved one.
+- **A state that can't be loaded** makes `ready` reject, and every request answers `503`. `server.ts` exits instead of listening.
+- **A changed `metadata.xml`.** The file keeps the shape of the rows it holds, next to them: per set, its identity columns and each property's type. When that shape differs from the model's, the saved rows are adapted (a removed property dropped, a new one empty, a changed type converted), the change logged, and the adapted state saved. Changed identity columns would make the rows other rows, so the start is refused, pointing at `--persist-reset`.
+- **`close()`** waits for the requests in the queue, their saves included, then closes the file. `server.ts` calls it on SIGTERM.
+
+### The file
+
+`sqlite.ts` uses `node:sqlite`, which is built into Node, and imports it only when `--persist` is used.
+
+- One table holds every set's rows, by set and identity. Each row is the JSON of the row as memory holds it, with a sequence number that keeps the order across a restart.
+- Rows are documents rather than typed columns, so a `metadata.xml` that changes all the time isn't a schema migration each time.
+- `INF`, `-INF` and `NaN`, which JSON can't hold, are written `{"$float": "INF"}`.
+- The file is locked while a server has it open: one server per file.
+
+A backend is `load()`, `commit(changes)`, `replace(changes, shape)` and `close()`: see `Persistence` in `persistence.ts`. The tests run every kind of write against SQLite and an in-memory backend, and check after each request that what's saved is what the store holds.
 
 ## Using it in code
 
@@ -91,13 +141,33 @@ const { app } = createApp({
 app.listen(3000);
 ```
 
-That is the package's whole API: `odata-prova` exports `createApp`, `findModelDir`, `ETAG_MODES` and `JOIN_MODES`, and their types (`AppOptions`, `ETagMode`, `JoinMode`). Its other files are internal and may change in any release, so `package.json`'s `exports` doesn't let them be imported: `import ... from "odata-prova/dist/lib/metadata.js"` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+To keep the data in a file, as `--persist` does, pass `persist`.
+
+- Wait for `ready` before serving. It settles once the saved state is loaded, or the first one saved, and rejects when it can't be.
+- `close()` waits for the requests being answered, and their saves, then closes the file.
+
+```js
+const { app, ready, close } = createApp({
+  modelDir: "./MySrv",
+  v4Path: "/odata/v4/MySrv",
+  persist: "./MySrv.db", // a SQLite file, created if there's none
+  persistReset: false, // true: start over from the data files and mock rows
+});
+await ready;
+const server = app.listen(3000);
+process.once("SIGTERM", () => server.close(() => void close()));
+```
+
+That is the package's whole API: `odata-prova` exports `createApp`, `findModelDir`, `ETAG_MODES` and `JOIN_MODES`, and their types (`AppOptions`, `ETagMode`, `JoinMode`).
+
+Its other files are internal, and may change in any release. So `package.json`'s `exports` doesn't let them be imported: `import ... from "odata-prova/dist/lib/metadata.js"` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
 ## Possible future improvements
 
 - **Draft validation** - drafts are activated as they are: no validation messages, side effects, or locks between users.
 - **Richer operation rules** - rules can only set fixed values; conditions, computed values or creating entities would need more.
-- **Persistent storage** - writes that survive a restart: each committed transaction saved to a file, opt-in, with the store in memory still answering every query.
+- **Exporting the saved data** - write what a `--persist` file holds as data files, to keep as the next test fixture.
+- **Seeding only when there's nothing saved** - the data files are read at every start, even when the saved state replaces them, so one that no longer fits a changed `metadata.xml` stops the start.
 
 ## References
 

@@ -24,7 +24,7 @@ Where it helps:
 - **Moving from V2 to V4:** one `metadata.xml` serves both, side by side on the same data.
 - **In demos:** data you choose, for people without access to the system.
 
-It's not a backend: no business logic beyond required values and `config.json` rules, and writes last until a restart.
+It's not a backend: there's no business logic beyond required values and `config.json` rules. Writes last until a restart, unless you [keep them in a file](#keeping-the-data).
 
 ## Requirements
 
@@ -69,9 +69,11 @@ MySrv/
   config.json          # optional, what operations change (see docs/operations.md)
 ```
 
-The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`. Whichever protocol the `metadata.xml` wasn't written for gets its metadata generated from the other, with its annotations: a V2 document's `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and a V4 document's annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata). A data file is named after the entity set, its entity type, or `<namespace>-<EntityType>` (first match wins). Writes are kept in memory until a restart resets them.
+The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`.
 
-Each entity set without a data file gets 20 generated rows that fit the metadata, with foreign keys pointing at real rows so navigation and `$expand` work. `odata-prova-mock-data` writes them to files for you to edit, see [Mock data](docs/mock-data.md).
+Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
+
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `odata-prova-mock-data` writes them to files, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
@@ -90,40 +92,69 @@ The server serves only the service and its `$metadata`. Annotations your app loa
 
 ## Configuration
 
-`odata-prova [modelDir] [options]` serves the model in `modelDir`, or in the current directory. Every setting is optional, and is an option or an environment variable: the option works in any shell, the variable suits Docker and Kubernetes, and the option wins. `odata-prova --help` lists them.
+`odata-prova [modelDir] [options]` serves the model in `modelDir`, or in the current directory.
+
+Every setting is optional, and can be given as an option or an environment variable. Options work in any shell; variables suit Docker and Kubernetes. When both are set, the option wins. `odata-prova --help` lists them all.
 
 ```sh
 npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 ```
 
-| Option           | Variable       | Default                                        | Purpose                                                                                                                                                                                                                                                     |
-| ---------------- | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-p`, `--port`   | `PORT`         | `3000`                                         | HTTP port                                                                                                                                                                                                                                                   |
-| `modelDir`       | `MODEL_DIR`    | the current directory (`/models` in the image) | The model to serve, or a folder holding exactly one model                                                                                                                                                                                                   |
-| `--service-name` | `SERVICE_NAME` | the model's folder name                        | Used to build the default service paths                                                                                                                                                                                                                     |
-| `--v2-path`      | `V2_PATH`      | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                                                                                                                                                                 |
-| `--v4-path`      | `V4_PATH`      | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                                                                                                                                                                 |
-| `--mock-rows`    | `MOCK_ROWS`    | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                                                                                                                                                                                |
-| `--etags`        | `ETAGS`        | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                                                  |
-| `--joins`        | `JOINS`        | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to give it a key of its own instead, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
-| `--page-size`    | `PAGE_SIZE`    | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
+| Option            | Variable        | Default                                        | Purpose                                                                                                                                                                                                                                                     |
+| ----------------- | --------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-p`, `--port`    | `PORT`          | `3000`                                         | HTTP port                                                                                                                                                                                                                                                   |
+| `modelDir`        | `MODEL_DIR`     | the current directory (`/models` in the image) | The model to serve, or a folder holding exactly one model                                                                                                                                                                                                   |
+| `--service-name`  | `SERVICE_NAME`  | the model's folder name                        | Used to build the default service paths                                                                                                                                                                                                                     |
+| `--v2-path`       | `V2_PATH`       | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                                                                                                                                                                 |
+| `--v4-path`       | `V4_PATH`       | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                                                                                                                                                                 |
+| `--mock-rows`     | `MOCK_ROWS`     | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                                                                                                                                                                                |
+| `--etags`         | `ETAGS`         | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                                                  |
+| `--joins`         | `JOINS`         | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to give it a key of its own instead, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
+| `--page-size`     | `PAGE_SIZE`     | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
+| `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                                                                                                     |
+| `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what the file holds (`PERSIST_RESET=1`)                                                                                                                                           |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
 > [!IMPORTANT]
-> Run a single instance per service. Each instance keeps its own in-memory copy of the data, so with more than one replica, writes land on one and reads may come from another.
+> Run one server per service. Each server keeps its own copy of the data in memory, so with several replicas, a write lands on one and a read may come from another.
+
+## Keeping the data
+
+By default, every start begins fresh from your data files and mock rows. That's what CI wants.
+
+To keep what your app writes, give the server a file:
+
+```sh
+npx odata-prova ./MySrv --persist ./MySrv.db
+```
+
+The first start creates the file and saves the data to it. Every start after that loads the file, so your writes are still there.
+
+- **Every write is saved before it's answered.** If it can't be saved, the request fails with `500` and nothing changes.
+- **The file replaces your data files.** Edited a CSV? Start once with `--persist-reset` to go back to them.
+- **Changed `metadata.xml`?** The next start adapts the saved rows to it, and the log lists what changed. Changed keys can't be adapted: the server stops and asks for `--persist-reset`.
+- **One server per file.** A second one is refused while the first runs.
+
+With Docker, keep the file in a volume at `/state`:
+
+```sh
+docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
+  -v mysrv-data:/state -e PERSIST=/state/MySrv.db ghcr.io/jaravan/odata-prova
+```
+
+A folder of your own works too, if the image's `node` user (uid 1000) can write to it. Or run the container as yourself, with `--user "$(id -u)"`.
 
 ## What's supported
 
 - **Reads and writes**, including deep insert, links to existing entities (`@odata.bind`, `$ref`, V2's `$links`), and `$batch` with atomic changesets.
-- **Query options**: `$filter` (with the V4 lambda operators `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search`, V4's `$compute`, server-driven paging with `$skiptoken` ([`PAGE_SIZE`](docs/odata-support.md#server-driven-paging)), and V4's `$apply` for UI5's grouped and aggregated tables, totals included ([Aggregation](docs/odata-support.md#aggregation-apply)).
+- **Query options**: `$filter` (with V4's `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search` and V4's `$compute`. Server-driven paging with `$skiptoken` is opt-in, see [`PAGE_SIZE`](docs/odata-support.md#server-driven-paging).
+- **Aggregation**: V4's `$apply`, for UI5's grouped and aggregated tables, totals included. What it doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
 - **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
 - **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
 - **Delta links**: read an entity set with `Prefer: odata.track-changes`, and its delta link later answers what was added, changed or deleted since: `@odata.deltaLink` in V4, SAP Gateway's `__delta` with `!deltatoken` in V2. See [Delta links](docs/odata-support.md#delta-links).
-
-What `$apply` doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, including those with no foreign key in the metadata ([Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint)).
 
