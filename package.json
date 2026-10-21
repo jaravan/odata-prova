@@ -1,6 +1,6 @@
 {
   "name": "odata-prova",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Serve any SAP OData service's metadata.xml as V2 and V4 at once, with mock or CSV data. Drafts, $batch, $apply and actions included. No code, no SAP system, no problem",
   "license": "Apache-2.0",
   "author": "John Aravanis",
