@@ -144,3 +144,51 @@ describe("Store audit", () => {
     assert.throws(() => store.rollback(mark), /store audit/);
   });
 });
+
+describe("Store lookup", () => {
+  const ITEMS = "PurchaseOrderItemSet";
+  const byOrder = (store: ReturnType<typeof load>["store"], id: unknown) =>
+    store.lookup(ITEMS, ["PurchaseOrderId"], [id as string]);
+  const scan = (store: ReturnType<typeof load>["store"], id: unknown) =>
+    store.rows(ITEMS).filter((r) => String(r.PurchaseOrderId) === String(id));
+
+  it("finds what a scan finds, in the set's order, comparing as strings", () => {
+    const { store } = load();
+    const [first] = store.rows(ITEMS);
+    const id = first.PurchaseOrderId;
+    assert.ok(byOrder(store, id).length > 1);
+    assert.deepEqual(byOrder(store, id), scan(store, id));
+    assert.deepEqual(byOrder(store, Number(id)), scan(store, id));
+    assert.deepEqual(byOrder(store, "none"), []);
+  });
+
+  it("follows inserts, updates of the indexed columns, removes and rollbacks", () => {
+    const { store } = load();
+    const [first, second] = store.rows(ITEMS);
+    const id = String(first.PurchaseOrderId);
+    byOrder(store, id); // built
+
+    const mark = store.begin();
+    store.insert(ITEMS, { ...first, ItemPosition: "9999" });
+    assert.deepEqual(byOrder(store, id), scan(store, id));
+    store.update(ITEMS, second, { PurchaseOrderId: "moved" });
+    assert.deepEqual(byOrder(store, "moved"), [second]);
+    assert.deepEqual(byOrder(store, id), scan(store, id));
+    store.removeRow(ITEMS, first);
+    assert.ok(!byOrder(store, id).includes(first));
+    store.rollback(mark);
+
+    assert.deepEqual(byOrder(store, "moved"), []);
+    assert.deepEqual(byOrder(store, id), scan(store, id));
+    assert.ok(byOrder(store, id).includes(first));
+  });
+
+  it("keeps serving rows whose other columns changed", () => {
+    const { store } = load();
+    const [first] = store.rows(ITEMS);
+    const id = first.PurchaseOrderId;
+    byOrder(store, id);
+    store.update(ITEMS, first, { Description: "Changed" });
+    assert.equal(byOrder(store, id)[0].Description, "Changed");
+  });
+});

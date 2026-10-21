@@ -127,11 +127,11 @@ class ODataService {
     if (contained) {
       const parent = this.entitySet(contained.parentSet);
       const nav = parent.type.navigations[contained.navigation];
-      const parentRow = this.store
-        .rows(contained.parentSet)
-        .find((p) =>
-          nav.join.every(([src, tgt]) => String(p[src]) === String(row[tgt])),
-        );
+      const [parentRow] = this.store.lookup(
+        contained.parentSet,
+        nav.join.map(([src]) => src),
+        nav.join.map(([, tgt]) => row[tgt]),
+      );
       if (parentRow)
         return `${this.entityUri(contained.parentSet, parent.type, parentRow)}/${contained.navigation}(${keyText})`;
     }
@@ -163,12 +163,12 @@ class ODataService {
     if ("links" in nav && nav.links)
       return { ...target, rows: linkedRows(this.model, this.store, nav, row) };
     const rows = this.store
-      .rows(nav.targetSet)
-      .filter(
-        (t) =>
-          nav.join.every(([src, tgt]) => String(row[src]) === String(t[tgt])) &&
-          draftMatch(nav, row, t),
-      );
+      .lookup(
+        nav.targetSet,
+        nav.join.map(([, tgt]) => tgt),
+        nav.join.map(([src]) => row[src]),
+      )
+      .filter((t) => draftMatch(nav, row, t));
     return { ...target, rows };
   }
 

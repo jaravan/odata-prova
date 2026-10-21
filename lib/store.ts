@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { EntityType, Key, Model, Row } from "./model.ts";
+import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
 import { generateData, generateLinks } from "./generate.ts";
 import { asActive } from "./draft.ts";
@@ -122,6 +122,10 @@ type Change =
   | { op: "update"; set: string; row: Row; before: Row; absent: string[] }
   | { op: "remove"; set: string; row: Row; index: number };
 
+// The key of a lookup: values compared as strings, as navigations compare them
+const valuesKey = (values: PropertyValue[]) =>
+  JSON.stringify(values.map((v) => String(v)));
+
 // Undoes changes, last first, on data: the store's, or a copy of it (see Store.audit)
 function undo(data: Record<string, Row[]>, changes: Change[]): void {
   for (const c of changes.toReversed()) {
@@ -154,6 +158,9 @@ class Store {
   private marks: number[] = [];
   // Tests only: the data as the outermost transaction found it (see audit)
   private begun: Record<string, Row[]> | undefined;
+  // Rows by the values of some of their columns, per set and columns (see lookup). Built when
+  // first asked for, dropped by a change to the set that could move a row between buckets.
+  private indexes: Record<string, Map<string, Map<string, Row[]>>> = {};
 
   // mockRows: rows to generate for each entity set without a seed file (0: leave it empty)
   constructor(
@@ -272,6 +279,41 @@ class Store {
     return this.data[setName];
   }
 
+  // The rows of setName whose columns hold values, in the set's order: what
+  // rows(setName).filter() would find comparing each as a string, without scanning the set
+  // each time. For navigations, which join on the same columns for every row they follow.
+  lookup(setName: string, columns: string[], values: PropertyValue[]): Row[] {
+    const byColumns = (this.indexes[setName] ||= new Map());
+    const name = JSON.stringify(columns);
+    let index = byColumns.get(name);
+    if (!index) {
+      index = new Map();
+      for (const row of this.data[setName]) {
+        const value = valuesKey(columns.map((c) => row[c]));
+        const bucket = index.get(value);
+        if (bucket) bucket.push(row);
+        else index.set(value, [row]);
+      }
+      byColumns.set(name, index);
+    }
+    return index.get(valuesKey(values)) ?? [];
+  }
+
+  // Drops the indexes change may have made wrong: an update's on the columns it set, an
+  // insert's or a remove's all of the set's
+  private invalidate(change: Change): void {
+    const byColumns = this.indexes[change.set];
+    if (!byColumns) return;
+    if (change.op !== "update") {
+      delete this.indexes[change.set];
+      return;
+    }
+    const changed = [...Object.keys(change.before), ...change.absent];
+    for (const name of byColumns.keys())
+      if ((JSON.parse(name) as string[]).some((c) => changed.includes(c)))
+        byColumns.delete(name);
+  }
+
   // key: the type's keys, and a contained entity's parent's keys too (see keyOf in
   // service.ts)
   matchesKey(entityType: EntityType, row: Row, key: Key): boolean {
@@ -329,6 +371,7 @@ class Store {
   // Outside a transaction changes aren't logged, as there's nothing to undo them for.
 
   private record(change: Change): void {
+    this.invalidate(change);
     if (this.marks.length) this.log.push(change);
   }
 
@@ -359,7 +402,9 @@ class Store {
   // Ends the transaction, undoing its changes
   rollback(mark: number): void {
     const start = this.end(mark);
-    undo(this.data, this.log.splice(start));
+    const undone = this.log.splice(start);
+    undo(this.data, undone);
+    undone.forEach((c) => this.invalidate(c));
     if (!this.marks.length && this.audit) this.check(this.data);
   }
 
