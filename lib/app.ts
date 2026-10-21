@@ -9,7 +9,7 @@ import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
 import { Queue } from "./queue.ts";
-import type { Persistence } from "./persistence.ts";
+import { open, type Persistence } from "./persistence.ts";
 import type { Protocol, Rules } from "./protocol.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
@@ -123,6 +123,9 @@ function createApp({
   model: Model;
   store: Store;
   services: ODataService[];
+  // Settles once requests can be answered: rejected when the saved state couldn't be loaded
+  ready: Promise<void>;
+  close: () => Promise<void>;
 } {
   // Read input metadata file
   const metadataXml = fs.readFileSync(
@@ -154,8 +157,10 @@ function createApp({
     v4: model.sourceVersion === "4.0" ? metadataXml : emitV4(model),
   };
 
-  // One queue for every service on the store (see queue.ts)
-  const queue = new Queue();
+  // One queue for every service on the store (see queue.ts). With persistence, the saved state
+  // replaces the seeded one first, or the seeded one is saved: requests wait for that.
+  const ready = persistence ? open(persistence, store) : Promise.resolve();
+  const queue = new Queue(ready);
   const services: ODataService[] = [];
   for (const [name, servicePath] of [
     ["v2", v2Path],
@@ -310,7 +315,13 @@ function createApp({
   };
   app.use(onError);
 
-  return { app, model, store, services };
+  // Once every request so far has been answered and saved: closes persistence
+  async function close(): Promise<void> {
+    await queue.idle();
+    await persistence?.close();
+  }
+
+  return { app, model, store, services, ready, close };
 }
 
 export type { ETagMode, JoinMode };

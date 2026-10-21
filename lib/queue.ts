@@ -5,14 +5,27 @@
 // One queue per store, shared by the services that serve it.
 
 class Queue {
-  private tail: Promise<unknown> = Promise.resolve();
+  private ready: Promise<unknown>;
+  private tail: Promise<unknown>;
+
+  // ready: what has to happen before the first task (loading the saved state). Every task
+  // waits for it, and fails with its error if it failed.
+  constructor(ready: Promise<unknown> = Promise.resolve()) {
+    this.ready = ready;
+    this.tail = ready.catch(() => undefined);
+  }
 
   // Runs task once every task before it has settled, and settles as it does. A failing task
   // fails its own caller only: the next one still runs.
   run<T>(task: () => T | Promise<T>): Promise<T> {
-    const result = this.tail.then(task);
+    const result = this.tail.then(() => this.ready).then(task);
     this.tail = result.catch(() => undefined);
     return result;
+  }
+
+  // Settles once every task so far has
+  idle(): Promise<void> {
+    return this.tail.then(() => undefined);
   }
 }
 

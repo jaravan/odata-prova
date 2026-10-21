@@ -298,6 +298,17 @@ class Store {
     this.data[setName] ||= [];
   }
 
+  // Replaces the rows of each set state has with its rows: the saved state, at startup (see
+  // persistence.ts). A set the store doesn't have is left out, and one state lacks keeps its
+  // seeded rows. Not inside a transaction, which couldn't undo it.
+  load(state: Record<string, Row[]>): void {
+    if (this.marks.length || this.held)
+      throw new Error("state loaded inside a transaction");
+    for (const [setName, rows] of Object.entries(state))
+      if (setName in this.data) this.data[setName] = [...rows];
+    this.indexes = {};
+  }
+
   // The rows of setName whose columns hold values, in the set's order: what
   // rows(setName).filter() would find comparing each as a string, without scanning the set
   // each time. For navigations, which join on the same columns for every row they follow.

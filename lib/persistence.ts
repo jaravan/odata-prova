@@ -3,8 +3,9 @@
 // never go through it: the store in memory answers them all.
 
 import type { Model, Row } from "./model.ts";
-import type { Change } from "./store.ts";
+import type { Change, Store } from "./store.ts";
 import { ADMIN } from "./draft.ts";
+import { HttpError } from "./query.ts";
 
 // What a commit changed in one set: the rows to write, as they are now, and the rows to
 // delete, each by its identity (see identityOf). Deletes go first: an entity deleted and
@@ -81,5 +82,50 @@ function netChanges(model: Model, changes: Change[]): SetChanges[] {
   return [...bySet.values()];
 }
 
+// Every row of every set, written: the first state saved, when there is none yet
+function everything(
+  model: Model,
+  sets: Readonly<Record<string, readonly Row[]>>,
+): SetChanges[] {
+  return Object.entries(sets).map(([set, rows]) => {
+    const columns = identityColumns(model, set);
+    return {
+      set,
+      written: rows.map((row) => ({
+        key: identityOf(columns, row),
+        row: structuredClone(row),
+      })),
+      deleted: [],
+    };
+  });
+}
+
+// Starts persistence on a seeded store: the saved state replaces the seeded one, or, when
+// there is none yet, the seeded one is saved as the first. From then on every change has to
+// be in a transaction, for persistence to see it. An error is a 503 for every request (see
+// Queue): answering from a state that isn't saved would lose what they change.
+async function open(persistence: Persistence, store: Store): Promise<void> {
+  let state: Record<string, Row[]> | undefined;
+  try {
+    state = await persistence.load(store.model);
+  } catch (e) {
+    throw new HttpError(
+      503,
+      `The saved state could not be loaded: ${(e as Error).message}`,
+    );
+  }
+  if (state) store.load(state);
+  else
+    try {
+      await persistence.commit(everything(store.model, store.sets()));
+    } catch (e) {
+      throw new HttpError(
+        503,
+        `The first state could not be saved: ${(e as Error).message}`,
+      );
+    }
+  store.transactionsOnly = true;
+}
+
 export type { Persistence, SetChanges };
-export { netChanges };
+export { netChanges, everything, open };

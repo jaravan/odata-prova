@@ -294,3 +294,22 @@ describe("Store commits held until settled", () => {
     assert.equal(first.Status, "Inside");
   });
 });
+
+describe("Store load", () => {
+  it("replaces the rows of the sets it's given, outside a transaction only", () => {
+    const { store } = load();
+    const [first] = store.rows(SET);
+    const items = store.rows("PurchaseOrderItemSet");
+    store.load({ [SET]: [{ ...first, Status: "Loaded" }], Unknown: [] });
+    assert.deepEqual(
+      store.rows(SET).map((r) => r.Status),
+      ["Loaded"],
+    );
+    assert.equal(store.rows("PurchaseOrderItemSet"), items);
+    assert.equal(store.sets().Unknown, undefined);
+
+    const mark = store.begin();
+    assert.throws(() => store.load({ [SET]: [] }), /inside a transaction/);
+    store.rollback(mark);
+  });
+});

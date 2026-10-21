@@ -178,8 +178,10 @@ const ETAGS = choice<ETagMode>("etags", ETAG_MODES, "lenient");
 const JOINS = choice<JoinMode>("joins", JOIN_MODES, "guess");
 
 let app: Express;
+let ready: Promise<void>;
+let close: () => Promise<void>;
 try {
-  ({ app } = createApp({
+  ({ app, ready, close } = createApp({
     modelDir: MODEL_DIR,
     v2Path: V2_PATH,
     v4Path: V4_PATH,
@@ -190,6 +192,13 @@ try {
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);
+}
+
+// The saved state, when there is persistence: requests can't be answered without it
+try {
+  await ready;
+} catch (err) {
+  exitWithError("cannot load the saved state", err);
 }
 
 // Express 5 passes listen errors (eg port in use) to callback instead of throwing
@@ -212,7 +221,16 @@ const server = app.listen(PORT, (err) => {
 // requests finish, then exit; give up after 10 seconds.
 function shutdown(signal: string): void {
   console.log(`${signal} received, shutting down`);
-  server.close(() => process.exit(0));
+  // Once the open requests are answered, and what they changed is saved
+  server.close(() => {
+    void close().then(
+      () => process.exit(0),
+      (err: unknown) => {
+        console.error("odata-prova: cannot close persistence", err);
+        process.exit(1);
+      },
+    );
+  });
   server.closeIdleConnections();
   setTimeout(() => process.exit(1), 10000).unref();
 }

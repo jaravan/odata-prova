@@ -5,20 +5,18 @@ import { start, get, send, batch, batchResponses, ORDER } from "./helpers.ts";
 import { Queue } from "../lib/queue.ts";
 import type { Persistence, SetChanges } from "../lib/persistence.ts";
 
-// A persistence that keeps what it's given: each commit takes delay ms, and throws when
-// fail says so. events records when commits start and end, for the tests to order against.
-function fake({
-  delay = 0,
-  fail = () => false,
-}: { delay?: number; fail?: () => boolean } = {}) {
+// A persistence that keeps what it's given: each commit takes delay ms, and throws while
+// failing is set. events records when commits start and end, for the tests to order against.
+function fake({ delay = 0 }: { delay?: number } = {}) {
   const commits: SetChanges[][] = [];
   const events: string[] = [];
+  const state = { failing: false };
   const persistence: Persistence = {
     load: () => Promise.resolve(undefined),
     async commit(changes) {
       events.push("commit start");
       await sleep(delay);
-      if (fail()) {
+      if (state.failing) {
         events.push("commit failed");
         throw new Error("disk full");
       }
@@ -31,7 +29,20 @@ function fake({
   const saving = async () => {
     while (!events.includes("commit start")) await sleep(1);
   };
-  return { persistence, commits, events, saving };
+  // Forgets the first state saved at startup, for a test to count its own commits
+  const reset = () => {
+    commits.length = 0;
+    events.length = 0;
+  };
+  return { persistence, commits, events, saving, reset, state };
+}
+
+// A server on PO_MODEL with f as its persistence, started: the first state saved, forgotten
+async function serve(f: ReturnType<typeof fake>) {
+  const s = await start(undefined, { persistence: f.persistence });
+  await s.ready;
+  f.reset();
+  return s;
 }
 
 const ORDER_URL = (v4: string) => `${v4}/PurchaseOrderSet('4500000001')`;
@@ -66,7 +77,7 @@ describe("Queue", () => {
 describe("Requests around an async commit", () => {
   it("a read sent while a commit is saved waits for it, and sees it", async () => {
     const f = fake({ delay: 100 });
-    const s = await start(undefined, { persistence: f.persistence });
+    const s = await serve(f);
     try {
       const write = send("PATCH", ORDER_URL(s.v4), { Status: "Saved" });
       await f.saving();
@@ -87,8 +98,9 @@ describe("Requests around an async commit", () => {
   });
 
   it("a failed save answers 500 and undoes the request; a read waiting sees it undone", async () => {
-    const f = fake({ delay: 100, fail: () => true });
-    const s = await start(undefined, { persistence: f.persistence });
+    const f = fake({ delay: 100 });
+    const s = await serve(f);
+    f.state.failing = true;
     try {
       const before = (await get(ORDER_URL(s.v4))).body.Status;
       const write = send("PATCH", ORDER_URL(s.v4), { Status: "Lost" });
@@ -105,16 +117,16 @@ describe("Requests around an async commit", () => {
   });
 
   it("the next write is saved on top of the state before a failed one", async () => {
-    let failing = true;
-    const f = fake({ fail: () => failing });
-    const s = await start(undefined, { persistence: f.persistence });
+    const f = fake();
+    const s = await serve(f);
+    f.state.failing = true;
     try {
       const original = (await get(ORDER_URL(s.v4))).body;
       assert.equal(
         (await send("PATCH", ORDER_URL(s.v4), { Status: "Lost" })).status,
         500,
       );
-      failing = false;
+      f.state.failing = false;
       assert.equal(
         (await send("PATCH", ORDER_URL(s.v4), { Supplier: "Kept" })).status,
         204,
@@ -129,7 +141,7 @@ describe("Requests around an async commit", () => {
 
   it("a read, or a write that fails, saves nothing", async () => {
     const f = fake();
-    const s = await start(undefined, { persistence: f.persistence });
+    const s = await serve(f);
     try {
       await get(`${s.v4}/PurchaseOrderSet`);
       const refused = await send("PATCH", ORDER_URL(s.v4), {
@@ -146,7 +158,7 @@ describe("Requests around an async commit", () => {
 describe("$batch around an async commit", () => {
   it("saves a changeset once, with all its changes", async () => {
     const f = fake({ delay: 20 });
-    const s = await start(undefined, { persistence: f.persistence });
+    const s = await serve(f);
     try {
       const r = await batch(s.v4, [
         [
@@ -177,8 +189,9 @@ describe("$batch around an async commit", () => {
   });
 
   it("a changeset that can't be saved answers as a failed one, and changes nothing", async () => {
-    const f = fake({ fail: () => true });
-    const s = await start(undefined, { persistence: f.persistence });
+    const f = fake();
+    const s = await serve(f);
+    f.state.failing = true;
     try {
       const r = await batch(s.v4, [
         [
@@ -200,7 +213,7 @@ describe("$batch around an async commit", () => {
 
   it("saves each part outside a changeset before the next runs", async () => {
     const f = fake({ delay: 20 });
-    const s = await start(undefined, { persistence: f.persistence });
+    const s = await serve(f);
     try {
       const r = await batch(s.v4, [
         {

@@ -52,11 +52,14 @@ async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
     base,
     v2: `${base}/odata/v2/T`,
     v4: `${base}/odata/v4/T`,
-    close: () =>
-      new Promise<void>((resolve) => {
+    // The server, then the app (its persistence, if any)
+    close: async () => {
+      await new Promise<void>((resolve) => {
         server.close(() => resolve());
         server.closeAllConnections();
-      }),
+      });
+      await built.close();
+    },
   };
 }
 
