@@ -67,7 +67,7 @@ Two `sap:` attributes are written as well, where UI5 reads an attribute and not 
 
 ## Query options
 
-Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`/`$inlinecount`, `$search`, and `$batch` with atomic changesets all work, on both protocols. `$expand` takes nested V4 options too: `$expand=Items($select=Material;$top=2)`.
+Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`/`$inlinecount`, `$search`, and `$batch` with atomic changesets all work, on both protocols. `$expand` takes nested V4 options too: `$expand=Items($select=Material;$top=2)`. In V4, `$expand=*` expands every navigation of the type, at any level (`Items($expand=*)`). A navigation also named on its own keeps its options (`*,Items($top=2)`), and one the server can't serve is left out.
 
 A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
 
@@ -363,6 +363,8 @@ Rejected with `501 Not Implemented`:
 - V4's `$deltatoken` in V2, which has `!deltatoken`
 - the parts of `$apply` listed under [Aggregation](#aggregation-apply)
 - any `$format` other than JSON
+- `$expand=*/$ref` and `$expand=*($levels=n)`: `$ref` and `$levels` in `$expand`
+- a `$batch` in OData 4.01's JSON format: send it as `multipart/mixed`, as UI5 does
 
 `If-None-Match` is ignored: a read always answers with the entity.
 

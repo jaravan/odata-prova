@@ -148,7 +148,7 @@ A folder of your own works too, if the image's `node` user (uid 1000) can write 
 ## What's supported
 
 - **Reads and writes**, including deep insert, links to existing entities (`@odata.bind`, `$ref`, V2's `$links`), and `$batch` with atomic changesets.
-- **Query options**: `$filter` (with V4's `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options), `$count`/`$inlinecount`, `$search` and V4's `$compute`. Server-driven paging with `$skiptoken` is opt-in, see [`PAGE_SIZE`](docs/odata-support.md#server-driven-paging).
+- **Query options**: `$filter` (with V4's `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options, and `*`), `$count`/`$inlinecount`, `$search` and V4's `$compute`. Server-driven paging with `$skiptoken` is opt-in, see [`PAGE_SIZE`](docs/odata-support.md#server-driven-paging).
 - **Aggregation**: V4's `$apply`, for UI5's grouped and aggregated tables, totals included. What it doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
 - **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
 - **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
