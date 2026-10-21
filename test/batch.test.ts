@@ -7,6 +7,7 @@ import {
   batchResponses,
   ORDER,
   ITEM,
+  PO_MODEL,
   type TestServer,
 } from "./helpers.ts";
 
@@ -144,5 +145,35 @@ describe("$batch", () => {
       body: "x",
     });
     assert.equal(res.status, 400);
+  });
+});
+
+describe("a JSON $batch", () => {
+  it("is a 501 that says to send it as multipart", async () => {
+    const s = await start(PO_MODEL);
+    try {
+      const r = await fetch(`${s.v4}/$batch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ id: "1", method: "GET", url: "PurchaseOrderSet" }],
+        }),
+      });
+      assert.equal(r.status, 501);
+      const body = (await r.json()) as { error: { message: string } };
+      assert.match(
+        body.error.message,
+        /A JSON \$batch \(OData 4\.01\) is not supported: send it as multipart\/mixed, as UI5 does/,
+      );
+      // Without a boundary otherwise, still a 400
+      const plain = await fetch(`${s.v4}/$batch`, {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: "x",
+      });
+      assert.equal(plain.status, 400);
+    } finally {
+      await s.close();
+    }
   });
 });

@@ -240,12 +240,17 @@ function createBatchHandler(
 
   // Express handler for POST $batch (expects express.raw() to have run first).
   return async (req: Request, res: Response) => {
-    const boundary = extractBoundary(req.headers["content-type"]);
+    const contentType = req.headers["content-type"] ?? "";
+    const boundary = extractBoundary(contentType);
     if (!boundary) {
-      const err = protocol.error(
-        400,
-        "Missing multipart boundary on $batch request",
-      );
+      // OData 4.01's JSON format for $batch, which UI5 doesn't send: its V4 model batches as
+      // multipart too
+      const err = /^application\/json/i.test(contentType)
+        ? protocol.error(
+            501,
+            "A JSON $batch (OData 4.01) is not supported: send it as multipart/mixed, as UI5 does",
+          )
+        : protocol.error(400, "Missing multipart boundary on $batch request");
       res
         .status(err.status)
         .set(protocol.headers)
