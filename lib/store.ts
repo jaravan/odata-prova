@@ -14,6 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
 import { generateData, generateLinks } from "./generate.ts";
@@ -113,6 +114,27 @@ function loadSeedFile(
   return { file: undefined, rows: [] };
 }
 
+// A change the store made inside a transaction, with what it takes to undo it. Rows change
+// in place, so an update keeps the row's old values of the fields it set (absent: the
+// fields the row didn't have), and a remove the row and where it was.
+type Change =
+  | { op: "insert"; set: string; row: Row }
+  | { op: "update"; set: string; row: Row; before: Row; absent: string[] }
+  | { op: "remove"; set: string; row: Row; index: number };
+
+// Undoes changes, last first, on data: the store's, or a copy of it (see Store.audit)
+function undo(data: Record<string, Row[]>, changes: Change[]): void {
+  for (const c of changes.toReversed()) {
+    const rows = data[c.set];
+    if (c.op === "insert") rows.splice(rows.indexOf(c.row), 1);
+    else if (c.op === "remove") rows.splice(c.index, 0, c.row);
+    else {
+      Object.assign(c.row, c.before);
+      for (const name of c.absent) delete c.row[name];
+    }
+  }
+}
+
 class Store {
   model: Model;
   // Rows by entity set
@@ -121,6 +143,17 @@ class Store {
   generated: string[];
   // The link sets whose rows were generated (see linkSet in navigations.ts)
   generatedLinks: string[];
+  // Tests only: checks at the end of each outermost transaction that undoing its log gives
+  // back the store as it began. A row changed without going through the store fails it,
+  // since its change is in no log: rollback wouldn't undo it, nor persistence save it.
+  audit = false;
+
+  // The changes of the open transactions, oldest first
+  private log: Change[] = [];
+  // Where each open transaction begins in the log, outermost first
+  private marks: number[] = [];
+  // Tests only: the data as the outermost transaction found it (see audit)
+  private begun: Record<string, Row[]> | undefined;
 
   // mockRows: rows to generate for each entity set without a seed file (0: leave it empty)
   constructor(
@@ -258,6 +291,19 @@ class Store {
 
   insert(setName: string, row: Row): void {
     this.data[setName].push(row);
+    this.record({ op: "insert", set: setName, row });
+  }
+
+  // Sets changes on row, a row of setName, in place, and returns it
+  update(setName: string, row: Row, changes: Row): Row {
+    const before: Row = {};
+    const absent: string[] = [];
+    for (const name of Object.keys(changes))
+      if (name in row) before[name] = row[name];
+      else absent.push(name);
+    Object.assign(row, changes);
+    this.record({ op: "update", set: setName, row, before, absent });
+    return row;
   }
 
   remove(setName: string, entityType: EntityType, key: Key): Row | undefined {
@@ -265,7 +311,70 @@ class Store {
       this.matchesKey(entityType, row, key),
     );
     if (idx === -1) return undefined;
-    return this.data[setName].splice(idx, 1)[0];
+    const [row] = this.data[setName].splice(idx, 1);
+    this.record({ op: "remove", set: setName, row, index: idx });
+    return row;
+  }
+
+  // --- Transactions ---
+  //
+  //   const mark = store.begin();
+  //   try { ...; store.commit(mark); } catch (e) { store.rollback(mark); throw e; }
+  //
+  // Transactions nest: an inner one is a savepoint, which only its own rollback undoes.
+  // Outside a transaction changes aren't logged, as there's nothing to undo them for.
+
+  private record(change: Change): void {
+    if (this.marks.length) this.log.push(change);
+  }
+
+  // Opens a transaction, and returns its mark for commit or rollback
+  begin(): number {
+    if (!this.marks.length && this.audit)
+      this.begun = structuredClone(this.data);
+    this.marks.push(this.log.length);
+    return this.marks.length - 1;
+  }
+
+  // Ends the transaction, keeping its changes. The outermost returns all the changes it
+  // made, an inner one none: they're the outermost's until it ends.
+  commit(mark: number): Change[] {
+    this.end(mark);
+    if (this.marks.length) return [];
+    const changes = this.log;
+    this.log = [];
+    if (this.audit) {
+      // Undone on a copy: one structuredClone keeps the rows the log and data share
+      const copy = structuredClone({ data: this.data, changes });
+      undo(copy.data, copy.changes);
+      this.check(copy.data);
+    }
+    return changes;
+  }
+
+  // Ends the transaction, undoing its changes
+  rollback(mark: number): void {
+    const start = this.end(mark);
+    undo(this.data, this.log.splice(start));
+    if (!this.marks.length && this.audit) this.check(this.data);
+  }
+
+  // Closes the innermost transaction, which must be mark's, and returns where it began
+  private end(mark: number): number {
+    if (mark !== this.marks.length - 1)
+      throw new Error(
+        `transaction ${mark} ended while ${this.marks.length - 1} is the innermost`,
+      );
+    return this.marks.pop()!;
+  }
+
+  private check(undone: Record<string, Row[]>): void {
+    const begun = this.begun;
+    this.begun = undefined;
+    if (!isDeepStrictEqual(undone, begun))
+      throw new Error(
+        "store audit: a row changed without going through the store",
+      );
   }
 
   // Whole-store snapshot/restore, used to make $batch changesets and draft actions atomic.
@@ -278,4 +387,5 @@ class Store {
   }
 }
 
+export type { Change };
 export { Store };
