@@ -1,7 +1,7 @@
 // UI5's ODataModel batches by default, so most reads and writes arrive here as one
 // multipart POST instead of hitting the service directly. We unpack each part, run it
 // through service.dispatch(), and combine the results back into a multipart response.
-// Changesets are atomic - we snapshot the store first and roll back if any part fails -
+// Changesets are atomic - one store transaction, rolled back if any part fails -
 // and within one, `$<Content-ID>/Nav` can reference an entity a prior part just created.
 import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
@@ -168,25 +168,33 @@ function createBatchHandler(
 
     if (/multipart\/mixed/i.test(outerContentType)) {
       const innerBoundary = extractBoundary(outerContentType);
-      const snapshot = store.snapshot();
+      const mark = store.begin();
       const refs: Record<string, string> = {};
       const results: ProcessedPart["results"] = [];
-      for (const p of splitMultipart(remainder, innerBoundary)) {
-        // Each changeset member is itself an "application/http"-wrapped part, so its own
-        // Content-Type/Content-ID header block has to be peeled off first.
-        const [innerHead, innerRemainder] = splitOnceOnBlankLine(p);
-        const request = parseHttpRequestPart(innerRemainder);
-        const contentId =
-          parseHeaders(innerHead)["content-id"] ||
-          request.headers["content-id"];
-        if (contentId) request.headers["content-id"] = contentId;
-        const result = executeHttpPart(request, refs);
-        results.push({ result, contentId });
-        if (result.status >= 400) {
-          store.restore(snapshot);
-          break;
+      let failed = false;
+      try {
+        for (const p of splitMultipart(remainder, innerBoundary)) {
+          // Each changeset member is itself an "application/http"-wrapped part, so its own
+          // Content-Type/Content-ID header block has to be peeled off first.
+          const [innerHead, innerRemainder] = splitOnceOnBlankLine(p);
+          const request = parseHttpRequestPart(innerRemainder);
+          const contentId =
+            parseHeaders(innerHead)["content-id"] ||
+            request.headers["content-id"];
+          if (contentId) request.headers["content-id"] = contentId;
+          const result = executeHttpPart(request, refs);
+          results.push({ result, contentId });
+          if (result.status >= 400) {
+            failed = true;
+            break;
+          }
         }
+      } catch (e) {
+        store.rollback(mark);
+        throw e;
       }
+      if (failed) store.rollback(mark);
+      else store.commit(mark);
       return { changeset: true, results };
     }
     return {

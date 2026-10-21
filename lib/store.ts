@@ -380,15 +380,6 @@ class Store {
         "store audit: a row changed without going through the store",
       );
   }
-
-  // Whole-store snapshot/restore, used to make $batch changesets and draft actions atomic.
-  // structuredClone, not a JSON round trip: that would turn INF and NaN into null.
-  snapshot(): Record<string, Row[]> {
-    return structuredClone(this.data);
-  }
-  restore(snapshot: Record<string, Row[]>): void {
-    this.data = snapshot;
-  }
 }
 
 export type { Change };

@@ -330,11 +330,13 @@ class Drafts {
 
   // Rows of a whole draft operation: all of them or, when one fails, none
   atomic<T>(fn: () => T): T {
-    const snapshot = this.store.snapshot();
+    const mark = this.store.begin();
     try {
-      return fn();
+      const result = fn();
+      this.store.commit(mark);
+      return result;
     } catch (e) {
-      this.store.restore(snapshot);
+      this.store.rollback(mark);
       throw e;
     }
   }

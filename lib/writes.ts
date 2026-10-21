@@ -209,7 +209,7 @@ function checkRequired(
 }
 
 // A deep insert is all or nothing: when a related entity fails (a duplicate key, an
-// invalid value), the rows this request already inserted are removed again.
+// invalid value), what this create already changed is rolled back.
 // draft: a draft may be incomplete until it is activated, so required values aren't checked.
 function create(
   svc: WriteHost,
@@ -219,32 +219,23 @@ function create(
   presetValues: Row = {},
   draft = false,
 ): Row {
-  const inserted: { setName: string; type: EntityType; row: Row }[] = [];
+  const mark = svc.store.begin();
   try {
-    return insertTree(
-      svc,
-      setName,
-      entityType,
-      body,
-      presetValues,
-      inserted,
-      draft,
-    );
+    const row = insertTree(svc, setName, entityType, body, presetValues, draft);
+    svc.store.commit(mark);
+    return row;
   } catch (e) {
-    for (const { setName, type, row } of inserted.reverse())
-      svc.store.remove(setName, type, svc.keyOf(type, row));
+    svc.store.rollback(mark);
     throw e;
   }
 }
 
-// inserted: collects { setName, type, row } for every row inserted, for create's rollback
 function insertTree(
   svc: WriteHost,
   setName: string,
   entityType: EntityType,
   body: unknown,
   presetValues: Row,
-  inserted: { setName: string; type: EntityType; row: Row }[],
   draft: boolean,
 ): Row {
   if (!body || typeof body !== "object")
@@ -277,7 +268,6 @@ function insertTree(
   }
   Object.assign(row, nextETag(svc.model, setName, entityType, row));
   svc.store.insert(setName, row);
-  inserted.push({ setName, type: entityType, row });
 
   // Deep insert: navigation payloads become related entities with the foreign key filled
   // in. V4 sends arrays, V2 either arrays or { results: [...] }.
@@ -300,7 +290,6 @@ function insertTree(
         target.type,
         child,
         fk,
-        inserted,
         draft,
       );
       if (nav.links) addLink(svc.model, svc.store, nav, row, made);

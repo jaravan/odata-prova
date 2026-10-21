@@ -221,6 +221,22 @@ describe("links that can't change", () => {
     }
   });
 
+  it("an update whose link fails changes none of its properties either", async () => {
+    const s = await start(PO_MODEL);
+    try {
+      const item = `${s.v4}/PurchaseOrderItemSet(PurchaseOrderId='4500000001',ItemPosition='0001')`;
+      const before = (await get(item)).body.Description;
+      const moved = await send("PATCH", item, {
+        Description: "Changed",
+        "PurchaseOrder@odata.bind": "PurchaseOrderSet('4500000002')",
+      });
+      assert.equal(moved.status, 400);
+      assert.equal((await get(item)).body.Description, before);
+    } finally {
+      await s.close();
+    }
+  });
+
   it("containment: its targets are created through it", async () => {
     const s = await start(path.join(FIXTURES, "Containment"));
     try {

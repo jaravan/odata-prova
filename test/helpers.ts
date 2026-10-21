@@ -41,6 +41,8 @@ async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
     log: () => {},
     ...options,
   });
+  // Every transaction checks that its log undoes all it changed (see Store.audit)
+  built.store.audit = true;
   const server = await new Promise<Server>((resolve) => {
     const s = built.app.listen(0, () => resolve(s));
   });

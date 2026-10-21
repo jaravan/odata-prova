@@ -301,14 +301,22 @@ class ODataService {
     body?: unknown,
     headers: RequestHeaders = {},
   ): ODataResponse {
+    // Each request is a transaction: an error leaves the store as it found it, whatever
+    // the request had changed before it failed
+    const mark = this.store.begin();
+    let response: ODataResponse;
     try {
-      return handle(this, method, path, query, body, headers);
+      response = handle(this, method, path, query, body, headers);
     } catch (e) {
+      this.store.rollback(mark);
       if (e instanceof HttpError)
         return this.protocol.error(e.status, e.message, e.code);
       console.error(e);
       return this.protocol.error(500, (e as Error).message);
     }
+    if (response.status >= 400) this.store.rollback(mark);
+    else this.store.commit(mark);
+    return response;
   }
 }
 
