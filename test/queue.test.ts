@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { start, get, send, batch, batchResponses, ORDER } from "./helpers.ts";
@@ -46,6 +46,21 @@ async function serve(f: ReturnType<typeof fake>) {
   await s.ready;
   f.reset();
   return s;
+}
+
+// A save failing on purpose is logged, as a real one would be: caught here, to keep the test
+// output clean, and checked to have been logged. The mock is undone after the test.
+function quiet(t: TestContext) {
+  const error = t.mock.method(console, "error", () => {});
+  t.after(() =>
+    assert.ok(
+      error.mock.calls.some((c) =>
+        String(c.arguments[0]).includes("disk full"),
+      ),
+      "the failed save is logged",
+    ),
+  );
+  return error;
 }
 
 const ORDER_URL = (v4: string) => `${v4}/PurchaseOrderSet('4500000001')`;
@@ -100,7 +115,8 @@ describe("Requests around an async commit", () => {
     }
   });
 
-  it("a failed save answers 500 and undoes the request; a read waiting sees it undone", async () => {
+  it("a failed save answers 500 and undoes the request; a read waiting sees it undone", async (t) => {
+    quiet(t);
     const f = fake({ delay: 100 });
     const s = await serve(f);
     f.state.failing = true;
@@ -119,7 +135,8 @@ describe("Requests around an async commit", () => {
     }
   });
 
-  it("the next write is saved on top of the state before a failed one", async () => {
+  it("the next write is saved on top of the state before a failed one", async (t) => {
+    quiet(t);
     const f = fake();
     const s = await serve(f);
     f.state.failing = true;
@@ -191,7 +208,8 @@ describe("$batch around an async commit", () => {
     }
   });
 
-  it("a changeset that can't be saved answers as a failed one, and changes nothing", async () => {
+  it("a changeset that can't be saved answers as a failed one, and changes nothing", async (t) => {
+    quiet(t);
     const f = fake();
     const s = await serve(f);
     f.state.failing = true;
