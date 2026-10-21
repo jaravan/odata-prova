@@ -17,7 +17,7 @@ import {
 import { MemoryPersistence } from "./memory-persistence.ts";
 import { createApp } from "../lib/app.ts";
 import { everything } from "../lib/persistence.ts";
-import type { Persistence, SetChanges } from "../lib/persistence.ts";
+import type { Persistence, SetChanges, Shape } from "../lib/persistence.ts";
 import { SqlitePersistence } from "../lib/sqlite.ts";
 import type { Model, Row } from "../lib/model.ts";
 
@@ -40,6 +40,11 @@ function counted(p: Saving, delay = 0) {
     async commit(changes: SetChanges[]) {
       await sleep(delay);
       await p.commit(changes);
+      db.commits++;
+    },
+    async replace(changes: SetChanges[], shape: Shape) {
+      await sleep(delay);
+      await p.replace(changes, shape);
       db.commits++;
     },
     close: () => p.close(),

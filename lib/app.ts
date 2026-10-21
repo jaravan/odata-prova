@@ -159,7 +159,7 @@ function createApp({
 
   // One queue for every service on the store (see queue.ts). With persistence, the saved state
   // replaces the seeded one first, or the seeded one is saved: requests wait for that.
-  const ready = persistence ? open(persistence, store) : Promise.resolve();
+  const ready = persistence ? open(persistence, store, log) : Promise.resolve();
   const queue = new Queue(ready);
   const services: ODataService[] = [];
   for (const [name, servicePath] of [

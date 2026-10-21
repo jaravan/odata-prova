@@ -23,6 +23,9 @@ function fake({ delay = 0 }: { delay?: number } = {}) {
       commits.push(changes);
       events.push("commit end");
     },
+    replace(changes) {
+      return persistence.commit(changes);
+    },
     close: () => Promise.resolve(),
   };
   // Settles once a commit has started saving: a request sent then queues behind it

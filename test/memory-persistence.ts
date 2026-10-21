@@ -1,15 +1,21 @@
 // A persistence that keeps the state in memory, as a database would: per set, rows by their
 // identity, each commit's deletes applied before its writes (see SetChanges). load() answers
-// what was saved, so a second app on the same instance is a restart. delay makes every call
-// async for real, for requests to pile up in the queue.
+// what was saved, with its shape, so a second app on the same instance is a restart. delay
+// makes every call async for real, for requests to pile up in the queue.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Persistence, SetChanges } from "../lib/persistence.ts";
+import type {
+  Persistence,
+  Saved,
+  SetChanges,
+  Shape,
+} from "../lib/persistence.ts";
 import type { Row } from "../lib/model.ts";
 
 class MemoryPersistence implements Persistence {
   // Rows by identity, per set; undefined until the first commit
   saved: Map<string, Map<string, Row>> | undefined;
+  shape: Shape | undefined;
   commits = 0;
   closed = false;
   private delay: number;
@@ -18,10 +24,20 @@ class MemoryPersistence implements Persistence {
     this.delay = delay;
   }
 
-  async load(): Promise<Record<string, Row[]> | undefined> {
+  async load(): Promise<Saved | undefined> {
     await sleep(this.delay);
     this.closed = false;
-    return this.saved && this.state();
+    return (
+      this.saved && { state: this.state(), shape: structuredClone(this.shape) }
+    );
+  }
+
+  async replace(changes: SetChanges[], shape: Shape): Promise<void> {
+    await sleep(this.delay);
+    if (this.closed) throw new Error("closed");
+    this.saved = new Map();
+    this.shape = structuredClone(shape);
+    await this.commit(changes);
   }
 
   async commit(changes: SetChanges[]): Promise<void> {

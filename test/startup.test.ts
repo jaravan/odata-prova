@@ -39,7 +39,7 @@ function fake({
       await sleep(delay);
       events.push("load");
       if (loadError) throw new Error(loadError);
-      return state;
+      return state && { state };
     },
     async commit(changes) {
       events.push("commit start");
@@ -47,6 +47,9 @@ function fake({
       if (commitError) throw new Error(commitError);
       commits.push(changes);
       events.push("commit end");
+    },
+    replace(changes) {
+      return persistence.commit(changes);
     },
     close() {
       events.push("close");

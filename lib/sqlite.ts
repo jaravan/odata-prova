@@ -8,7 +8,7 @@
 
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Row } from "./model.ts";
-import type { Persistence, SetChanges } from "./persistence.ts";
+import type { Persistence, Saved, SetChanges, Shape } from "./persistence.ts";
 
 // The layout of the file; a file of another one isn't read
 const FORMAT = "1";
@@ -53,7 +53,7 @@ class SqlitePersistence implements Persistence {
 
   // Opens the file, creating it if there's none, and keeps it locked until close(): one
   // server per file, since each keeps its own copy of the state in memory
-  async load(): Promise<Record<string, Row[]> | undefined> {
+  async load(): Promise<Saved | undefined> {
     const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(this.file);
     try {
@@ -112,17 +112,38 @@ class SqlitePersistence implements Persistence {
       );
     }
 
-    return this.state();
+    const shape = db
+      .prepare("SELECT value FROM meta WHERE name = 'shape'")
+      .get() as { value: string } | undefined;
+    return {
+      state: this.state(),
+      shape: shape && (JSON.parse(shape.value) as Shape),
+    };
   }
 
   // One database transaction: a commit's deletes, then its writes
   commit(changes: SetChanges[]): Promise<void> {
+    return this.transaction(changes);
+  }
+
+  // One database transaction too: all that was saved goes, these rows and shape come
+  replace(changes: SetChanges[], shape: Shape): Promise<void> {
+    return this.transaction(changes, shape);
+  }
+
+  private transaction(changes: SetChanges[], shape?: Shape): Promise<void> {
     const db = this.db;
     if (!db || !this.statements)
       return Promise.reject(new Error(`${this.file} is not open`));
     const { known, remove, write } = this.statements;
     db.exec("BEGIN");
     try {
+      if (shape) {
+        db.exec("DELETE FROM rows; DELETE FROM sets");
+        db.prepare(
+          "INSERT OR REPLACE INTO meta (name, value) VALUES ('shape', ?)",
+        ).run(JSON.stringify(shape));
+      }
       for (const { set } of changes) known.run(set);
       for (const { set, deleted } of changes)
         for (const key of deleted) remove.run(set, key);

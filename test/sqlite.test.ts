@@ -43,7 +43,10 @@ describe("SqlitePersistence", () => {
     ]);
     await db.close();
     const again = new SqlitePersistence(file);
-    assert.deepEqual(await again.load(), { A: [{ id: 1 }] });
+    assert.deepEqual(await again.load(), {
+      state: { A: [{ id: 1 }] },
+      shape: undefined,
+    });
     await again.close();
   });
 
