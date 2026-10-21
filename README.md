@@ -52,7 +52,7 @@ Or with Docker, mounting the folder as `/models/<ServiceName>`:
 docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" ghcr.io/jaravan/odata-prova
 ```
 
-The image is built for amd64 and arm64, and tagged by version (e.g. `0.15.0` or `0.15`) and `latest`.
+The image is built for amd64 and arm64, and tagged by version (e.g. `0.16.0` or `0.16`) and `latest`.
 
 [examples/](examples/) has three services to try: [PurchaseOrderSrv](examples/PurchaseOrderSrv/) (V2, with a function import), [Northwind](examples/Northwind/) (V4) and [TripPin](examples/TripPin/) (V4, with actions and functions).
 
