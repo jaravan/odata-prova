@@ -319,9 +319,8 @@ class Drafts {
     this.svc = svc;
     this.model = svc.model;
     this.store = svc.store;
-    // Created here, not on the first draft: a set created inside a transaction would outlive
-    // its rollback
-    this.store.data[ADMIN] ||= [];
+    // Added here, not on the first draft, which is inside a transaction
+    this.store.addSet(ADMIN);
   }
 
   draftOf(setName: string): DraftInfo | undefined {
@@ -375,7 +374,7 @@ class Drafts {
 
   // --- Administrative data ---
 
-  admins(): Row[] {
+  admins(): readonly Row[] {
     return this.store.rows(ADMIN);
   }
 

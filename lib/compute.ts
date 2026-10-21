@@ -93,7 +93,7 @@ function typedExpression(
 
 function applyCompute(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   compute: Computation[],
   option = "$compute",

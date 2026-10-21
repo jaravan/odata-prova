@@ -192,3 +192,14 @@ describe("Store lookup", () => {
     assert.equal(byOrder(store, id)[0].Description, "Changed");
   });
 });
+
+describe("Store sets", () => {
+  it("adds a set outside a transaction only", () => {
+    const { store } = load();
+    store.addSet("Extra");
+    assert.deepEqual(store.rows("Extra"), []);
+    const mark = store.begin();
+    assert.throws(() => store.addSet("Late"), /inside a transaction/);
+    store.rollback(mark);
+  });
+});

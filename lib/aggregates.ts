@@ -220,7 +220,7 @@ function resultProperty(
 }
 
 // One result row for a group: its grouping values, and each aggregate over its rows
-function aggregateRow(rows: Row[], out: Aggregated): Row {
+function aggregateRow(rows: readonly Row[], out: Aggregated): Row {
   const row: Row = {};
   for (const name of out.groupBy) row[name] = rows[0][name];
   for (const { agg, input, result } of out.aggregates) {

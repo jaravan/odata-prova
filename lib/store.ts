@@ -141,8 +141,9 @@ function undo(data: Record<string, Row[]>, changes: Change[]): void {
 
 class Store {
   model: Model;
-  // Rows by entity set
-  data: Record<string, Row[]>;
+  // Rows by entity set. Private, and handed out read-only (rows, lookup, sets): a change made
+  // anywhere but here would escape rollback and persistence.
+  private data: Record<string, Row[]>;
   // The entity sets whose rows were generated
   generated: string[];
   // The link sets whose rows were generated (see linkSet in navigations.ts)
@@ -275,14 +276,31 @@ class Store {
     }
   }
 
-  rows(setName: string): Row[] {
+  rows(setName: string): readonly Row[] {
     return this.data[setName];
+  }
+
+  // Every set's rows
+  sets(): Readonly<Record<string, readonly Row[]>> {
+    return this.data;
+  }
+
+  // Adds an empty set the model doesn't have (draft administrative data). Not inside a
+  // transaction: no rollback would remove the set again.
+  addSet(setName: string): void {
+    if (this.marks.length)
+      throw new Error(`set ${setName} added inside a transaction`);
+    this.data[setName] ||= [];
   }
 
   // The rows of setName whose columns hold values, in the set's order: what
   // rows(setName).filter() would find comparing each as a string, without scanning the set
   // each time. For navigations, which join on the same columns for every row they follow.
-  lookup(setName: string, columns: string[], values: PropertyValue[]): Row[] {
+  lookup(
+    setName: string,
+    columns: string[],
+    values: PropertyValue[],
+  ): readonly Row[] {
     const byColumns = (this.indexes[setName] ||= new Map());
     const name = JSON.stringify(columns);
     let index = byColumns.get(name);

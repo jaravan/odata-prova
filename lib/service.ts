@@ -181,7 +181,12 @@ class ODataService {
     nav: AnyNavigation,
     node: QueryNode,
     page?: ResponseOptions["page"],
-  ): { rows: Row[]; count?: number; type: EntityType; nextLink?: string } {
+  ): {
+    rows: readonly Row[];
+    count?: number;
+    type: EntityType;
+    nextLink?: string;
+  } {
     const { rows, type } = this.computed(
       this.related(row, entityType, nav),
       node,
@@ -224,11 +229,11 @@ class ODataService {
   // entities: whether a result row is still one of the entities, which can be expanded: one of
   // the rows it ran on, or a hierarchy function's copy of one (see hierarchy.ts)
   applied(
-    rows: Row[],
+    rows: readonly Row[],
     type: EntityType,
     q: QueryNode,
   ): {
-    rows: Row[];
+    rows: readonly Row[];
     type: EntityType;
     entities: { type: EntityType; has(row: Row): boolean };
   } {
@@ -256,9 +261,9 @@ class ODataService {
   // The rows and type with $compute's properties (see compute.ts), or as they are without
   // one. $apply has a compute of its own, which isn't supported, so the two don't mix.
   computed(
-    { rows, type }: { rows: Row[]; type: EntityType },
+    { rows, type }: { rows: readonly Row[]; type: EntityType },
     q: QueryNode,
-  ): { rows: Row[]; type: EntityType } {
+  ): { rows: readonly Row[]; type: EntityType } {
     if (!q.compute) return { rows, type };
     if (q.apply)
       throw new HttpError(501, "$compute with $apply is not supported");
@@ -268,7 +273,7 @@ class ODataService {
   // A collection's response: an entity set's, a navigation's or an operation's, after its
   // query options, $apply first
   collectionResponse(
-    rows: Row[],
+    rows: readonly Row[],
     setName: string,
     type: EntityType,
     q: QueryNode,

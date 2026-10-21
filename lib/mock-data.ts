@@ -11,7 +11,7 @@ import type { EntityType, PropertyValue, Row } from "./model.ts";
 import { parseMetadata } from "./metadata.ts";
 import { Store } from "./store.ts";
 
-function toCsv(columns: string[], rows: Row[]): string {
+function toCsv(columns: string[], rows: readonly Row[]): string {
   const cell = (v: PropertyValue | undefined) =>
     v === null || v === undefined ? "" : String(v);
   return (
@@ -24,7 +24,7 @@ function toCsv(columns: string[], rows: Row[]): string {
 // The CSV reader takes ";" as the separator when the header has one, "," otherwise. A text
 // holding the separator, a line break or a quote would have to be quoted, which this
 // writer doesn't do.
-function csvSafe(type: EntityType, rows: Row[]): boolean {
+function csvSafe(type: EntityType, rows: readonly Row[]): boolean {
   const props = Object.values(type.properties);
   if (props.some((p) => p.isCollection || p.complexType)) return false;
   const bad = props.length > 1 ? /[;"\r\n]/ : /[;,"\r\n]/;

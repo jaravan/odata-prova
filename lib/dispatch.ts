@@ -51,7 +51,7 @@ interface Request {
 interface Position {
   setName: string;
   type: EntityType;
-  rows: Row[];
+  rows: readonly Row[];
   parent?: { row: Row; type: EntityType; nav: AnyNavigation; setName: string };
 }
 

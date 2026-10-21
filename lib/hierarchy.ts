@@ -364,7 +364,7 @@ interface Forest {
 
 function forestOf(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   h: Hierarchy,
 ): Forest {
@@ -407,7 +407,7 @@ function forestOf(
 // that isn't among the rows is left alone.
 function topLevels(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   t: TopLevels,
 ): Row[] {
@@ -445,10 +445,13 @@ function topLevels(
 // the rows.
 function relatives(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   t: Relatives,
-  run: (rows: Row[], transformations: Transformation[]) => { rows: Row[] },
+  run: (
+    rows: readonly Row[],
+    transformations: Transformation[],
+  ) => { rows: readonly Row[] },
 ): Row[] {
   const h = hierarchyOf(svc, type, t);
   const id = (row: Row) => String(row[h.nodeProperty]);
@@ -562,7 +565,7 @@ function withDerived(
 // nothing filled in.
 function traverse(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   t: Traverse,
 ): Row[] {

@@ -57,8 +57,8 @@ describe("mock data", () => {
 
   it("is the same on every start", () => {
     assert.deepEqual(
-      load(NORTHWIND_V4, 10).store.data,
-      load(NORTHWIND_V4, 10).store.data,
+      load(NORTHWIND_V4, 10).store.sets(),
+      load(NORTHWIND_V4, 10).store.sets(),
     );
   });
 
@@ -206,10 +206,10 @@ describe("mock-data.js", () => {
       try {
         const written = writeMockData(dir, 8);
         assert.ok(written.length > 0);
-        const expected = load(dir, 8).store.data;
+        const expected = load(dir, 8).store.sets();
         const reloaded = load(dir, 0).store;
         assert.deepEqual(reloaded.generated, []);
-        assert.deepEqual(reloaded.data, expected);
+        assert.deepEqual(reloaded.sets(), expected);
       } finally {
         fs.rmSync(dir, { recursive: true });
       }

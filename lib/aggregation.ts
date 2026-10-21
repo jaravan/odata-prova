@@ -65,11 +65,11 @@ import type {
 // which a filter's $these/aggregate(...) aggregates
 function applyTransformations(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   transformations: Transformation[],
   inGroup = false,
-): { rows: Row[]; type: EntityType } {
+): { rows: readonly Row[]; type: EntityType } {
   for (const t of transformations) {
     switch (t.kind) {
       case "filter":
@@ -164,7 +164,7 @@ function applyTransformations(
 // group's values.
 function eachGroup(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   t: Extract<Transformation, { kind: "groupseq" }>,
 ): { rows: Row[]; type: EntityType } {
@@ -216,11 +216,11 @@ function eachGroup(
 // them. origin: the row each one comes from.
 function withPaths(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   groupBy: string[],
   aggregates: Aggregate[],
-): { rows: Row[]; type: EntityType; origin: Map<Row, Row> } {
+): { rows: readonly Row[]; type: EntityType; origin: Map<Row, Row> } {
   const paths = [
     ...new Set([...groupBy, ...aggregates.map((a) => a.property ?? "")]),
   ].filter((name) => name.includes("/") && !own(type.properties, name));
@@ -332,7 +332,7 @@ function pathProperty(
 // or percentage a number. Rows whose value is null are left out.
 function ranked(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   type: EntityType,
   t: Extract<Transformation, { kind: "rank" }>,
 ): Row[] {
@@ -412,7 +412,7 @@ function holdsEntities(transformations: Transformation[]): boolean {
 }
 
 // The rows of each distinct combination of the grouping values, in the order first seen
-function groupsOf(rows: Row[], properties: string[]): Row[][] {
+function groupsOf(rows: readonly Row[], properties: string[]): Row[][] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
     const k = JSON.stringify(properties.map((p) => row[p]));
@@ -427,7 +427,7 @@ function groupsOf(rows: Row[], properties: string[]): Row[][] {
 // custom aggregate (Amount), "Amount with sum" or "$count"
 function aggregateOf(
   type: EntityType,
-  rows: Row[],
+  rows: readonly Row[],
 ): (expression: string) => Literal {
   const values = new Map<string, Literal>();
   return (expression) => {

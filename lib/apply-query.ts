@@ -19,7 +19,7 @@ import type {
 export interface QueryHost {
   model: Model;
   // An entity set's rows, which a hierarchy's nodes are (see hierarchy.ts)
-  store: { rows(setName: string): Row[] };
+  store: { rows(setName: string): readonly Row[] };
   protocol: LiteralSyntax;
   navigation(type: EntityType, name: string): AnyNavigation | undefined;
   related(
@@ -92,11 +92,11 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
 // aggregate: what $these/aggregate(...) in the filter gives, in a groupby's filter in $apply
 function applyQuery(
   svc: QueryHost,
-  rows: Row[],
+  rows: readonly Row[],
   entityType: EntityType,
   opts: QueryNode,
   aggregate?: Resolve["aggregate"],
-): { results: Row[]; count?: number } {
+): { results: readonly Row[]; count?: number } {
   const resolve = resolver(svc, entityType);
   resolve.aggregate = aggregate;
   let results = rows;

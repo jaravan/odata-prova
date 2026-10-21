@@ -24,7 +24,7 @@ interface Binding {
   setName: string;
   type: EntityType;
   row?: Row;
-  rows: Row[];
+  rows: readonly Row[];
 }
 
 // Neutral value of a (property-shaped) type: the result of an operation that returns no
@@ -264,7 +264,7 @@ function operationResult(
     return svc.protocol.operationValue(svc, op, rt, defaultValue(rt), opts);
 
   const type = rt.entityType;
-  let setName: string, rows: Row[];
+  let setName: string, rows: readonly Row[];
   if (binding && binding.type.fullName === type.fullName) {
     setName = binding.setName;
     rows = binding.row ? [binding.row] : binding.rows;

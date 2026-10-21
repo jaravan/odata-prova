@@ -10,7 +10,7 @@ import type { ODataVersion, QueryNode, ResponseOptions, Row } from "./model.ts";
 // stay as they were, so the pages add up to what the query asks for. A $skiptoken also
 // works without paging: the rows from that offset on.
 function paging(
-  rows: Row[],
+  rows: readonly Row[],
   q: QueryNode,
   opts: ResponseOptions,
 ): { rows: Row[]; nextLink?: string } {

@@ -38,9 +38,9 @@ class DeltaTokens {
   private copies = new Map<string, { setName: string; rows: Row[] }>();
 
   // A token for the entity set's rows as they are now
-  issue(setName: string, rows: Row[]): string {
+  issue(setName: string, rows: readonly Row[]): string {
     const token = `${this.epoch}-${this.next++}`;
-    this.copies.set(token, { setName, rows: structuredClone(rows) });
+    this.copies.set(token, { setName, rows: structuredClone([...rows]) });
     if (this.copies.size > KEPT)
       this.copies.delete(this.copies.keys().next().value!);
     return token;
@@ -59,8 +59,8 @@ class DeltaTokens {
 function deltaChanges(
   svc: QueryHost,
   type: EntityType,
-  before: Row[],
-  now: Row[],
+  before: readonly Row[],
+  now: readonly Row[],
   q: QueryNode,
 ): { rows: Row[]; removed: Removed[] } {
   const keyOf = (row: Row) =>
