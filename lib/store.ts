@@ -152,9 +152,14 @@ class Store {
   // back the store as it began. A row changed without going through the store fails it,
   // since its change is in no log: rollback wouldn't undo it, nor persistence save it.
   audit = false;
+  // Every change inside a transaction: one outside would escape the log, and with it
+  // persistence, which saves what the log holds. Set once the store is seeded.
+  transactionsOnly = false;
 
-  // The changes of the open transactions, oldest first
+  // The changes of the open transactions, oldest first; once the outermost commits, its
+  // changes until they're settled (see commit)
   private log: Change[] = [];
+  private held = false;
   // Where each open transaction begins in the log, outermost first
   private marks: number[] = [];
   // Tests only: the data as the outermost transaction found it (see audit)
@@ -350,12 +355,14 @@ class Store {
   }
 
   insert(setName: string, row: Row): void {
+    this.writable(setName);
     this.data[setName].push(row);
     this.record({ op: "insert", set: setName, row });
   }
 
   // Sets changes on row, a row of setName, in place, and returns it
   update(setName: string, row: Row, changes: Row): Row {
+    this.writable(setName);
     const before: Row = {};
     const absent: string[] = [];
     for (const name of Object.keys(changes))
@@ -374,6 +381,7 @@ class Store {
 
   // Removes row itself, for the rows a key doesn't find: links, draft administrative data
   removeRow(setName: string, row: Row): void {
+    this.writable(setName);
     const index = this.data[setName].indexOf(row);
     if (index === -1) return;
     this.data[setName].splice(index, 1);
@@ -386,7 +394,19 @@ class Store {
   //   try { ...; store.commit(mark); } catch (e) { store.rollback(mark); throw e; }
   //
   // Transactions nest: an inner one is a savepoint, which only its own rollback undoes.
-  // Outside a transaction changes aren't logged, as there's nothing to undo them for.
+  // Outside a transaction changes aren't logged, as there's nothing to undo them for (see
+  // transactionsOnly).
+  //
+  // The outermost commit hands its changes out to be saved, and holds them until settle()
+  // says whether they were: kept, or undone. Nothing else may change the store meanwhile.
+
+  // Throws, before anything changes, when setName may not change now
+  private writable(setName: string): void {
+    if (this.held)
+      throw new Error(`${setName} changed while a commit is being saved`);
+    if (!this.marks.length && this.transactionsOnly)
+      throw new Error(`${setName} changed outside a transaction`);
+  }
 
   private record(change: Change): void {
     this.invalidate(change);
@@ -395,6 +415,8 @@ class Store {
 
   // Opens a transaction, and returns its mark for commit or rollback
   begin(): number {
+    if (this.held)
+      throw new Error("transaction begun while a commit is being saved");
     if (!this.marks.length && this.audit)
       this.begun = structuredClone(this.data);
     this.marks.push(this.log.length);
@@ -402,19 +424,30 @@ class Store {
   }
 
   // Ends the transaction, keeping its changes. The outermost returns all the changes it
-  // made, an inner one none: they're the outermost's until it ends.
-  commit(mark: number): Change[] {
+  // made, held until settle(); an inner one undefined: they're the outermost's until it ends.
+  commit(mark: number): Change[] | undefined {
     this.end(mark);
-    if (this.marks.length) return [];
+    if (this.marks.length) return undefined;
+    this.held = true;
+    return this.log;
+  }
+
+  // Ends the outermost commit's hold: saved keeps its changes, otherwise they're undone
+  settle(saved: boolean): void {
+    if (!this.held) throw new Error("settle() without a commit to settle");
     const changes = this.log;
     this.log = [];
-    if (this.audit) {
+    this.held = false;
+    if (!saved) {
+      undo(this.data, changes);
+      changes.forEach((c) => this.invalidate(c));
+      if (this.audit) this.check(this.data);
+    } else if (this.audit) {
       // Undone on a copy: one structuredClone keeps the rows the log and data share
       const copy = structuredClone({ data: this.data, changes });
       undo(copy.data, copy.changes);
       this.check(copy.data);
     }
-    return changes;
   }
 
   // Ends the transaction, undoing its changes

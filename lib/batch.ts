@@ -194,7 +194,7 @@ function createBatchHandler(
         throw e;
       }
       if (failed) store.rollback(mark);
-      else store.commit(mark);
+      else if (store.commit(mark)) store.settle(true);
       return { changeset: true, results };
     }
     return {

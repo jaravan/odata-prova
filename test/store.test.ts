@@ -45,7 +45,8 @@ describe("Store transactions", () => {
     const mark = store.begin();
     store.update(SET, first, { Status: "Changed" });
     store.remove(SET, type, key(second));
-    const changes = store.commit(mark);
+    const changes = store.commit(mark)!;
+    store.settle(true);
 
     assert.equal(first.Status, "Changed");
     assert.ok(!store.rows(SET).includes(second));
@@ -65,7 +66,7 @@ describe("Store transactions", () => {
 
     const mark = store.begin();
     store.update(SET, first, { Status: "Inside" });
-    assert.equal(store.commit(mark).length, 1);
+    assert.equal(store.commit(mark)!.length, 1);
   });
 
   it("an inner rollback undoes only its own changes", () => {
@@ -77,7 +78,8 @@ describe("Store transactions", () => {
     const inner = store.begin();
     store.update(SET, second, { Status: "Inner" });
     store.rollback(inner);
-    const changes = store.commit(outer);
+    const changes = store.commit(outer)!;
+    store.settle(true);
 
     assert.equal(first.Status, "Outer");
     assert.notEqual(second.Status, "Inner");
@@ -92,7 +94,7 @@ describe("Store transactions", () => {
     const outer = store.begin();
     const inner = store.begin();
     store.update(SET, first, { Status: "Inner" });
-    assert.deepEqual(store.commit(inner), []);
+    assert.equal(store.commit(inner), undefined);
     store.rollback(outer);
 
     assert.equal(first.Status, status);
@@ -117,20 +119,22 @@ describe("Store audit", () => {
     store.remove(SET, type, key(second));
     store.insert(SET, { ...second, PurchaseOrderId: "new" });
     store.commit(mark);
+    store.settle(true);
 
     mark = store.begin();
     store.update(SET, first, { Status: "Again" });
     store.rollback(mark);
   });
 
-  it("fails a commit when a row changed without going through the store", () => {
+  it("fails a saved commit when a row changed without going through the store", () => {
     const { store } = load();
     store.audit = true;
     const [first] = store.rows(SET);
 
     const mark = store.begin();
     first.Status = "Behind the store's back";
-    assert.throws(() => store.commit(mark), /store audit/);
+    store.commit(mark);
+    assert.throws(() => store.settle(true), /store audit/);
   });
 
   it("fails a rollback that leaves a change behind", () => {
@@ -201,5 +205,92 @@ describe("Store sets", () => {
     const mark = store.begin();
     assert.throws(() => store.addSet("Late"), /inside a transaction/);
     store.rollback(mark);
+  });
+});
+
+describe("Store commits held until settled", () => {
+  it("settle(true) keeps the changes, settle(false) undoes them", () => {
+    const { store, type, key } = load();
+    store.audit = true;
+    const rows = [...store.rows(SET)];
+    const before = structuredClone(rows);
+    const [first, second] = rows;
+
+    let mark = store.begin();
+    store.update(SET, first, { Status: "Saved" });
+    store.commit(mark);
+    store.settle(true);
+    assert.equal(first.Status, "Saved");
+
+    mark = store.begin();
+    store.update(SET, first, { Status: "Not saved" });
+    store.remove(SET, type, key(second));
+    store.insert(SET, { ...second, PurchaseOrderId: "new" });
+    store.commit(mark);
+    store.settle(false);
+    assert.deepEqual(store.rows(SET), [
+      { ...before[0], Status: "Saved" },
+      ...before.slice(1),
+    ]);
+    store.rows(SET).forEach((row, i) => assert.equal(row, rows[i]));
+  });
+
+  it("settle(false) drops the indexes the undone changes made wrong", () => {
+    const { store } = load();
+    const ITEMS = "PurchaseOrderItemSet";
+    const [item] = store.rows(ITEMS);
+    const id = item.PurchaseOrderId as string;
+    store.lookup(ITEMS, ["PurchaseOrderId"], [id]);
+
+    const mark = store.begin();
+    store.update(ITEMS, item, { PurchaseOrderId: "moved" });
+    store.commit(mark);
+    store.settle(false);
+    assert.ok(store.lookup(ITEMS, ["PurchaseOrderId"], [id]).includes(item));
+    assert.deepEqual(store.lookup(ITEMS, ["PurchaseOrderId"], ["moved"]), []);
+  });
+
+  it("nothing changes the store, nor begins, while a commit is held", () => {
+    const { store } = load();
+    const [first] = store.rows(SET);
+    const mark = store.begin();
+    store.update(SET, first, { Status: "Held" });
+    store.commit(mark);
+
+    assert.throws(() => store.begin(), /while a commit is being saved/);
+    assert.throws(
+      () => store.update(SET, first, { Status: "Sneaked in" }),
+      /while a commit is being saved/,
+    );
+    store.settle(true);
+    assert.equal(first.Status, "Held");
+    store.commit(store.begin());
+    store.settle(true);
+  });
+
+  it("settle() needs a held commit", () => {
+    const { store } = load();
+    assert.throws(() => store.settle(true), /without a commit/);
+    const outer = store.begin();
+    store.begin();
+    store.commit(1);
+    assert.throws(() => store.settle(true), /without a commit/);
+    store.rollback(outer);
+  });
+
+  it("transactionsOnly refuses a change outside a transaction", () => {
+    const { store } = load();
+    const [first] = store.rows(SET);
+    store.transactionsOnly = true;
+    assert.throws(
+      () => store.update(SET, first, { Status: "Outside" }),
+      /outside a transaction/,
+    );
+    assert.notEqual(first.Status, "Outside");
+    const mark = store.begin();
+    store.update(SET, first, { Status: "Inside" });
+    store.commit(mark);
+    store.settle(true);
+    assert.equal(first.Status, "Inside");
   });
 });

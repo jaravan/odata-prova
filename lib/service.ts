@@ -320,7 +320,8 @@ class ODataService {
       return this.protocol.error(500, (e as Error).message);
     }
     if (response.status >= 400) this.store.rollback(mark);
-    else this.store.commit(mark);
+    // The outermost commit holds its changes until they are saved; nothing saves them yet
+    else if (this.store.commit(mark)) this.store.settle(true);
     return response;
   }
 }
