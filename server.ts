@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
 import type { ETagMode, JoinMode } from "./lib/app.ts";
+import { isPostgresUrl } from "./lib/postgres.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -24,9 +25,10 @@ Options (default):
       --page-size <n>        The most rows in a response, with a link to the rest (0: all)
       --etags <mode>         lenient, strict or off (lenient)
       --joins <mode>         guess or strict (guess)
-      --persist <file>       Keep the data in a SQLite file, so writes survive a restart
+      --persist <file|url>   Keep the data in a SQLite file, or a PostgreSQL database
+                             (postgres://...), so writes survive a restart
                              (none: in memory only, reset at every start)
-      --persist-reset        Start over: replace what the file holds with the seed data
+      --persist-reset        Start over: replace what was saved with the seed data
   -h, --help                 Show this help
   -v, --version              Show the version
 
@@ -135,11 +137,16 @@ const PORT = Number(PORT_TEXT);
 if (!/^\d+$/.test(PORT_TEXT) || PORT > 65535)
   badSetting("port", `must be a number from 0 to 65535, got '${PORT_TEXT}'`);
 
-// The SQLite file that keeps the data; none (or an empty value): in memory only. A folder is
-// refused: `--persist ./MySrv` would otherwise take the model folder for the file. Checked
-// before the model is looked for, which that mistake leaves without a folder.
+// The SQLite file, or the postgres:// URL, that keeps the data; none (or an empty value): in
+// memory only. A folder is refused: `--persist ./MySrv` would otherwise take the model folder
+// for the file. Checked before the model is looked for, which that mistake leaves without a
+// folder.
 const PERSIST_TEXT = setting("persist");
-const PERSIST = PERSIST_TEXT ? path.resolve(PERSIST_TEXT) : undefined;
+const PERSIST = !PERSIST_TEXT
+  ? undefined
+  : isPostgresUrl(PERSIST_TEXT)
+    ? PERSIST_TEXT
+    : path.resolve(PERSIST_TEXT);
 if (PERSIST && fs.statSync(PERSIST, { throwIfNoEntry: false })?.isDirectory())
   badSetting(
     "persist",
@@ -153,7 +160,7 @@ if (PERSIST_RESET && !PERSIST)
     "bad --persist-reset",
     Object.assign(
       new Error(
-        "--persist-reset needs --persist <file> (or PERSIST): there's no saved data to reset",
+        "--persist-reset needs --persist <file|url> (or PERSIST): there's no saved data to reset",
       ),
       { code: "ESETTING" },
     ),
@@ -233,6 +240,7 @@ try {
     pageSize: PAGE_SIZE,
     persist: PERSIST,
     persistReset: PERSIST_RESET,
+    serviceName: SERVICE_NAME,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);

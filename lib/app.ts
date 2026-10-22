@@ -9,8 +9,9 @@ import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
 import { Queue } from "./queue.ts";
-import { open, type Persistence } from "./persistence.ts";
+import { open, sharedTurn, type Persistence } from "./persistence.ts";
 import { SqlitePersistence } from "./sqlite.ts";
+import { PostgresPersistence, isPostgresUrl } from "./postgres.ts";
 import type { Protocol, Rules } from "./protocol.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
@@ -104,11 +105,14 @@ export interface AppOptions {
   // The most rows a collection's response holds, with a next link to the rest (server-driven
   // paging, see service.ts); 0, the default: every row
   pageSize?: number;
-  // A SQLite file that keeps the data, so writes survive a restart (created if there's none);
-  // none: in memory only
+  // Where the data is kept, so writes survive a restart: a SQLite file (created if there's
+  // none), or a postgres:// URL (see postgres.ts); none: in memory only
   persist?: string;
-  // With persist: replace what the file holds with the seed data, rather than load it
+  // With persist: replace what was saved with the seed data, rather than load it
   persistReset?: boolean;
+  // Whose rows they are in a database persist names, which other services may use too: the
+  // model folder's name, by default
+  serviceName?: string;
   // What saves each commit, instead of persist's file (see persistence.ts): for the tests
   persistence?: Persistence;
 }
@@ -124,7 +128,12 @@ function createApp({
   pageSize = 0,
   persist,
   persistReset = false,
-  persistence = persist ? new SqlitePersistence(persist) : undefined,
+  serviceName = path.basename(path.resolve(modelDir)),
+  persistence = !persist
+    ? undefined
+    : isPostgresUrl(persist)
+      ? new PostgresPersistence(persist, serviceName)
+      : new SqlitePersistence(persist),
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -169,7 +178,12 @@ function createApp({
   const ready = persistence
     ? open(persistence, store, log, { reset: persistReset })
     : Promise.resolve();
-  const queue = new Queue(ready);
+  // A backend several servers share catches the store up with what the others saved, first
+  const shared = persistence?.since ? persistence : undefined;
+  const queue = new Queue(
+    ready,
+    shared && ((task, writes) => sharedTurn(shared, store, task, writes)),
+  );
   const services: ODataService[] = [];
   for (const [name, servicePath] of [
     ["v2", v2Path],

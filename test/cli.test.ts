@@ -360,10 +360,10 @@ describe("odata-prova --persist", () => {
     assert.equal(reset.status, 1);
     assert.match(
       reset.stderr,
-      /--persist-reset needs --persist <file> \(or PERSIST\)/,
+      /--persist-reset needs --persist <file\|url> \(or PERSIST\)/,
     );
     const help = run(["--help"]);
-    assert.match(help.stdout, /--persist <file>/);
+    assert.match(help.stdout, /--persist <file|url>/);
     assert.match(help.stdout, /--persist-reset/);
   });
 });
