@@ -40,7 +40,7 @@ import type {
 } from "./model.ts";
 import type { Change, Store } from "./store.ts";
 import type { Queue } from "./queue.ts";
-import { netChanges, StaleError, type Persistence } from "./persistence.ts";
+import { netChanges, type Persistence } from "./persistence.ts";
 
 export interface ServiceOptions {
   model: Model;
@@ -367,8 +367,9 @@ class ODataService {
         await this.persistence.commit(netChanges(this.model, changes));
     } catch (e) {
       this.store.settle(false);
-      // Another server saved first: the turn runs again, caught up (see sharedTurn)
-      if (e instanceof StaleError) throw e;
+      // Another server saved first: the turn runs again, caught up (see sharedTurn). Or the
+      // backend says what to answer (busy: 503).
+      if (e instanceof HttpError) throw e;
       console.error(e);
       return this.protocol.error(
         500,

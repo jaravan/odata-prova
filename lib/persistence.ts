@@ -433,6 +433,7 @@ async function sharedTurn<T>(
     try {
       await persistence.lock!();
     } catch (e) {
+      if (e instanceof HttpError) throw e;
       throw new HttpError(
         503,
         `The saved state could not be locked: ${(e as Error).message}`,

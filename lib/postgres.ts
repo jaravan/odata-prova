@@ -13,9 +13,15 @@
 //   one's latest: otherwise it's refused (StaleError), and the request runs again, caught up.
 // - A turn that may write takes the same lock first, and keeps it to its end.
 // No server owns the service, so a connection that's lost is simply opened again.
+//
+// Nothing waits without end: a write waits LOCK_TIMEOUT for the others' at most, then answers
+// 503; a query QUERY_TIMEOUT. A server that vanishes without closing its connection (its node
+// or network gone) holds a turn's lock until PostgreSQL notices, which keepalives make about
+// half a minute, rather than the operating system's two hours.
 
 import type { Pool, PoolClient } from "pg";
 import type { Row } from "./model.ts";
+import { HttpError } from "./query.ts";
 import {
   toJson,
   fromJson,
@@ -38,6 +44,17 @@ const CHUNK = 5000;
 
 // How many of the latest commits the log keeps
 const KEEP = 1000;
+
+// How long a write waits for the service's lock, in ms: other servers' writes hold it a few
+// ms each
+const LOCK_TIMEOUT = 5000;
+
+// How long a query may take, in ms, on the database and waiting for its answer
+const QUERY_TIMEOUT = 30_000;
+
+// How soon a connection that's gone quiet is checked, then how often, and how many checks it
+// fails before it's closed, on both ends (in s): a minute at most
+const KEEPALIVE = { idle: 10, interval: 5, count: 3 };
 
 function chunks<T>(items: T[]): T[][] {
   const out: T[][] = [];
@@ -75,23 +92,48 @@ class PostgresPersistence implements Persistence {
   // The latest commit this server has: loaded, caught up with, or its own
   private version = 0;
   private keep: number;
+  private lockTimeout: number;
 
   // service: whose rows these are, in a database other services may keep theirs in too.
-  // keep: how many of the latest commits the log keeps
-  constructor(url: string, service: string, { keep = KEEP } = {}) {
+  // keep: how many of the latest commits the log keeps; lockTimeout: see LOCK_TIMEOUT
+  constructor(
+    url: string,
+    service: string,
+    { keep = KEEP, lockTimeout = LOCK_TIMEOUT } = {},
+  ) {
     this.url = url;
     this.service = service;
     this.name = `${redact(url)} (as ${service})`;
     this.keep = keep;
+    this.lockTimeout = lockTimeout;
   }
 
   // Connects, creates the tables if there are none, and reads what the service saved
   async load(): Promise<Saved | undefined> {
     const { default: pg } = await import("pg");
-    const pool = new pg.Pool({ connectionString: this.url });
+    const pool = new pg.Pool({
+      connectionString: this.url,
+      connectionTimeoutMillis: QUERY_TIMEOUT,
+      lock_timeout: this.lockTimeout,
+      statement_timeout: QUERY_TIMEOUT,
+      query_timeout: QUERY_TIMEOUT,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: KEEPALIVE.idle * 1000,
+    });
     // A connection lost while idle is replaced at the next query; without a listener, its
     // error would end the process
     pool.on("error", () => {});
+    // PostgreSQL's end of each connection checks the server too: else a turn's lock outlives
+    // a server gone without a word for hours. Sent before the connection's first query.
+    pool.on("connect", (client) => {
+      client
+        .query(
+          `SET tcp_keepalives_idle = ${KEEPALIVE.idle};
+           SET tcp_keepalives_interval = ${KEEPALIVE.interval};
+           SET tcp_keepalives_count = ${KEEPALIVE.count}`,
+        )
+        .catch(() => {});
+    });
     this.pool = pool;
     try {
       await this.transaction(async (client) => {
@@ -188,7 +230,7 @@ class PostgresPersistence implements Persistence {
       );
     } catch (e) {
       client.release(e as Error);
-      throw e;
+      throw this.busy(e);
     }
     this.locked = client;
   }
@@ -298,8 +340,21 @@ class PostgresPersistence implements Persistence {
         [service, next - this.keep],
       );
       return next;
+    }).catch((e: unknown) => {
+      throw this.busy(e);
     });
     this.version = version;
+  }
+
+  // A lock not had within lockTimeout (lock_not_available): the other servers' writes held it,
+  // or one that's gone without a word does, until PostgreSQL notices. A 503, to send again.
+  private busy(e: unknown): unknown {
+    return (e as { code?: string }).code === "55P03"
+      ? new HttpError(
+          503,
+          `The other servers' writes held the saved state for more than ${this.lockTimeout / 1000}s: send the request again`,
+        )
+      : e;
   }
 
   // What the service saved, as one moment saw it, and the latest commit that includes;

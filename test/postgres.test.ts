@@ -7,6 +7,7 @@ import { start, get, send, ORDER, PO_MODEL } from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 import { PostgresPersistence, isPostgresUrl, redact } from "../lib/postgres.ts";
 import { StaleError } from "../lib/persistence.ts";
+import type { HttpError } from "../lib/query.ts";
 
 // What only PostgreSQL has to get right; every kind of write, against it too, is in
 // persistence-flows.test.ts. Needs POSTGRES_URL: yarn test:postgres starts one in Docker.
@@ -97,6 +98,60 @@ describe("PostgresPersistence", { skip }, () => {
     } finally {
       await a.close();
       await b.close();
+    }
+  });
+
+  it("a write that waits longer than lockTimeout for the others' is a 503", async () => {
+    const service = fresh();
+    const a = new PostgresPersistence(url, service);
+    const b = new PostgresPersistence(url, service, { lockTimeout: 200 });
+    await a.load();
+    await b.load();
+    try {
+      await a.lock();
+      const busy = (e: HttpError) => {
+        assert.equal(e.status, 503);
+        assert.match(e.message, /held the saved state for more than 0\.2s/);
+        return true;
+      };
+      const started = Date.now();
+      await assert.rejects(b.lock(), busy);
+      await assert.rejects(
+        b.commit([{ set: "S", written: [], deleted: [] }]),
+        busy,
+      );
+      assert.ok(Date.now() - started < 2000);
+      await a.unlock();
+      // Free again: the same commit goes through
+      await b.commit([{ set: "S", written: [], deleted: [] }]);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it("connections time out, and keep checking the other end is there", async () => {
+    const db = new PostgresPersistence(url, fresh());
+    await db.load();
+    try {
+      // Through the backend's own pool, as its queries go
+      const query = (
+        db as unknown as {
+          query(text: string, values: unknown[]): Promise<{ rows: object[] }>;
+        }
+      ).query.bind(db);
+      const setting = async (name: string) =>
+        (
+          (await query(`SELECT current_setting('${name}') AS v`, []))
+            .rows[0] as { v: string }
+        ).v;
+      assert.equal(await setting("lock_timeout"), "5s");
+      assert.equal(await setting("statement_timeout"), "30s");
+      assert.equal(await setting("tcp_keepalives_idle"), "10");
+      assert.equal(await setting("tcp_keepalives_interval"), "5");
+      assert.equal(await setting("tcp_keepalives_count"), "3");
+    } finally {
+      await db.close();
     }
   });
 
