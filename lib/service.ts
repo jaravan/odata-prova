@@ -40,7 +40,7 @@ import type {
 } from "./model.ts";
 import type { Change, Store } from "./store.ts";
 import type { Queue } from "./queue.ts";
-import { netChanges, type Persistence } from "./persistence.ts";
+import { netChanges, StaleError, type Persistence } from "./persistence.ts";
 
 export interface ServiceOptions {
   model: Model;
@@ -322,8 +322,9 @@ class ODataService {
     body?: unknown,
     headers: RequestHeaders = {},
   ): Promise<ODataResponse> {
-    return this.queue.run(() =>
-      this.execute(method, path, query, body, headers),
+    return this.queue.run(
+      () => this.execute(method, path, query, body, headers),
+      method !== "GET" && method !== "HEAD",
     );
   }
 
@@ -366,6 +367,8 @@ class ODataService {
         await this.persistence.commit(netChanges(this.model, changes));
     } catch (e) {
       this.store.settle(false);
+      // Another server saved first: the turn runs again, caught up (see sharedTurn)
+      if (e instanceof StaleError) throw e;
       console.error(e);
       return this.protocol.error(
         500,
