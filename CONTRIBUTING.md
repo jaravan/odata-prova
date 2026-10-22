@@ -6,7 +6,7 @@ Issues and pull requests are welcome. For a bug, a feature, or a `metadata.xml` 
 
 You need Node.js 22.18 or later with Corepack (`corepack enable`, for the pinned Yarn 4), and Docker to build the image. 22.18 is the first Node 22 release that runs TypeScript files directly, which the tests and `yarn dev` rely on.
 
-Users need less: the published package runs compiled JavaScript, so its `engines` field asks for Node 22.13, the first with `node:sqlite`, which `--persist` uses.
+Users need less. The published package runs compiled JavaScript, so its `engines` field asks only for Node 22.13, the first release with `node:sqlite` (which `--persist` uses).
 
 ```sh
 yarn install
