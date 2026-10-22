@@ -5,6 +5,7 @@
 
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  LostError,
   StaleError,
   type News,
   type Persistence,
@@ -79,6 +80,8 @@ class SharedDatabase {
   log: (SetChanges[] | null)[] = [];
   // Called after a server's since(): another server's commit, saved in between
   between: (() => void) | undefined;
+  // The tables dropped: since() finds nothing to catch up with
+  gone = false;
 
   // A commit as another server would save it, behind every server's back
   save(changes: SetChanges[]): void {
@@ -118,6 +121,13 @@ class SharedPersistence implements Persistence {
 
   async since(): Promise<News> {
     this.sinceCalls++;
+    if (this.db.gone)
+      throw new LostError("the database has no tables any more");
+    // The log shorter than what this server has: restored from a backup
+    if (this.db.log.length < this.version) {
+      this.version = this.db.log.length;
+      return { state: (await this.db.saved.load())! };
+    }
     const news = this.db.log.slice(this.version);
     this.version = this.db.log.length;
     const between = this.db.between;

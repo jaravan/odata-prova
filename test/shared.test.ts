@@ -208,4 +208,48 @@ describe("servers sharing a saved state", () => {
       await b.s.close();
     }
   });
+
+  it("a state restored from a backup, older than a server's, is loaded again", async () => {
+    const db = new SharedDatabase();
+    const [a] = await servers(db, 1);
+    try {
+      const backup = { log: db.log.length, state: db.saved.state() };
+      await send("POST", `${a.s.v4}/PurchaseOrderSet`, {
+        ...ORDER,
+        PurchaseOrderId: "S4",
+      });
+      assert.equal((await get(`${a.s.v4}/${order("S4")}`)).status, 200);
+      // Restored: the log and rows as they were
+      db.log.length = backup.log;
+      await db.saved.replace(
+        Object.entries(backup.state).map(([set, rows]) => ({
+          set,
+          written: rows.map((row, i) => ({ key: String(i), row })),
+          deleted: [],
+        })),
+        db.saved.shape!,
+      );
+      assert.equal((await get(`${a.s.v4}/${order("S4")}`)).status, 404);
+      assert.equal((await get(`${a.s.base}/healthz`)).status, 200);
+    } finally {
+      await a.s.close();
+    }
+  });
+
+  it("a state that's gone is a 503, and /healthz fails, for the server to be restarted", async () => {
+    const db = new SharedDatabase();
+    const [a] = await servers(db, 1);
+    try {
+      assert.equal((await get(`${a.s.base}/healthz`)).status, 200);
+      db.gone = true;
+      const r = await get(`${a.s.v4}/PurchaseOrderSet`);
+      assert.equal(r.status, 503);
+      assert.match(r.body.error.message, /has to restart/);
+      const health = await get(`${a.s.base}/healthz`);
+      assert.equal(health.status, 503);
+      assert.match(health.body, /The saved state is gone/);
+    } finally {
+      await a.s.close();
+    }
+  });
 });

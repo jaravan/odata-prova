@@ -9,7 +9,12 @@ import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
 import { ODataService } from "./service.ts";
 import { Queue } from "./queue.ts";
-import { open, sharedTurn, type Persistence } from "./persistence.ts";
+import {
+  open,
+  sharedTurn,
+  LostError,
+  type Persistence,
+} from "./persistence.ts";
 import { SqlitePersistence } from "./sqlite.ts";
 import { PostgresPersistence, isPostgresUrl } from "./postgres.ts";
 import type { Protocol, Rules } from "./protocol.ts";
@@ -180,9 +185,20 @@ function createApp({
     : Promise.resolve();
   // A backend several servers share catches the store up with what the others saved, first
   const shared = persistence?.since ? persistence : undefined;
+  // Set when the saved state is gone (see LostError): /healthz fails from then on, for a
+  // liveness probe to restart the server
+  let lost: Error | undefined;
   const queue = new Queue(
     ready,
-    shared && ((task, writes) => sharedTurn(shared, store, task, writes)),
+    shared &&
+      (async (task, writes) => {
+        try {
+          return await sharedTurn(shared, store, task, writes);
+        } catch (e) {
+          if (e instanceof LostError) lost = e;
+          throw e;
+        }
+      }),
   );
   const services: ODataService[] = [];
   for (const [name, servicePath] of [
@@ -241,7 +257,9 @@ function createApp({
     next();
   });
 
-  app.get("/healthz", (req, res) => res.status(200).send("ok"));
+  app.get("/healthz", (req, res) =>
+    lost ? res.status(503).send(lost.message) : res.status(200).send("ok"),
+  );
 
   app.get("/", (req, res) =>
     res.json({

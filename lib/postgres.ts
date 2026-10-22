@@ -7,24 +7,30 @@
 //
 // Each server keeps the whole state in memory, and catches up with the others before every
 // request (see sharedTurn in persistence.ts):
-// - The log holds every commit, numbered: each server knows the latest it has, and reads the
-//   ones after it. One further behind than the log goes back loads the whole state again.
+// - The log holds every commit, numbered, with an id: each server knows the latest it has, and
+//   reads the ones after it. When the one it has isn't there any more, as it applied it, the
+//   state isn't the one it has: further behind than the log goes back, replaced (a reset, an
+//   adapted metadata.xml), emptied and seeded anew, restored from a backup. It loads it all
+//   again. With the tables gone, it can't: it has to restart (see LostError).
 // - A commit is saved under the service's lock, and only if no other server saved since this
 //   one's latest: otherwise it's refused (StaleError), and the request runs again, caught up.
 // - A turn that may write takes the same lock first, and keeps it to its end.
 // No server owns the service, so a connection that's lost is simply opened again.
 //
 // Nothing waits without end: a write waits LOCK_TIMEOUT for the others' at most, then answers
-// 503; a query QUERY_TIMEOUT. A server that vanishes without closing its connection (its node
+// 503; a connection CONNECT_TIMEOUT, so a database out of reach is a 503 at once; a query
+// QUERY_TIMEOUT. A server that vanishes without closing its connection (its node
 // or network gone) holds a turn's lock until PostgreSQL notices, which keepalives make about
 // half a minute, rather than the operating system's two hours.
 
+import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { Row } from "./model.ts";
 import { HttpError } from "./query.ts";
 import {
   toJson,
   fromJson,
+  LostError,
   StaleError,
   type News,
   type Persistence,
@@ -49,8 +55,23 @@ const KEEP = 1000;
 // ms each
 const LOCK_TIMEOUT = 5000;
 
+// How long getting a connection may take, in ms
+const CONNECT_TIMEOUT = 5000;
+
 // How long a query may take, in ms, on the database and waiting for its answer
 const QUERY_TIMEOUT = 30_000;
+
+// What a connection that can't be had, or was lost, fails with: the database is out of reach
+const UNREACHABLE = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+]);
 
 // How soon a connection that's gone quiet is checked, then how often, and how many checks it
 // fails before it's closed, on both ends (in s): a minute at most
@@ -89,23 +110,31 @@ class PostgresPersistence implements Persistence {
   // The connection holding the service's lock, from lock() to unlock(): the turn's queries go
   // through it
   private locked: PoolClient | undefined;
-  // The latest commit this server has: loaded, caught up with, or its own
+  // The latest commit this server has: loaded, caught up with, or its own; and its id
   private version = 0;
+  private id = "";
   private keep: number;
   private lockTimeout: number;
+  private connectTimeout: number;
 
   // service: whose rows these are, in a database other services may keep theirs in too.
-  // keep: how many of the latest commits the log keeps; lockTimeout: see LOCK_TIMEOUT
+  // keep: how many of the latest commits the log keeps; lockTimeout and connectTimeout: see
+  // LOCK_TIMEOUT and CONNECT_TIMEOUT
   constructor(
     url: string,
     service: string,
-    { keep = KEEP, lockTimeout = LOCK_TIMEOUT } = {},
+    {
+      keep = KEEP,
+      lockTimeout = LOCK_TIMEOUT,
+      connectTimeout = CONNECT_TIMEOUT,
+    } = {},
   ) {
     this.url = url;
     this.service = service;
     this.name = `${redact(url)} (as ${service})`;
     this.keep = keep;
     this.lockTimeout = lockTimeout;
+    this.connectTimeout = connectTimeout;
   }
 
   // Connects, creates the tables if there are none, and reads what the service saved
@@ -113,7 +142,7 @@ class PostgresPersistence implements Persistence {
     const { default: pg } = await import("pg");
     const pool = new pg.Pool({
       connectionString: this.url,
-      connectionTimeoutMillis: QUERY_TIMEOUT,
+      connectionTimeoutMillis: this.connectTimeout,
       lock_timeout: this.lockTimeout,
       statement_timeout: QUERY_TIMEOUT,
       query_timeout: QUERY_TIMEOUT,
@@ -166,6 +195,7 @@ class PostgresPersistence implements Persistence {
           CREATE TABLE IF NOT EXISTS odata_prova_log (
             service TEXT NOT NULL,
             version BIGINT NOT NULL,
+            id TEXT NOT NULL,
             changes TEXT,
             PRIMARY KEY (service, version)
           );
@@ -188,26 +218,38 @@ class PostgresPersistence implements Persistence {
 
   // What the other servers saved since this one's latest commit
   async since(): Promise<News> {
-    const { rows } = await this.query<{
-      version: string;
-      changes: string | null;
-    }>(
-      `SELECT version, changes FROM odata_prova_log
-       WHERE service = $1 AND version > $2 ORDER BY version`,
-      [this.service, this.version],
-    );
-    // Further behind than the log goes back, or the state was replaced: all of it again
-    if (
-      rows.length &&
-      (Number(rows[0].version) !== this.version + 1 ||
-        rows.some((r) => r.changes === null))
-    ) {
-      const state = await this.snapshot();
-      if (!state) throw new Error(`${this.name} no longer has a saved state`);
-      return { state };
+    try {
+      // This server's latest commit, and the ones after it
+      const { rows } = await this.query<{
+        version: string;
+        id: string;
+        changes: string | null;
+      }>(
+        `SELECT version, id, changes FROM odata_prova_log
+         WHERE service = $1 AND version >= $2 ORDER BY version`,
+        [this.service, this.version],
+      );
+      const mine = this.version ? rows.shift() : undefined;
+      // Not the state this server has any more (see the top), further behind than the log
+      // goes back, or one replaced: all of it again
+      if (
+        (this.version &&
+          (Number(mine?.version) !== this.version || mine?.id !== this.id)) ||
+        (rows.length && Number(rows[0].version) !== this.version + 1) ||
+        rows.some((r) => r.changes === null)
+      ) {
+        const state = await this.snapshot();
+        if (!state) throw new LostError(`${this.name} has none any more`);
+        return { state };
+      }
+      if (rows.length) {
+        this.version = Number(rows.at(-1)!.version);
+        this.id = rows.at(-1)!.id;
+      }
+      return { changes: rows.map((r) => fromJson<SetChanges[]>(r.changes!)) };
+    } catch (e) {
+      throw this.failure(e);
     }
-    if (rows.length) this.version = Number(rows.at(-1)!.version);
-    return { changes: rows.map((r) => fromJson<SetChanges[]>(r.changes!)) };
   }
 
   // One database transaction: a commit's deletes, then its writes
@@ -222,7 +264,9 @@ class PostgresPersistence implements Persistence {
   }
 
   async lock(): Promise<void> {
-    const client = await this.connect();
+    const client = await this.connect().catch((e: unknown) => {
+      throw this.failure(e);
+    });
     try {
       await client.query(
         "SELECT pg_advisory_lock(hashtext($1), hashtext($2))",
@@ -230,7 +274,7 @@ class PostgresPersistence implements Persistence {
       );
     } catch (e) {
       client.release(e as Error);
-      throw this.busy(e);
+      throw this.failure(e);
     }
     this.locked = client;
   }
@@ -265,18 +309,27 @@ class PostgresPersistence implements Persistence {
 
   private async save(changes: SetChanges[], shape?: Shape): Promise<void> {
     const service = this.service;
+    const id = randomUUID();
     const version = await this.transaction(async (client) => {
       // Re-entrant: a turn that may write holds it already
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
         [LOCK, service],
       );
-      const { rows } = await client.query<{ version: string }>(
-        `SELECT coalesce(max(version), 0) AS version FROM odata_prova_log
-         WHERE service = $1`,
+      // The latest commit has to be this server's: else another saved since, or the state
+      // isn't the one this server has any more (see since)
+      const { rows } = await client.query<{ version: string; id: string }>(
+        `SELECT version, id FROM odata_prova_log WHERE service = $1
+         ORDER BY version DESC LIMIT 1`,
         [service],
       );
-      if (Number(rows[0].version) !== this.version) throw new StaleError();
+      const [latest] = rows;
+      if (
+        latest
+          ? Number(latest.version) !== this.version || latest.id !== this.id
+          : this.version !== 0
+      )
+        throw new StaleError();
       if (shape) {
         await client.query("DELETE FROM odata_prova_rows WHERE service = $1", [
           service,
@@ -332,8 +385,8 @@ class PostgresPersistence implements Persistence {
       // A replaced state has no changes to catch up with: the others load it all (see since)
       const next = this.version + 1;
       await client.query(
-        "INSERT INTO odata_prova_log (service, version, changes) VALUES ($1, $2, $3)",
-        [service, next, shape ? null : toJson(changes)],
+        "INSERT INTO odata_prova_log (service, version, id, changes) VALUES ($1, $2, $3, $4)",
+        [service, next, id, shape ? null : toJson(changes)],
       );
       await client.query(
         "DELETE FROM odata_prova_log WHERE service = $1 AND version <= $2",
@@ -341,20 +394,41 @@ class PostgresPersistence implements Persistence {
       );
       return next;
     }).catch((e: unknown) => {
-      throw this.busy(e);
+      throw this.failure(e);
     });
     this.version = version;
+    this.id = id;
   }
 
-  // A lock not had within lockTimeout (lock_not_available): the other servers' writes held it,
-  // or one that's gone without a word does, until PostgreSQL notices. A 503, to send again.
-  private busy(e: unknown): unknown {
-    return (e as { code?: string }).code === "55P03"
-      ? new HttpError(
-          503,
-          `The other servers' writes held the saved state for more than ${this.lockTimeout / 1000}s: send the request again`,
-        )
-      : e;
+  // What a failed query answers, other than a 500:
+  // - a lock not had within lockTimeout (lock_not_available): the other servers' writes held
+  //   it, or one gone without a word does, until PostgreSQL notices: a 503, to send again
+  // - a connection that can't be had, or was lost: a 503 too, until the database is back
+  // - tables that are gone (undefined_table): the state is lost (see LostError)
+  private failure(e: unknown): unknown {
+    const { code = "", message = "" } = e as {
+      code?: string;
+      message?: string;
+    };
+    if (code === "55P03")
+      return new HttpError(
+        503,
+        `The other servers' writes held the saved state for more than ${this.lockTimeout / 1000}s: send the request again`,
+      );
+    if (code === "42P01")
+      return new LostError(`${this.name} has no tables any more`);
+    if (
+      /^(08|57P0)/.test(code) ||
+      UNREACHABLE.has(code) ||
+      /connection terminated|timeout exceeded when trying to connect|query read timeout/i.test(
+        message,
+      )
+    )
+      return new HttpError(
+        503,
+        `The database can't be reached: ${message || code}`,
+      );
+    return e;
   }
 
   // What the service saved, as one moment saw it, and the latest commit that includes;
@@ -368,12 +442,13 @@ class PostgresPersistence implements Persistence {
           [this.service],
         );
         const values = new Map(meta.rows.map((r) => [r.name, r.value]));
-        const { rows } = await client.query<{ version: string }>(
-          `SELECT coalesce(max(version), 0) AS version FROM odata_prova_log
-           WHERE service = $1`,
+        const { rows } = await client.query<{ version: string; id: string }>(
+          `SELECT version, id FROM odata_prova_log WHERE service = $1
+           ORDER BY version DESC LIMIT 1`,
           [this.service],
         );
-        this.version = Number(rows[0].version);
+        this.version = rows[0] ? Number(rows[0].version) : 0;
+        this.id = rows[0]?.id ?? "";
         const format = values.get("format");
         // No state saved yet: the first commit saves one
         if (format === undefined) return undefined;

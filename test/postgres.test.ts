@@ -1,12 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import net from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { start, get, send, ORDER, PO_MODEL } from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 import { PostgresPersistence, isPostgresUrl, redact } from "../lib/postgres.ts";
-import { StaleError } from "../lib/persistence.ts";
+import { LostError, StaleError } from "../lib/persistence.ts";
 import type { HttpError } from "../lib/query.ts";
 
 // What only PostgreSQL has to get right; every kind of write, against it too, is in
@@ -19,6 +20,73 @@ const DRAFT_MODEL = path.join(import.meta.dirname, "fixtures", "DraftSrv");
 
 // A service name no other test uses
 const fresh = () => `test-${randomUUID()}`;
+
+// A statement on the database, behind the backends' backs
+async function sql(text: string, values: unknown[] = []) {
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: POSTGRES_URL });
+  await client.connect();
+  try {
+    if (values.length)
+      for (const statement of text.split("; "))
+        await client.query(statement, values);
+    else await client.query(text);
+  } finally {
+    await client.end();
+  }
+}
+
+// A TCP proxy to the database, to take it out of reach: stop() refuses connections, as a
+// stopped database does; with blackhole, connections are accepted and never answered
+async function tcpProxy(target: URL) {
+  const sockets = new Set<net.Socket>();
+  let server: net.Server | undefined;
+  const proxy = {
+    port: 0,
+    blackhole: false,
+    url: (u: string) => {
+      const out = new URL(u);
+      out.hostname = "127.0.0.1";
+      out.port = String(proxy.port);
+      return out.toString();
+    },
+    async start() {
+      server = net.createServer((client) => {
+        sockets.add(client);
+        client.on("close", () => sockets.delete(client));
+        client.on("error", () => {});
+        if (proxy.blackhole) return;
+        const upstream = net.connect(
+          Number(target.port || 5432),
+          target.hostname,
+        );
+        sockets.add(upstream);
+        upstream.on("close", () => sockets.delete(upstream));
+        upstream.on("error", () => client.destroy());
+        client.on("error", () => upstream.destroy());
+        client.pipe(upstream).pipe(client);
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(proxy.port, "127.0.0.1", resolve),
+      );
+      proxy.port = (server.address() as net.AddressInfo).port;
+    },
+    // Ends every connection through it
+    async drop() {
+      for (const s of sockets) s.destroy();
+      await sleep(50);
+    },
+    async stop() {
+      await proxy.drop();
+      await new Promise<void>((resolve) =>
+        server ? server.close(() => resolve()) : resolve(),
+      );
+      server = undefined;
+    },
+  };
+  await proxy.start();
+  return proxy;
+}
 
 describe("postgres URLs", () => {
   it("tell a database from a file", () => {
@@ -152,6 +220,98 @@ describe("PostgresPersistence", { skip }, () => {
       assert.equal(await setting("tcp_keepalives_count"), "3");
     } finally {
       await db.close();
+    }
+  });
+
+  it("a state emptied and seeded anew, up to the same commit, is loaded again", async () => {
+    const service = fresh();
+    const write = (id: number) => [
+      { set: "S", written: [{ key: `[${id}]`, row: { id } }], deleted: [] },
+    ];
+    const a = new PostgresPersistence(url, service);
+    await a.load();
+    await a.replace(write(1), { sets: {} });
+    await a.commit(write(2));
+    // Emptied behind a's back, and a new history saved: as many commits, other ones
+    await sql(
+      "DELETE FROM odata_prova_log WHERE service = $1; DELETE FROM odata_prova_rows WHERE service = $1; DELETE FROM odata_prova_sets WHERE service = $1; DELETE FROM odata_prova_meta WHERE service = $1",
+      [service],
+    );
+    const b = new PostgresPersistence(url, service);
+    await b.load();
+    await b.replace(write(7), { sets: {} });
+    await b.commit(write(8));
+    try {
+      const news = await a.since();
+      assert.ok("state" in news, JSON.stringify(news));
+      assert.deepEqual(news.state.state.S, [{ id: 7 }, { id: 8 }]);
+      // Caught up: its own commit goes through
+      await a.commit(write(9));
+      assert.deepEqual(await b.since(), { changes: [write(9)] });
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it("tables that are gone: the state is lost (LostError), for the server to restart", async () => {
+    const schema = `t_${randomUUID().replaceAll("-", "")}`;
+    await sql(`CREATE SCHEMA ${schema}`);
+    const inSchema = `${url}${url.includes("?") ? "&" : "?"}options=${encodeURIComponent(`-c search_path=${schema}`)}`;
+    const db = new PostgresPersistence(inSchema, fresh());
+    await db.load();
+    try {
+      await db.commit([{ set: "S", written: [], deleted: [] }]);
+      await sql(`DROP SCHEMA ${schema} CASCADE`);
+      await assert.rejects(db.since(), LostError);
+      await assert.rejects(
+        db.commit([{ set: "S", written: [], deleted: [] }]),
+        LostError,
+      );
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("a database out of reach is a 503 at once, and back when it is", async () => {
+    const proxy = await tcpProxy(new URL(url));
+    const db = new PostgresPersistence(proxy.url(url), fresh());
+    await db.load();
+    try {
+      const unreachable = (e: HttpError) => {
+        assert.equal(e.status, 503);
+        assert.match(e.message, /can't be reached/);
+        return true;
+      };
+      // Refused, as a stopped database is
+      await proxy.stop();
+      let started = Date.now();
+      await assert.rejects(db.since(), unreachable);
+      await assert.rejects(
+        db.commit([{ set: "S", written: [], deleted: [] }]),
+        unreachable,
+      );
+      await assert.rejects(db.lock(), unreachable);
+      assert.ok(Date.now() - started < 2000, `${Date.now() - started} ms`);
+      // Back
+      await proxy.start();
+      await db.commit([{ set: "S", written: [], deleted: [] }]);
+      // Accepted, and never answered: a Service with no pod behind it
+      proxy.blackhole = true;
+      await proxy.drop();
+      started = Date.now();
+      const slow = new PostgresPersistence(proxy.url(url), fresh(), {
+        connectTimeout: 300,
+      });
+      await assert.rejects(
+        slow.load(),
+        /connection timeout|timeout exceeded when trying to connect/,
+      );
+      await slow.close();
+      assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+    } finally {
+      await db.close();
+      await proxy.stop();
     }
   });
 

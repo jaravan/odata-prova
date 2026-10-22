@@ -60,6 +60,18 @@ class StaleError extends HttpError {
   }
 }
 
+// The saved state is gone, and with it what to catch up with: the database's tables were
+// dropped, or its data deleted. This server has to restart, to load what's saved then, or seed
+// it anew: /healthz says so meanwhile (see app.ts), for a liveness probe to restart it.
+class LostError extends HttpError {
+  constructor(detail: string) {
+    super(
+      503,
+      `The saved state is gone (${detail}): this server has to restart, to load it or seed it anew`,
+    );
+  }
+}
+
 interface Persistence {
   // Where it keeps the state, for the startup log: a file's path
   name?: string;
@@ -396,6 +408,7 @@ async function catchUp(persistence: Persistence, store: Store): Promise<void> {
   try {
     news = await persistence.since!();
   } catch (e) {
+    if (e instanceof HttpError) throw e;
     throw new HttpError(
       503,
       `The saved state could not be read: ${(e as Error).message}`,
@@ -463,6 +476,7 @@ export {
   shapeOf,
   open,
   sharedTurn,
+  LostError,
   StaleError,
   toJson,
   fromJson,
