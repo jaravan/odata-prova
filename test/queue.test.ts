@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { start, get, send, batch, batchResponses, ORDER } from "./helpers.ts";
 import { Queue } from "../lib/queue.ts";
+import type { HttpError } from "../lib/query.ts";
 import type { Persistence, SetChanges } from "../lib/persistence.ts";
 
 // A persistence that keeps what it's given: each commit takes delay ms, and throws while
@@ -89,6 +90,30 @@ describe("Queue", () => {
       ["fulfilled", "rejected", "fulfilled"],
     );
     assert.equal((results[2] as PromiseFulfilledResult<string>).value, "c");
+  });
+
+  it("a task that waited longer than maxWait for its turn is a 503, not run", async () => {
+    const queue = new Queue(undefined, undefined, { maxWait: 50 });
+    const ran: string[] = [];
+    const slow = queue.run(async () => {
+      await sleep(100);
+      ran.push("slow");
+    });
+    const late = queue.run(() => ran.push("late"));
+    await slow;
+    await assert.rejects(late, (e: HttpError) => {
+      assert.equal(e.status, 503);
+      assert.match(e.message, /waited \d+s for its turn, and wasn't run/);
+      return true;
+    });
+    assert.deepEqual(ran, ["slow"]);
+    // The next one, sent now, runs
+    assert.equal(await queue.run(() => "next"), "next");
+  });
+
+  it("waiting for the queue to be ready doesn't count", async () => {
+    const queue = new Queue(sleep(100), undefined, { maxWait: 50 });
+    assert.equal(await queue.run(() => "ran"), "ran");
   });
 });
 

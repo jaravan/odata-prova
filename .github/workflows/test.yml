@@ -15,6 +15,21 @@ jobs:
       matrix:
         # engines.node in package.json says >=22.13: the lowest line and the current LTS
         node-version: [22, 24]
+    # For --persist postgres://: with POSTGRES_URL set, the persistence tests run against it too
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      POSTGRES_URL: postgres://postgres:test@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 

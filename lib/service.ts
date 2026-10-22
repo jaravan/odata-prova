@@ -322,8 +322,9 @@ class ODataService {
     body?: unknown,
     headers: RequestHeaders = {},
   ): Promise<ODataResponse> {
-    return this.queue.run(() =>
-      this.execute(method, path, query, body, headers),
+    return this.queue.run(
+      () => this.execute(method, path, query, body, headers),
+      method !== "GET" && method !== "HEAD",
     );
   }
 
@@ -366,6 +367,9 @@ class ODataService {
         await this.persistence.commit(netChanges(this.model, changes));
     } catch (e) {
       this.store.settle(false);
+      // Another server saved first: the turn runs again, caught up (see sharedTurn). Or the
+      // backend says what to answer (busy: 503).
+      if (e instanceof HttpError) throw e;
       console.error(e);
       return this.protocol.error(
         500,

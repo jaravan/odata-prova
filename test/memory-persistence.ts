@@ -4,11 +4,14 @@
 // makes every call async for real, for requests to pile up in the queue.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import type {
-  Persistence,
-  Saved,
-  SetChanges,
-  Shape,
+import {
+  LostError,
+  StaleError,
+  type News,
+  type Persistence,
+  type Saved,
+  type SetChanges,
+  type Shape,
 } from "../lib/persistence.ts";
 import type { Row } from "../lib/model.ts";
 
@@ -69,4 +72,86 @@ class MemoryPersistence implements Persistence {
   }
 }
 
-export { MemoryPersistence };
+// A database several servers share, in memory, as PostgreSQL is (see postgres.ts): the rows,
+// and the log of every commit, null for a state replaced. Each server's SharedPersistence
+// knows the latest commit it has.
+class SharedDatabase {
+  saved = new MemoryPersistence();
+  log: (SetChanges[] | null)[] = [];
+  // Called after a server's since(): another server's commit, saved in between
+  between: (() => void) | undefined;
+  // The tables dropped: since() finds nothing to catch up with
+  gone = false;
+
+  // A commit as another server would save it, behind every server's back
+  save(changes: SetChanges[]): void {
+    void this.saved.commit(changes);
+    this.log.push(changes);
+  }
+}
+
+class SharedPersistence implements Persistence {
+  db: SharedDatabase;
+  version = 0;
+  sinceCalls = 0;
+
+  constructor(db: SharedDatabase) {
+    this.db = db;
+  }
+
+  async load(): Promise<Saved | undefined> {
+    this.version = this.db.log.length;
+    return this.db.saved.load();
+  }
+
+  async commit(changes: SetChanges[]): Promise<void> {
+    // Checked and logged at once, as under PostgreSQL's lock
+    if (this.db.log.length !== this.version) throw new StaleError();
+    this.db.log.push(changes);
+    this.version++;
+    await this.db.saved.commit(changes);
+  }
+
+  async replace(changes: SetChanges[], shape: Shape): Promise<void> {
+    if (this.db.log.length !== this.version) throw new StaleError();
+    this.db.log.push(null);
+    this.version++;
+    await this.db.saved.replace(changes, shape);
+  }
+
+  async since(): Promise<News> {
+    this.sinceCalls++;
+    if (this.db.gone)
+      throw new LostError("the database has no tables any more");
+    // The log shorter than what this server has: restored from a backup
+    if (this.db.log.length < this.version) {
+      this.version = this.db.log.length;
+      return { state: (await this.db.saved.load())! };
+    }
+    const news = this.db.log.slice(this.version);
+    this.version = this.db.log.length;
+    const between = this.db.between;
+    this.db.between = undefined;
+    between?.();
+    if (news.includes(null)) return { state: (await this.db.saved.load())! };
+    return { changes: news as SetChanges[][] };
+  }
+
+  lock(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  unlock(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  state(): Record<string, Row[]> {
+    return this.db.saved.state();
+  }
+}
+
+export { MemoryPersistence, SharedDatabase, SharedPersistence };

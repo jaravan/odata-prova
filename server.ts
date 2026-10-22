@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
 import type { ETagMode, JoinMode } from "./lib/app.ts";
+import { isPostgresUrl } from "./lib/postgres.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -24,9 +25,10 @@ Options (default):
       --page-size <n>        The most rows in a response, with a link to the rest (0: all)
       --etags <mode>         lenient, strict or off (lenient)
       --joins <mode>         guess or strict (guess)
-      --persist <file>       Keep the data in a SQLite file, so writes survive a restart
+      --persist <file|url>   Keep the data in a SQLite file, or a PostgreSQL database
+                             (postgres://...), so writes survive a restart
                              (none: in memory only, reset at every start)
-      --persist-reset        Start over: replace what the file holds with the seed data
+      --persist-reset        Start over: replace what was saved with the seed data
   -h, --help                 Show this help
   -v, --version              Show the version
 
@@ -135,11 +137,16 @@ const PORT = Number(PORT_TEXT);
 if (!/^\d+$/.test(PORT_TEXT) || PORT > 65535)
   badSetting("port", `must be a number from 0 to 65535, got '${PORT_TEXT}'`);
 
-// The SQLite file that keeps the data; none (or an empty value): in memory only. A folder is
-// refused: `--persist ./MySrv` would otherwise take the model folder for the file. Checked
-// before the model is looked for, which that mistake leaves without a folder.
+// The SQLite file, or the postgres:// URL, that keeps the data; none (or an empty value): in
+// memory only. A folder is refused: `--persist ./MySrv` would otherwise take the model folder
+// for the file. Checked before the model is looked for, which that mistake leaves without a
+// folder.
 const PERSIST_TEXT = setting("persist");
-const PERSIST = PERSIST_TEXT ? path.resolve(PERSIST_TEXT) : undefined;
+const PERSIST = !PERSIST_TEXT
+  ? undefined
+  : isPostgresUrl(PERSIST_TEXT)
+    ? PERSIST_TEXT
+    : path.resolve(PERSIST_TEXT);
 if (PERSIST && fs.statSync(PERSIST, { throwIfNoEntry: false })?.isDirectory())
   badSetting(
     "persist",
@@ -153,7 +160,7 @@ if (PERSIST_RESET && !PERSIST)
     "bad --persist-reset",
     Object.assign(
       new Error(
-        "--persist-reset needs --persist <file> (or PERSIST): there's no saved data to reset",
+        "--persist-reset needs --persist <file|url> (or PERSIST): there's no saved data to reset",
       ),
       { code: "ESETTING" },
     ),
@@ -222,6 +229,22 @@ const JOINS = choice<JoinMode>("joins", JOIN_MODES, "guess");
 let app: Express;
 let ready: Promise<void>;
 let close: () => Promise<void>;
+// In Kubernetes, a pod leaves its Service's endpoints while it's told to stop, not before: for
+// a few seconds more, requests still come to it. It keeps answering them, asking each client to
+// reconnect (Connection: close), so that the next goes to another pod. Elsewhere it stops at
+// once. SHUTDOWN_DELAY (ms) sets it.
+const DELAY_TEXT =
+  process.env.SHUTDOWN_DELAY ??
+  (process.env.KUBERNETES_SERVICE_HOST ? "5000" : "0");
+const SHUTDOWN_DELAY = Number(DELAY_TEXT);
+if (!/^\d+$/.test(DELAY_TEXT))
+  exitWithError(
+    "bad SHUTDOWN_DELAY",
+    Object.assign(
+      new Error(`SHUTDOWN_DELAY must be a number of ms, got '${DELAY_TEXT}'`),
+      { code: "ESETTING" },
+    ),
+  );
 try {
   ({ app, ready, close } = createApp({
     modelDir: MODEL_DIR,
@@ -233,6 +256,7 @@ try {
     pageSize: PAGE_SIZE,
     persist: PERSIST,
     persistReset: PERSIST_RESET,
+    serviceName: SERVICE_NAME,
   }));
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);
@@ -260,23 +284,34 @@ const server = app.listen(PORT, (err) => {
   if (V4_PATH) console.log(`  V4: http://localhost:${port}${V4_PATH}/`);
 });
 
+// See SHUTDOWN_DELAY
+let draining = false;
+server.prependListener("request", (_req, res) => {
+  if (draining) res.setHeader("Connection", "close");
+});
+
 // As PID 1 in a container, Node ignores SIGTERM unless handled, so Docker and Kubernetes
-// would wait out their grace period before killing it. Stop taking connections, let open
-// requests finish, then exit; give up after 10 seconds.
+// would wait out their grace period before killing it. After SHUTDOWN_DELAY, stop taking
+// connections, let open requests finish, then exit; give up 10 seconds later.
 function shutdown(signal: string): void {
-  console.log(`${signal} received, shutting down`);
-  // Once the open requests are answered, and what they changed is saved
-  server.close(() => {
-    void close().then(
-      () => process.exit(0),
-      (err: unknown) => {
-        console.error("odata-prova: cannot close persistence", err);
-        process.exit(1);
-      },
-    );
-  });
-  server.closeIdleConnections();
-  setTimeout(() => process.exit(1), 10000).unref();
+  console.log(
+    `${signal} received, shutting down${SHUTDOWN_DELAY ? ` in ${SHUTDOWN_DELAY / 1000}s` : ""}`,
+  );
+  draining = true;
+  setTimeout(() => {
+    // Once the open requests are answered, and what they changed is saved
+    server.close(() => {
+      void close().then(
+        () => process.exit(0),
+        (err: unknown) => {
+          console.error("odata-prova: cannot close persistence", err);
+          process.exit(1);
+        },
+      );
+    });
+    server.closeIdleConnections();
+  }, SHUTDOWN_DELAY);
+  setTimeout(() => process.exit(1), SHUTDOWN_DELAY + 10000).unref();
 }
 process.once("SIGTERM", () => shutdown("SIGTERM"));
 process.once("SIGINT", () => shutdown("SIGINT"));

@@ -1,8 +1,18 @@
 // What keeps the store's state across restarts: loaded once at startup, and fed each
 // outermost commit's changes, net per row, to save in one transaction of its own. Queries
 // never go through it: the store in memory answers them all.
+//
+// A backend several servers share (PostgreSQL, see postgres.ts) also hands out what the
+// others saved, for each server to catch up with before every request (see sharedTurn): each
+// keeps the whole state in memory, as one server does, and they all answer alike.
 
-import type { EntitySet, Model, Property, Row } from "./model.ts";
+import type {
+  EntitySet,
+  Model,
+  Property,
+  PropertyValue,
+  Row,
+} from "./model.ts";
 import type { Change, Store } from "./store.ts";
 import { ADMIN } from "./draft.ts";
 import { HttpError } from "./query.ts";
@@ -34,6 +44,34 @@ interface Saved {
   shape?: Shape;
 }
 
+// What other servers saved since this one last loaded, caught up or committed: their commits,
+// in order; or the whole state, when the backend no longer has all of those, or it was
+// replaced (a reset, a metadata.xml changed)
+type News = { changes: SetChanges[][] } | { state: Saved };
+
+// A commit refused because another server saved first: this one's state is behind. The
+// request runs again, caught up (see sharedTurn); one that can't is a 503 to send again.
+class StaleError extends HttpError {
+  constructor() {
+    super(
+      503,
+      "Another server saved changes at the same time: send the request again",
+    );
+  }
+}
+
+// The saved state is gone, and with it what to catch up with: the database's tables were
+// dropped, or its data deleted. This server has to restart, to load what's saved then, or seed
+// it anew: /healthz says so meanwhile (see app.ts), for a liveness probe to restart it.
+class LostError extends HttpError {
+  constructor(detail: string) {
+    super(
+      503,
+      `The saved state is gone (${detail}): this server has to restart, to load it or seed it anew`,
+    );
+  }
+}
+
 interface Persistence {
   // Where it keeps the state, for the startup log: a file's path
   name?: string;
@@ -46,6 +84,13 @@ interface Persistence {
   // one adapted to a changed metadata, a reset
   replace(changes: SetChanges[], shape: Shape): Promise<void>;
   close(): Promise<void>;
+  // A backend several servers share has these three too. commit and replace throw StaleError
+  // when another server saved since this one's last load, since or commit.
+  // What the other servers saved since
+  since?(): Promise<News>;
+  // Holds off the other servers' commits until unlock(): for a turn that may write
+  lock?(): Promise<void>;
+  unlock?(): Promise<void>;
 }
 
 // The columns that tell a set's rows apart: an entity's keys, with a contained entity's
@@ -62,6 +107,33 @@ function identityColumns(model: Model, setName: string): string[] {
   if (setName === ADMIN) return ["DraftUUID"];
   throw new Error(`no identity for the rows of ${setName}`);
 }
+
+// A row as a backend saves it, and back. JSON can't hold INF, -INF and NaN, which Edm.Double
+// and Edm.Single can be. They're written as {"$float": "INF"}: no property or field is called
+// $float, as OData names start with a letter or an underscore.
+const FLOATS: Record<string, number> = {
+  INF: Infinity,
+  "-INF": -Infinity,
+  NaN: NaN,
+};
+const toJson = (row: unknown) =>
+  JSON.stringify(row, (_key, value: unknown) =>
+    typeof value === "number" && !Number.isFinite(value)
+      ? {
+          $float: Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF",
+        }
+      : value,
+  );
+const fromJson = <T = Row>(text: string) =>
+  JSON.parse(text, (_key, value: unknown) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const keys = Object.keys(value);
+      const tag = (value as { $float?: unknown }).$float;
+      if (keys.length === 1 && typeof tag === "string" && tag in FLOATS)
+        return FLOATS[tag];
+    }
+    return value;
+  }) as T;
 
 function identityOf(columns: string[], row: Row): string {
   return JSON.stringify(columns.map((c) => row[c]));
@@ -284,6 +356,13 @@ async function open(
     try {
       await persistence.replace(everything(model, store.sets()), shape);
     } catch (e) {
+      // Servers starting at once on nothing saved: the one that saved first seeded it for all
+      if (e instanceof StaleError && !saved && !reset) {
+        await catchUp(persistence, store);
+        log(`Saved state: loaded from${where}, saved first by another server`);
+        store.transactionsOnly = true;
+        return;
+      }
       throw new HttpError(
         503,
         `The ${saved ? "adapted" : reset ? "reset" : "first"} state could not be saved: ${(e as Error).message}`,
@@ -293,5 +372,112 @@ async function open(
   store.transactionsOnly = true;
 }
 
-export type { Persistence, Saved, SetChanges, Shape };
-export { netChanges, everything, shapeOf, open };
+// Applies another server's commit to the store: its rows written and deleted, by identity. A
+// new row goes last, as it did on the server that made it. Committed and settled at once:
+// it's saved already.
+function apply(store: Store, changes: SetChanges[]): void {
+  const sets = store.sets();
+  const mark = store.begin();
+  for (const { set, written, deleted } of changes) {
+    // As load() does: a set the model doesn't have isn't the store's
+    if (!(set in sets)) continue;
+    const columns = identityColumns(store.model, set);
+    const find = (key: string) =>
+      store.lookup(set, columns, JSON.parse(key) as PropertyValue[])[0];
+    for (const key of deleted) {
+      const row = find(key);
+      if (row) store.removeRow(set, row);
+    }
+    for (const { key, row } of written) {
+      const mine = find(key);
+      if (!mine) {
+        store.insert(set, row);
+        continue;
+      }
+      store.update(set, mine, row);
+    }
+  }
+  store.commit(mark);
+  store.settle(true);
+}
+
+// Brings the store up to what the other servers saved. Saved by a server with another
+// metadata.xml, the state can't be this one's: it has to restart, and adapt to it.
+async function catchUp(persistence: Persistence, store: Store): Promise<void> {
+  let news: News;
+  try {
+    news = await persistence.since!();
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(
+      503,
+      `The saved state could not be read: ${(e as Error).message}`,
+    );
+  }
+  if ("changes" in news) {
+    for (const changes of news.changes) apply(store, changes);
+    return;
+  }
+  const { state, shape } = news.state;
+  if (shape && !sameShape(shape, shapeOf(store.model)))
+    throw new HttpError(
+      503,
+      "The saved state was replaced by a server with another metadata.xml: restart this one, to adapt to it",
+    );
+  store.load(state);
+}
+
+// How many times a turn that wasn't expected to write runs again, when it did, and another
+// server saved first each time
+const RETRIES = 3;
+
+// One turn of the queue on a backend several servers share: the store caught up with what
+// they saved, then task. A turn that may write holds their commits off until it ends, so its
+// own can't be refused, and a $batch's changesets are saved as they run. One that isn't
+// expected to write (a GET) doesn't hold them off: if it writes after all (a function with a
+// rule), and another server saved first, it runs again, caught up.
+async function sharedTurn<T>(
+  persistence: Persistence,
+  store: Store,
+  task: () => T | Promise<T>,
+  writes: boolean,
+): Promise<T> {
+  if (writes) {
+    try {
+      await persistence.lock!();
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(
+        503,
+        `The saved state could not be locked: ${(e as Error).message}`,
+      );
+    }
+    try {
+      await catchUp(persistence, store);
+      return await task();
+    } finally {
+      await persistence.unlock!();
+    }
+  }
+  for (let attempt = 0; ; attempt++) {
+    await catchUp(persistence, store);
+    try {
+      return await task();
+    } catch (e) {
+      if (!(e instanceof StaleError) || attempt === RETRIES) throw e;
+    }
+  }
+}
+
+export type { News, Persistence, Saved, SetChanges, Shape };
+export {
+  netChanges,
+  everything,
+  shapeOf,
+  open,
+  sharedTurn,
+  LostError,
+  StaleError,
+  toJson,
+  fromJson,
+};

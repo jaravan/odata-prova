@@ -77,7 +77,7 @@ A data file is named after its entity set (or its entity type, or `<namespace>-<
 
 ## Your app
 
-Point your app's backend at the server. In a Fiori tools app, that's the `fiori-tools-proxy` backend in `ui5.yaml`, where `pathReplace` maps the path your app requests to the server's, so the app itself doesn't change:
+Point your app's backend at the server. In a Fiori tools app, that's the `fiori-tools-proxy` backend in `ui5.yaml`. Its `pathReplace` maps the path your app requests to the server's, so the app itself doesn't change:
 
 ```yaml
 backend:
@@ -111,13 +111,13 @@ npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 | `--etags`         | `ETAGS`         | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                                                  |
 | `--joins`         | `JOINS`         | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to give it a key of its own instead, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
 | `--page-size`     | `PAGE_SIZE`     | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
-| `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                                                                                                     |
-| `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what the file holds (`PERSIST_RESET=1`)                                                                                                                                           |
+| `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file, or a PostgreSQL database (`postgres://...`, which replicas can share), that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                             |
+| `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what was saved (`PERSIST_RESET=1`)                                                                                                                                                |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
 > [!IMPORTANT]
-> Run one server per service. Each server keeps its own copy of the data in memory, so with several replicas, a write lands on one and a read may come from another.
+> Run one server per service, unless the data is in PostgreSQL. Each server keeps its own copy of the data in memory, so with several replicas, a write lands on one and a read may come from another. With `--persist postgres://...`, replicas catch up with each other: see [In PostgreSQL, with replicas](#in-postgresql-with-replicas).
 
 ## Keeping the data
 
@@ -144,6 +144,27 @@ docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
 ```
 
 A folder of your own works too, if the image's `node` user (uid 1000) can write to it. Or run the container as yourself, with `--user "$(id -u)"`.
+
+### In PostgreSQL, with replicas
+
+To keep the data out of the container, in a database you already run, give the server a `postgres://` URL instead of a file:
+
+```sh
+docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
+  -e PERSIST=postgres://user:password@db:5432/mocks ghcr.io/jaravan/odata-prova
+```
+
+The container keeps nothing: replace it, and the next one starts from what was saved. And several servers can serve the same service on one database: replicas behind a load balancer, scaled up and down, and updated one at a time.
+
+- **Every server answers alike.** Each holds all the data in memory, so size its memory for that. Before every request, it catches up with what the others saved. A write on one is there for the next request, on any of them, so Fiori's drafts and save-then-read work across replicas.
+- **Reads scale, writes don't.** Each request costs one small query, about a millisecond. Writes are saved one at a time across all the servers of a service: a few hundred a second, however many servers. Under more load, a write that waits over 5 seconds answers `503`, and so does any request that waits over 30 seconds for its turn.
+- **The database is needed to answer.** While it can't be reached, requests fail with `503` at once, and work again when it's back. If it's restored from a backup, or emptied and seeded anew by a new server, the servers load it again. If its tables are gone, `/healthz` fails, and the restarted servers seed it anew.
+- **Several services can share a database.** The server creates four tables, `odata_prova_meta`, `odata_prova_sets`, `odata_prova_rows` and `odata_prova_log`, and keeps each service's rows under its name (`--service-name`, by default the model folder's). For another schema than the default, add `?options=-c%20search_path%3Dmyschema` to the URL. The database user needs to be allowed to create tables at the first start.
+- **Don't leave `PERSIST_RESET=1` set for all the servers.** Every server that starts resets the data, the ones added to scale up too. Reset once, with one server.
+- **A changed `metadata.xml` in a rolling update:** the first new server adapts the saved rows to it, and from then on, the old ones answer `503` until they're replaced.
+- **Delta links are each server's own.** One handed out by another server is a `410 Gone`, and the client reads the set again.
+
+The user and password can stay out of the URL: the standard `PGUSER` and `PGPASSWORD` variables work too (and the other `PG*` ones, e.g. `PGSSLMODE=require`).
 
 ## What's supported
 

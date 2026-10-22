@@ -115,7 +115,7 @@ The link is the request with a `$skiptoken`: where the next page starts among th
 
 UI5's V2 and V4 models don't follow the link. They take it as a sign that there are more rows, and read the next ones with `$skip` and `$top`, which works as before.
 
-- **Smaller pages:** a V4 client can ask for them with `Prefer: odata.maxpagesize=N`, which works without `PAGE_SIZE` too, and is confirmed in `Preference-Applied`. A larger one than `PAGE_SIZE` is not.
+- **Smaller pages:** a V4 client can ask for them with `Prefer: odata.maxpagesize=N`. It works without `PAGE_SIZE` too, and `Preference-Applied` confirms it, unless it's larger than `PAGE_SIZE`.
 - **What's paged:** an entity set, a navigation's collection, a function's result, an `$apply` result, and each collection in an `$expand`.
 - **An expanded collection's link** (`Items@odata.nextLink` in V4, `"Items": {"results": [...], "__next": ...}` in V2) is the navigation under its entity, with the expand's own options: `.../Orders(1)/Items?$select=Material&$skiptoken=2`.
 
@@ -139,7 +139,7 @@ The delta has the entities added or changed that match the link's `$filter` and 
 Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
 
 - **What gets one:** an entity set, read without `$apply`, `$compute`, `$skip` or `$top`. For other reads the preference isn't applied, and `Preference-Applied` says so.
-- **How long it lasts:** the server keeps the latest 100 delta links, and none across a restart, even with `--persist`. An older one is a `410 Gone`, and the client reads the set again.
+- **How long it lasts:** the server keeps the latest 100 delta links, and none across a restart, even with `--persist`. Replicas each keep their own. An older one is a `410 Gone`, and the client reads the set again.
 - A change inside an expanded navigation isn't a change of the entity.
 
 V2 has delta links as SAP Gateway writes them. A V2 read of an entity set gets one with `Prefer: odata.track-changes`, or without asking when the V2 metadata marks the set `sap:change-tracking="true"`. It comes as `d.__delta`, the request with a `!deltatoken`:
@@ -181,7 +181,7 @@ Transformations are separated by `/` and run in order, before the other query op
 - `aggregate(...)`: one row for all of them, with `P with sum as Alias`, `min`, `max`, `average` and `countdistinct`, and `$count as Alias`. Nulls are left out.
   - Counts, and the sum or average of anything but a `Double` or `Single`, are `Edm.Decimal` (a string with `IEEE754Compatible=true`).
   - Decimals add up exactly. So does their average, rounded when it doesn't end: 16 digits more than the values have.
-- Custom aggregates, which UI5 asks for with no `with` when the metadata declares them (`Aggregation.CustomAggregate`, on the entity type or set): `aggregate(Amount,Currency)`, or `aggregate(Amount as Total)`. The metadata says what type the result is but not how it is computed, so the server aggregates the property of the same name: a number is summed, and anything else, such as a currency or a unit, is the value all the rows share, or `null` when they differ, which is how UI5 shows amounts in mixed currencies.
+- Custom aggregates, which UI5 asks for with no `with` when the metadata declares them (`Aggregation.CustomAggregate`, on the entity type or set): `aggregate(Amount,Currency)`, or `aggregate(Amount as Total)`. The metadata says what type the result is but not how it is computed, so the server aggregates the property of the same name. A number is summed. Anything else, such as a currency or a unit, is the value all the rows share, or `null` when they differ, which is how UI5 shows amounts in mixed currencies.
 - `concat(A,B,...)`: runs each sequence on the same rows and puts their results one after the other. UI5 uses it for the rows it needs besides the ones it shows: `concat(aggregate(Amount with min as UI5min__Amount,$count as UI5__count),skip(0)/top(20))` answers with the minimum and the count in a first row, then a page of rows. Each row has only the properties of its own sequence.
 
 The result:
