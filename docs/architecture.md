@@ -120,6 +120,7 @@ The store in memory still answers every request. The file or database only keeps
 - **A state that can't be loaded** makes `ready` reject, and every request answers `503`. `server.ts` exits instead of listening.
 - **A changed `metadata.xml`.** The file keeps the shape of the rows it holds, next to them: per set, its identity columns and each property's type. When that shape differs from the model's, the saved rows are adapted (a removed property dropped, a new one empty, a changed type converted), the change logged, and the adapted state saved. Changed identity columns would make the rows other rows, so the start is refused, pointing at `--persist-reset`.
 - **`close()`** waits for the requests in the queue, their saves included, then closes the file. `server.ts` calls it on SIGTERM.
+- **`SHUTDOWN_DELAY`** (ms): how long `server.ts` keeps answering after SIGTERM before it stops taking connections, each response with `Connection: close`, so clients reconnect elsewhere. A load balancer takes a few seconds to stop sending requests to a server that's stopping, and those would otherwise fail. 5000 in Kubernetes (`KUBERNETES_SERVICE_HOST` is set), 0 elsewhere.
 
 ### The file
 
