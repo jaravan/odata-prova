@@ -90,9 +90,19 @@ New code that changes a row uses `store.update(setName, row, changes)`.
 
 With `--persist` (or `persist` in code), the data is saved to a SQLite file, or a PostgreSQL database, so writes survive a restart.
 
-The store in memory still answers every request. The file only keeps its state: loaded once at startup, and written after every change.
+The store in memory still answers every request. The file or database only keeps its state: loaded whole at startup, and written after every change. Queries never read from it.
 
-**Why queries stay in memory.** `$filter`, `$apply`, hierarchies, `$search`, `$compute` and delta links all run in JavaScript over the rows. Running them in a database would mean translating all of that, with its differences in null ordering, collation, decimals and dates. Every later feature would have to be written twice. And the data of a mock fits in memory, where loading it once is cheap.
+### Why the data is in memory
+
+- **No database is the main case.** `npx odata-prova ./MySrv`, CI and demos need only a `metadata.xml` and data files. The store was in memory first; persistence keeps it across restarts, and doesn't replace it.
+- **The schema is the metadata's.** Any `metadata.xml` brings its own entity types, keys, complex and enum types, collections and inheritance, and may change at any time. Rows in memory take any shape. In a database they'd need tables generated from the metadata, and a migration whenever it changes: that's why the database keeps rows as JSON documents, which it can't query as the store does.
+- **Queries would be written twice.** `$filter` (with `any` and `all`), `$expand` with nested options, `$apply` and hierarchies, `$search`, `$compute`, drafts and delta links all run in JavaScript over the rows. In SQL they'd have to be translated, and give the same results despite the differences in null ordering, collation, decimals and dates: for SQLite, PostgreSQL, and without a database. Every later feature would be written twice too.
+- **Rollback is an undo log.** A failed request, `$batch` changeset or draft action undoes what it changed in memory, synchronously (see [Writes and transactions](#writes-and-transactions)).
+- **A mock's data fits.** Hundreds to thousands of rows per set: a query over them takes well under a millisecond, and loading them at startup is cheap.
+
+**What it costs.** Memory and startup grow with the data: 50,000 rows in one set and 200,000 in another take about 370 MB, and a start loads all of them. With replicas (see [The database, and replicas](#the-database-and-replicas)), each server holds all the data: the memory is paid once per server, and a new one loads everything before it answers.
+
+**When to revisit.** If services of 100,000 rows or more, served by several replicas each, become common, or a service has to be read from a database's own tables, the database should answer the queries. That replaces the store and the persistence backends, and the catching up of replicas with them. The OData parsing, the V2 and V4 metadata, and the protocols' output stay.
 
 ### How a write is saved
 
@@ -131,6 +141,7 @@ The store in memory still answers every request. The file only keeps its state: 
 - **A `GET` doesn't take it.** One that writes after all (a function with a rule), refused, runs again, caught up, up to three times. Running a request again is safe: it changes nothing but the store, and that was undone.
 - **Starting.** Servers starting at once on nothing saved each seed the store, and try to save it: the first wins, and the others load its state. A state saved from another `metadata.xml` than a server's is a `503` for it, until it restarts and adapts to it.
 - **The pool.** No server owns the service, so a lost connection is replaced at the next query. A turn's queries go through the connection holding its lock.
+- **Nothing waits without end.** A wait for the lock gives up after 5 seconds (`lock_timeout`), a query after 30, and both answer `503`. Keepalives on both ends of each connection make PostgreSQL notice a server gone without closing it (its node or network down) in about half a minute, and free the lock it held. And `queue.ts` answers `503`, without running it, a request that waited over 30 seconds for its turn: under more load than the servers take, they shed it rather than fall further behind.
 - Rows are `json`, not `jsonb`, which would reorder their fields, and are read back as text, for `INF` and `NaN`.
 
 A backend is `load()`, `commit(changes)`, `replace(changes, shape)` and `close()`, and one replicas share `since()`, `lock()` and `unlock()` too: see `Persistence` in `persistence.ts`. `test/shared.test.ts` runs replicas on a shared database in memory. The tests run every kind of write against SQLite and an in-memory backend, and check after each request that what's saved is what the store holds. With `POSTGRES_URL` set, against PostgreSQL too: CI has one, and `yarn test:postgres` starts one in Docker.

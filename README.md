@@ -156,8 +156,8 @@ docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
 
 The container keeps nothing: replace it, and the next one starts from what was saved. And several servers can serve the same service on one database: replicas behind a load balancer, a Kubernetes Deployment with a HorizontalPodAutoscaler, rolling updates.
 
-- **Every server answers alike.** Each keeps the data in memory, and catches up with what the others saved before every request. A write on one is there for the next request, on any of them, so Fiori's drafts and save-then-read work across replicas.
-- **Reads scale, writes don't.** Each request costs one small query, about a millisecond. Writes are saved one at a time across all the servers of a service.
+- **Every server answers alike.** Each holds all the data in memory (size its memory for that), and catches up with what the others saved before every request. A write on one is there for the next request, on any of them, so Fiori's drafts and save-then-read work across replicas.
+- **Reads scale, writes don't.** Each request costs one small query, about a millisecond. Writes are saved one at a time across all the servers of a service: a few hundred a second, however many servers. Under more, a write that waits over 5 seconds answers `503`, and so does any request that waits over 30 seconds for its turn.
 - **The database is needed to answer.** While it can't be reached, requests fail with `503`. A lost connection is opened again at the next request.
 - **Several services can share a database.** The server creates four tables, `odata_prova_meta`, `odata_prova_sets`, `odata_prova_rows` and `odata_prova_log`, and keeps each service's rows under its name (`--service-name`, by default the model folder's). For another schema than the default, add `?options=-c%20search_path%3Dmyschema` to the URL. The user needs to create tables at the first start.
 - **Don't leave `PERSIST_RESET=1` on a Deployment.** Every server that starts resets the data, the HorizontalPodAutoscaler's new ones too. Reset once, with one server.
