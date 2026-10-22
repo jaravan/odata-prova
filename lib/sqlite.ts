@@ -8,37 +8,17 @@
 
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Row } from "./model.ts";
-import type { Persistence, Saved, SetChanges, Shape } from "./persistence.ts";
+import {
+  toJson,
+  fromJson,
+  type Persistence,
+  type Saved,
+  type SetChanges,
+  type Shape,
+} from "./persistence.ts";
 
 // The layout of the file; a file of another one isn't read
 const FORMAT = "1";
-
-// JSON can't hold INF, -INF and NaN, which Edm.Double and Edm.Single can be. They're written as
-// {"$float": "INF"}: no property or field is called $float, as OData names start with a letter
-// or an underscore.
-const FLOATS: Record<string, number> = {
-  INF: Infinity,
-  "-INF": -Infinity,
-  NaN: NaN,
-};
-const toJson = (row: Row) =>
-  JSON.stringify(row, (_key, value: unknown) =>
-    typeof value === "number" && !Number.isFinite(value)
-      ? {
-          $float: Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF",
-        }
-      : value,
-  );
-const fromJson = (text: string) =>
-  JSON.parse(text, (_key, value: unknown) => {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const keys = Object.keys(value);
-      const tag = (value as { $float?: unknown }).$float;
-      if (keys.length === 1 && typeof tag === "string" && tag in FLOATS)
-        return FLOATS[tag];
-    }
-    return value;
-  }) as Row;
 
 class SqlitePersistence implements Persistence {
   file: string;
