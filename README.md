@@ -114,6 +114,8 @@ npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 | `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file, or a PostgreSQL database (`postgres://...`, which replicas can share), that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                             |
 | `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what was saved (`PERSIST_RESET=1`)                                                                                                                                                |
 
+In Kubernetes, a server told to stop keeps answering for 5 seconds while its pod leaves the Service, asking clients to reconnect, so a rolling update drops no requests. `SHUTDOWN_DELAY` sets it, in ms (`0` elsewhere).
+
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
 > [!IMPORTANT]
@@ -158,7 +160,7 @@ The container keeps nothing: replace it, and the next one starts from what was s
 
 - **Every server answers alike.** Each holds all the data in memory (size its memory for that), and catches up with what the others saved before every request. A write on one is there for the next request, on any of them, so Fiori's drafts and save-then-read work across replicas.
 - **Reads scale, writes don't.** Each request costs one small query, about a millisecond. Writes are saved one at a time across all the servers of a service: a few hundred a second, however many servers. Under more, a write that waits over 5 seconds answers `503`, and so does any request that waits over 30 seconds for its turn.
-- **The database is needed to answer.** While it can't be reached, requests fail with `503`. A lost connection is opened again at the next request.
+- **The database is needed to answer.** While it can't be reached, requests fail with `503` at once, and work again when it's back. Restored from a backup, or emptied and seeded anew by a new server, it's loaded again. With its tables gone, `/healthz` fails, for a liveness probe to restart the servers.
 - **Several services can share a database.** The server creates four tables, `odata_prova_meta`, `odata_prova_sets`, `odata_prova_rows` and `odata_prova_log`, and keeps each service's rows under its name (`--service-name`, by default the model folder's). For another schema than the default, add `?options=-c%20search_path%3Dmyschema` to the URL. The user needs to create tables at the first start.
 - **Don't leave `PERSIST_RESET=1` on a Deployment.** Every server that starts resets the data, the HorizontalPodAutoscaler's new ones too. Reset once, with one server.
 - **A changed `metadata.xml` in a rolling update:** the first new server adapts the saved rows to it, and from then on, the old ones answer `503` until they're replaced.
