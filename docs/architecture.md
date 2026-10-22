@@ -34,22 +34,22 @@ One model, parsed once at startup, backs a V2 service and a V4 service. Both sha
 - **`dispatch.ts`** walks the resource path and follows navigations, whatever the protocol, and hands each part of the work to its own module.
 - **`service.ts`** keeps what they all share: the model's lookups, navigations, and a collection's response.
 
-| Module                                                                           | What it does                                                        |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `app.ts`, `batch.ts`                                                             | the Express app: routes, CORS, `$batch`, errors outside the service |
-| `service.ts`, `dispatch.ts`                                                      | a request from its path to its answer                               |
-| `protocol.ts`, `protocols/v2.ts`, `protocols/v4.ts`                              | each protocol's literals, query options and responses               |
-| `metadata.ts`, `navigations.ts`, `operation-views.ts`                            | reading `metadata.xml` into the model                               |
-| `emit.ts`, `emit-v2.ts`, `emit-v4.ts`, `annotations-v2.ts`, `sap-annotations.ts` | the `$metadata` of the protocol the document wasn't written in      |
-| `resource-path.ts`, `query.ts`                                                   | the path and its keys, the query options                            |
-| `filter.ts`, `apply-query.ts`, `compute.ts`                                      | `$filter`, `$orderby`, `$search`, `$top`, `$skip`; `$compute`       |
-| `apply-parse.ts`, `aggregation.ts`, `aggregates.ts`, `hierarchy.ts`              | `$apply`: parsing, running, aggregate values, hierarchies           |
-| `paging.ts`, `delta.ts`                                                          | server-driven paging, delta links                                   |
-| `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets        |
-| `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                |
-| `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data    |
-| `queue.ts`, `persistence.ts`, `sqlite.ts`                                        | requests one at a time; saving the data, in a SQLite file           |
-| `types.ts`, `model.ts`                                                           | Edm values, the model's types                                       |
+| Module                                                                           | What it does                                                            |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `app.ts`, `batch.ts`                                                             | the Express app: routes, CORS, `$batch`, errors outside the service     |
+| `service.ts`, `dispatch.ts`                                                      | a request from its path to its answer                                   |
+| `protocol.ts`, `protocols/v2.ts`, `protocols/v4.ts`                              | each protocol's literals, query options and responses                   |
+| `metadata.ts`, `navigations.ts`, `operation-views.ts`                            | reading `metadata.xml` into the model                                   |
+| `emit.ts`, `emit-v2.ts`, `emit-v4.ts`, `annotations-v2.ts`, `sap-annotations.ts` | the `$metadata` of the protocol the document wasn't written in          |
+| `resource-path.ts`, `query.ts`                                                   | the path and its keys, the query options                                |
+| `filter.ts`, `apply-query.ts`, `compute.ts`                                      | `$filter`, `$orderby`, `$search`, `$top`, `$skip`; `$compute`           |
+| `apply-parse.ts`, `aggregation.ts`, `aggregates.ts`, `hierarchy.ts`              | `$apply`: parsing, running, aggregate values, hierarchies               |
+| `paging.ts`, `delta.ts`                                                          | server-driven paging, delta links                                       |
+| `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets            |
+| `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                    |
+| `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data        |
+| `queue.ts`, `persistence.ts`, `sqlite.ts`, `postgres.ts`                         | requests one at a time; saving the data, in a SQLite file or PostgreSQL |
+| `types.ts`, `model.ts`                                                           | Edm values, the model's types                                           |
 
 The sources are TypeScript, in `lib/`, and `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
@@ -88,7 +88,7 @@ New code that changes a row uses `store.update(setName, row, changes)`.
 
 ## Persistence
 
-With `--persist` (or `persist` in code), the data is saved to a SQLite file, so writes survive a restart.
+With `--persist` (or `persist` in code), the data is saved to a SQLite file, or a PostgreSQL database, so writes survive a restart.
 
 The store in memory still answers every request. The file only keeps its state: loaded once at startup, and written after every change.
 
@@ -120,7 +120,20 @@ The store in memory still answers every request. The file only keeps its state: 
 - `INF`, `-INF` and `NaN`, which JSON can't hold, are written `{"$float": "INF"}`.
 - The file is locked while a server has it open: one server per file.
 
-A backend is `load()`, `commit(changes)`, `replace(changes, shape)` and `close()`: see `Persistence` in `persistence.ts`. The tests run every kind of write against SQLite and an in-memory backend, and check after each request that what's saved is what the store holds.
+### The database, and replicas
+
+`postgres.ts` keeps the same layout in PostgreSQL, through `pg`, imported only when `--persist` is a `postgres://` URL. Several servers can share it: replicas of one service. Each still answers from the store in memory, so queries don't change.
+
+- **The log.** `odata_prova_log` holds every commit of a service, numbered, as the net changes it saved. A server knows the latest it has.
+- **Catching up.** Before every request, `sharedTurn()` in `persistence.ts` asks for the commits after it, and applies them to the store, through `store.insert`, `update` and `removeRow`, in a transaction of their own, settled at once. A server further behind than the log goes back (it keeps the latest 1000), or one whose state was replaced (a reset, an adapted `metadata.xml`), loads the whole state again.
+- **A commit is saved only if it's caught up.** Under the service's advisory lock, it checks that the log's latest is the server's own. Otherwise it's refused with `StaleError`, and the store's changes are undone as for any failed save.
+- **A turn that may write takes the lock first**, and keeps it to its end: the other servers' commits wait, so its own can't be refused, and a `$batch`'s changesets are saved as they run. That's every request but a `GET`.
+- **A `GET` doesn't take it.** One that writes after all (a function with a rule), refused, runs again, caught up, up to three times. Running a request again is safe: it changes nothing but the store, and that was undone.
+- **Starting.** Servers starting at once on nothing saved each seed the store, and try to save it: the first wins, and the others load its state. A state saved from another `metadata.xml` than a server's is a `503` for it, until it restarts and adapts to it.
+- **The pool.** No server owns the service, so a lost connection is replaced at the next query. A turn's queries go through the connection holding its lock.
+- Rows are `json`, not `jsonb`, which would reorder their fields, and are read back as text, for `INF` and `NaN`.
+
+A backend is `load()`, `commit(changes)`, `replace(changes, shape)` and `close()`, and one replicas share `since()`, `lock()` and `unlock()` too: see `Persistence` in `persistence.ts`. `test/shared.test.ts` runs replicas on a shared database in memory. The tests run every kind of write against SQLite and an in-memory backend, and check after each request that what's saved is what the store holds. With `POSTGRES_URL` set, against PostgreSQL too: CI has one, and `yarn test:postgres` starts one in Docker.
 
 ## Using it in code
 
@@ -141,7 +154,7 @@ const { app } = createApp({
 app.listen(3000);
 ```
 
-To keep the data in a file, as `--persist` does, pass `persist`.
+To keep the data in a file or a database, as `--persist` does, pass `persist`.
 
 - Wait for `ready` before serving. It settles once the saved state is loaded, or the first one saved, and rejects when it can't be.
 - `close()` waits for the requests being answered, and their saves, then closes the file.
@@ -152,6 +165,8 @@ const { app, ready, close } = createApp({
   v4Path: "/odata/v4/MySrv",
   persist: "./MySrv.db", // a SQLite file, created if there's none
   persistReset: false, // true: start over from the data files and mock rows
+  // persist: "postgres://user:password@db/mocks", // or a database
+  // serviceName: "MySrv", // whose rows they are there, default the model folder's
 });
 await ready;
 const server = app.listen(3000);

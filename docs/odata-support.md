@@ -139,7 +139,7 @@ The delta has the entities added or changed that match the link's `$filter` and 
 Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
 
 - **What gets one:** an entity set, read without `$apply`, `$compute`, `$skip` or `$top`. For other reads the preference isn't applied, and `Preference-Applied` says so.
-- **How long it lasts:** the server keeps the latest 100 delta links, and none across a restart, even with `--persist`. An older one is a `410 Gone`, and the client reads the set again.
+- **How long it lasts:** the server keeps the latest 100 delta links, and none across a restart, even with `--persist`. Replicas each keep their own. An older one is a `410 Gone`, and the client reads the set again.
 - A change inside an expanded navigation isn't a change of the entity.
 
 V2 has delta links as SAP Gateway writes them. A V2 read of an entity set gets one with `Prefer: odata.track-changes`, or without asking when the V2 metadata marks the set `sap:change-tracking="true"`. It comes as `d.__delta`, the request with a `!deltatoken`:
