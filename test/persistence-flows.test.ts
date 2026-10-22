@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -19,15 +20,21 @@ import { createApp } from "../lib/app.ts";
 import { everything } from "../lib/persistence.ts";
 import type { Persistence, SetChanges, Shape } from "../lib/persistence.ts";
 import { SqlitePersistence } from "../lib/sqlite.ts";
+import { PostgresPersistence } from "../lib/postgres.ts";
 import type { Model, Row } from "../lib/model.ts";
 
 // Every kind of write, each followed by the same check: what persistence holds is what the
 // store holds, row for row. Then a restart: a new app on what was saved sees all of it. Run
-// against every backend: the in-memory one the others are measured by, and SQLite.
+// against every backend: the in-memory one the others are measured by, SQLite, and
+// PostgreSQL when POSTGRES_URL names one (yarn test:postgres starts one in Docker).
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 
-type Saving = Persistence & { state(): Record<string, Row[]> };
+type Saving = Persistence & {
+  state(): Record<string, Row[]> | Promise<Record<string, Row[]>>;
+};
+
+const POSTGRES_URL = process.env.POSTGRES_URL;
 
 // A backend for a test, wrapped to count its commits, and to make every call take delay ms
 function counted(p: Saving, delay = 0) {
@@ -89,7 +96,33 @@ const BACKENDS = [
       };
     },
   },
+  ...(POSTGRES_URL ? [postgresBackend(POSTGRES_URL)] : []),
 ];
+
+// Each test a service of its own in the database, so they don't see each other's rows
+function postgresBackend(url: string) {
+  return {
+    name: "postgres",
+    open(delay = 0) {
+      const service = `test-${randomUUID()}`;
+      return {
+        db: counted(new PostgresPersistence(url, service), delay),
+        reopen: () => counted(new PostgresPersistence(url, service)),
+        emptySet: async (set: string) => {
+          const { default: pg } = await import("pg");
+          const client = new pg.Client({ connectionString: url });
+          await client.connect();
+          await client.query(
+            "DELETE FROM odata_prova_rows WHERE service = $1 AND set_name = $2",
+            [service, set],
+          );
+          await client.end();
+        },
+        done: () => {},
+      };
+    },
+  };
+}
 type Backend = (typeof BACKENDS)[number];
 
 // Each set's rows by identity, as persistence keys them
@@ -108,9 +141,9 @@ async function serve(backend: Backend, modelDir: string, delay = 0) {
   const { db, reopen, done } = backend.open(delay);
   const s = await start(modelDir, { persistence: db });
   await s.ready;
-  const mirrored = () =>
+  const mirrored = async () =>
     assert.deepEqual(
-      byKey(s.model, db.state()),
+      byKey(s.model, await db.state()),
       byKey(s.model, s.store.sets()),
     );
   // Sends a request, checks the answer's status, then that the store and what's saved agree
@@ -120,7 +153,7 @@ async function serve(backend: Backend, modelDir: string, delay = 0) {
   ) => {
     const r = await request;
     assert.equal(r.status, expected, JSON.stringify(r.body));
-    mirrored();
+    await mirrored();
     return r;
   };
   // Stops this server, and starts a new app on what it saved: its store holds what this
@@ -424,8 +457,9 @@ for (const backend of BACKENDS) {
           Status: "Again",
         });
         assert.equal(
-          again.state().PurchaseOrderSet.find((o) => o.PurchaseOrderId === "R1")
-            ?.Status,
+          (await again.state()).PurchaseOrderSet.find(
+            (o) => o.PurchaseOrderId === "R1",
+          )?.Status,
           "Again",
         );
       } finally {
@@ -451,7 +485,10 @@ for (const backend of BACKENDS) {
         const generated = first.store.generated;
         assert.ok(generated.length > 0, "a set without a data file");
         for (const set of generated)
-          assert.equal(db.state()[set].length, first.store.rows(set).length);
+          assert.equal(
+            (await db.state())[set].length,
+            first.store.rows(set).length,
+          );
         await first.close();
         // Generating is deterministic, so the same rows again prove nothing: empty one set in
         // what was saved, and the second start has to come up with it empty
