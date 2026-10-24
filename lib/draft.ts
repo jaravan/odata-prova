@@ -7,7 +7,7 @@
 //   SiblingEntity            the draft of an active entity, or the active entity of a draft
 //   DraftAdministrativeData  who edits the draft and since when
 // They are resolved here into type.draftNavigations, apart from type.navigations, so the
-// mock data generator never sees them, and the V4 emitter writes them on their own.
+// mock data generator never sees them, and the emitters write them on their own.
 //
 // The Drafts class at the end implements the edit flow on top of the generic service:
 // draftEdit, PATCH on the draft, POST of new draft children, draftPrepare, draftActivate,
@@ -230,13 +230,17 @@ function resolveDraftNavigations(model: Model): void {
         }
         // Read-only. Its rows are draft.ts's own; the set only names them in URLs: the
         // entity set of the type (RAP has one), or a path contained in the draft's
+        const set = Object.values(model.entitySets).find(
+          (es) => es.entityType === targetType,
+        )?.name;
+        // Contained, as CAP has it: V2 serves the records in a set named after the type
+        const name = model.entityTypes[targetType].name;
+        if (!set && !model.entitySets[name])
+          model.draftAdminSetV2 ??= { name, entityType: targetType };
         et.draftNavigations[nav.name] = {
           name: nav.name,
           draft: "admin",
-          targetSet:
-            Object.values(model.entitySets).find(
-              (es) => es.entityType === targetType,
-            )?.name || `${draftSet}/${nav.name}`,
+          targetSet: set || `${draftSet}/${nav.name}`,
           targetType,
           isCollection: false,
           join: [],

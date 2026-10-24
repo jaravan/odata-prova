@@ -137,6 +137,13 @@ class ODataService {
       entityType.keys.length === 1
         ? lit(entityType.keys[0])
         : entityType.keys.map((k) => `${k}=${lit(k)}`).join(",");
+    // V2 has the draft administrative data CAP contains in each draft in a set of its own
+    const adminSet = this.model.draftAdminSetV2;
+    if (
+      this.protocol.version === "2.0" &&
+      adminSet?.entityType === entityType.fullName
+    )
+      return `${this.servicePath}/${adminSet.name}(${keyText})`;
     const contained = this.model.entitySets[setName]?.contained;
     if (contained) {
       const parent = this.entitySet(contained.parentSet);

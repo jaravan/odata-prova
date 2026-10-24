@@ -163,6 +163,14 @@ function handle(
       headers,
     );
   }
+  if (
+    protocol.version === "2.0" &&
+    first === svc.model.draftAdminSetV2?.name &&
+    !wantCount &&
+    !wantValue &&
+    !wantRefs
+  )
+    return draftAdminRequest(request);
   // A contained set is reached only through its navigation (see resolveContainment)
   if (
     !own(svc.model.entitySets, first) ||
@@ -283,6 +291,26 @@ function handle(
   return row === undefined
     ? collectionRequest(request, at)
     : entityRequest(request, { ...at, row });
+}
+
+// V2's set of the draft administrative data CAP contains in each draft (see draftAdminSetV2
+// in draft.ts): its records, read-only, as an entity's DraftAdministrativeData links to them
+function draftAdminRequest(request: Request): ODataResponse {
+  const { svc, method, segments, q, opts } = request;
+  const { name, entityType } = svc.model.draftAdminSetV2!;
+  if (method !== "GET") throw new HttpError(405, `${name} is read-only`);
+  if (segments.length > 1)
+    throw new HttpError(
+      404,
+      `${segments[1].name} is not a property or navigation of ${name}`,
+    );
+  const type = svc.model.entityTypes[entityType];
+  const rows = svc.drafts.admins();
+  const key = parseKey(segments[0].keyText, type, svc.protocol);
+  if (!key) return svc.collectionResponse(rows, name, type, q, opts);
+  const row = rows.find((r) => svc.store.matchesKey(type, r, key));
+  if (!row) throw new HttpError(404, `${type.name} not found`);
+  return entityRequest(request, { setName: name, type, rows, row });
 }
 
 // A property of an entity: Set(key)/Prop, or its raw value with /$value

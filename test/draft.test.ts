@@ -867,3 +867,70 @@ describe("draft: a new entity with a short string key", () => {
     assert.equal(second.body.d.ID, "4500000062");
   });
 });
+
+// CAP's V4 metadata served as V2, which has no containment: DraftAdministrativeData, which
+// CAP contains in each draft, gets an entity set of its own there
+describe("draft: V2 of a CAP service", () => {
+  let s: TestServer;
+  before(async () => (s = await start(DRAFT_MODEL)));
+  after(() => s.close());
+
+  it("declares SiblingEntity, DraftAdministrativeData and its entity set in the V2 metadata", async () => {
+    const xml = (await get(`${s.v2}/$metadata`)).body as string;
+    assert.match(
+      xml,
+      /<NavigationProperty Name="SiblingEntity" Relationship="CatalogService.Books_SiblingEntity"/,
+    );
+    assert.match(
+      xml,
+      /<NavigationProperty Name="DraftAdministrativeData" Relationship="CatalogService.Books_DraftAdministrativeData"/,
+    );
+    assert.match(
+      xml,
+      /<EntitySet Name="DraftAdministrativeData" EntityType="CatalogService.DraftAdministrativeData" sap:creatable="false"/,
+    );
+    // Read back, as a V2 app reads it, it's the same draft service
+    const v2 = parseMetadata(xml);
+    assert.equal(v2.entitySets.Books.draft?.root, true);
+    for (const type of ["Books", "Chapters"])
+      assert.deepEqual(
+        Object.keys(
+          v2.entityTypes[`CatalogService.${type}`].draftNavigations ?? {},
+        ).sort(),
+        ["DraftAdministrativeData", "SiblingEntity"],
+      );
+    assert.deepEqual(v2.warnings, []);
+    const doc = await get(`${s.v2}/`, JSON_ACCEPT);
+    assert.ok(doc.body.d.EntitySets.includes("DraftAdministrativeData"));
+  });
+
+  it("links a draft to its record in that set, which reads it", async () => {
+    const edit = await send(
+      "POST",
+      `${s.v4}/${book()}/${ACTION("draftEdit")}`,
+      { PreserveChanges: true },
+    );
+    assert.equal(edit.status, 200);
+    const draft = await get(
+      `${s.v2}/Books(ID=guid'${BOOK}',IsActiveEntity=false)?$expand=DraftAdministrativeData`,
+      JSON_ACCEPT,
+    );
+    const { uri } = draft.body.d.DraftAdministrativeData.__metadata;
+    assert.match(
+      uri,
+      /\/odata\/v2\/T\/DraftAdministrativeData\(guid'[0-9a-f-]{36}'\)$/,
+    );
+    const record = await get(`${s.base}${uri}`, JSON_ACCEPT);
+    assert.equal(record.status, 200);
+    assert.equal(record.body.d.InProcessByUser, "anonymous");
+    const all = await get(`${s.v2}/DraftAdministrativeData`, JSON_ACCEPT);
+    assert.equal(all.body.d.results.length, 1);
+    assert.equal(
+      (await send("MERGE", `${s.base}${uri}`, { InProcessByUser: "someone" }))
+        .status,
+      405,
+    );
+    // V4 has it contained, as CAP does
+    assert.equal((await get(`${s.v4}/DraftAdministrativeData`)).status, 404);
+  });
+});

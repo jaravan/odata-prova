@@ -252,10 +252,14 @@ const v2: Protocol = {
   keyLiteral,
   parseQueryOptions,
   serviceDocument(svc) {
-    const sets = Object.values(svc.model.entitySets).filter(
-      (es) => !es.contained,
-    );
-    return json(200, { d: { EntitySets: sets.map((es) => es.name) } });
+    const sets = Object.values(svc.model.entitySets)
+      .filter((es) => !es.contained)
+      .map((es) => es.name);
+    // The draft administrative data's, which only V2 has (see draftAdminSetV2 in draft.ts)
+    const adminSet = svc.model.draftAdminSetV2?.name;
+    return json(200, {
+      d: { EntitySets: adminSet ? [...sets, adminSet] : sets },
+    });
   },
   collection(
     svc,

@@ -268,8 +268,10 @@ Each of these requests is atomic, and inside a `$batch` changeset it rolls back 
 
 - the V2 service calls the actions as function imports: `POST TravelEdit?TravelUUID=guid'...'&IsActiveEntity=true`
 - the V4 service calls them as bound actions, and its `$metadata` names them so (`EditAction="Srv.TravelEdit"`), since Fiori Elements V4 calls them by that name
-- the V4 `$metadata` declares `SiblingEntity` and `DraftAdministrativeData`, which Fiori Elements V4 reads
+- both services' `$metadata` declare `SiblingEntity` and `DraftAdministrativeData`, which Fiori Elements reads
 - an annotation on a function import targets its bound action (`Srv.TravelEdit(Srv.TravelType)`)
+
+V2 has no containment, so where CAP contains `DraftAdministrativeData` in each draft, the V2 service has a read-only `DraftAdministrativeData` entity set with the records, which the navigation links to.
 
 Limits:
 
