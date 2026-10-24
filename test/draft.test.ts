@@ -889,6 +889,20 @@ describe("draft: V2 of a CAP service", () => {
       xml,
       /<EntitySet Name="DraftAdministrativeData" EntityType="CatalogService.DraftAdministrativeData" sap:creatable="false"/,
     );
+    // The draft actions by their function imports, which Fiori Elements V2 calls
+    assert.match(
+      xml,
+      /<PropertyValue Property="ActivationAction" String="CatalogService.EntityContainer\/draftActivate"\/>/,
+    );
+    assert.match(
+      xml,
+      /<PropertyValue Property="PreparationAction" String="CatalogService.EntityContainer\/draftPrepare_Chapters"\/>/,
+    );
+    // An optional parameter says so: Fiori Elements V2 takes one that doesn't as required
+    assert.match(
+      xml,
+      /<Parameter Name="SideEffectsQualifier" Type="Edm.String" Mode="In" Nullable="true"\/>/,
+    );
     // Read back, as a V2 app reads it, it's the same draft service
     const v2 = parseMetadata(xml);
     assert.equal(v2.entitySets.Books.draft?.root, true);

@@ -73,7 +73,9 @@ function functionImportsV2(
           ["Name", p.name],
           ["Type", v2TypeName(p)],
           ["Mode", "In"],
-          ["Nullable", p.nullable ? undefined : "false"],
+          // Always, as SAP Gateway writes it: Fiori Elements V2 takes a parameter without
+          // it as required, and refuses to call the import when it isn't given
+          ["Nullable", p.nullable ? "true" : "false"],
           ["MaxLength", p.maxLength],
         ])}/>`,
     );

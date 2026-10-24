@@ -59,6 +59,7 @@ For a V4 `metadata.xml`, the V2 service's `$metadata` carries all of its annotat
 - An annotation written inline on an element, such as a property, an entity set or an action, moves into a block targeting that element, since V2 elements can't carry one.
 - Targets use namespaces, not the schema's alias (`SAP__self.Orders` is written `com.example.Orders`): UI5 resolves only the aliases of `<edmx:Reference>`.
 - An action or function is targeted as the function import V2 serves it as (see [Actions and functions](operations.md)): `Ns.Approve(Ns.Order)` becomes `Ns.Container/Approve`, and `Ns.Approve` without a binding becomes every function import of `Approve`. An action import's target becomes its function import's too.
+- The actions a draft annotation names (`EditAction="Ns.draftEdit"`) are named as their function imports (`Ns.Container/draftEdit`), as SAP Gateway writes them: Fiori Elements V2 calls them by that name.
 
 Two `sap:` attributes are written as well, where UI5 reads an attribute and not an annotation:
 
