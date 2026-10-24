@@ -11,6 +11,7 @@
 // - targets are written as V2 has them: a schema alias resolved (UI5 resolves only those of
 //   <edmx:Reference>), and an action, function (Ns.Approve(Ns.Order)) or action import
 //   (Ns.Container/Approve) targeted as the function import V2 serves it as
+// - the actions a draft annotation names are named as their function imports
 // It also gives the sap: attributes UI5 reads where V2 has no annotation of its own:
 // - sap:searchable="true", unless the annotations say Searchable false: without it, UI5
 //   takes an entity set as not searchable, while V4's default is searchable
@@ -18,6 +19,7 @@
 //   enables the action's button in Fiori Elements V2
 
 import type { Model, Operation } from "./model.ts";
+import { own } from "./query.ts";
 
 const EDM_V4 = "http://docs.oasis-open.org/odata/ns/edm";
 const EDMX_V4 = "http://docs.oasis-open.org/odata/ns/edmx";
@@ -236,6 +238,31 @@ function annotationsV2(model: Model): AnnotationsV2 {
     return matching.map((o) => `${containerName}/${o.name}${rest}`);
   }
 
+  // An entity set's draft annotation names its actions (EditAction="Ns.draftEdit"): in V2,
+  // each is the function import of the action bound to the set's type
+  // (Ns.Container/draftEdit), the way SAP Gateway writes it, which Fiori Elements V2 calls
+  function draftActionsV2(body: string, member: string | undefined): string {
+    const type = member && own(model.entitySets, member)?.entityType;
+    if (!type) return body;
+    return body.replace(/<PropertyValue\b[^>]*>/g, (tag) => {
+      const name = /Action$/.test(attr(tag, "Property") ?? "")
+        ? attr(tag, "String")
+        : undefined;
+      const op =
+        name &&
+        imports.find(
+          (o) =>
+            o.fullName === qualify(name) && o.bindsTo?.type.fullName === type,
+        );
+      return op
+        ? tag.replace(
+            /\bString\s*=\s*("[^"]*"|'[^']*')/,
+            `String="${esc(`${containerName}/${op.name}`)}"`,
+          )
+        : tag;
+    });
+  }
+
   const blocks: string[] = [];
   const notSearchable = new Set<string>();
   const applicablePaths: Record<string, string> = {};
@@ -253,12 +280,11 @@ function annotationsV2(model: Model): AnnotationsV2 {
       );
       if (!/\sxmlns\s*=/.test(tag))
         tag = tag.replace(/\/?>$/, ` xmlns="${EDM_V4}"$&`);
-      blocks.push(tag + original.slice(open.length));
-
       // An entity set or function import: the block may say what its sap: attributes are
       const member = t.startsWith(`${containerName}/`)
         ? t.slice(containerName.length + 1)
         : undefined;
+      blocks.push(tag + draftActionsV2(original.slice(open.length), member));
       if (!member || member.includes("/")) continue;
       for (const a of original.matchAll(/<Annotation\b[^>]*>/g)) {
         const term = attr(a[0], "Term");

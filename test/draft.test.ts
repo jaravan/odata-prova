@@ -798,4 +798,153 @@ describe("draft: V2 metadata (RAP)", () => {
     assert.equal(activated.status, 200);
     assert.equal(activated.body.IsActiveEntity, true);
   });
+
+  it("declares SiblingEntity and DraftAdministrativeData in the generated V4 metadata", async () => {
+    const xml = (await get(`${s.v4}/$metadata`)).body as string;
+    assert.match(
+      xml,
+      /<NavigationProperty Name="SiblingEntity" Type="TravelService.TravelType"\/>/,
+    );
+    assert.match(
+      xml,
+      /<NavigationProperty Name="DraftAdministrativeData" Type="TravelService.I_DraftAdministrativeDataType"\/>/,
+    );
+    assert.match(
+      xml,
+      /<NavigationPropertyBinding Path="DraftAdministrativeData" Target="I_DraftAdministrativeData"\/>/,
+    );
+    // Read back, as a V4 app reads it, it's the same draft service
+    const v4 = parseMetadata(xml);
+    for (const type of ["TravelType", "BookingType"])
+      assert.deepEqual(
+        Object.keys(
+          v4.entityTypes[`TravelService.${type}`].draftNavigations ?? {},
+        ).sort(),
+        ["DraftAdministrativeData", "SiblingEntity"],
+      );
+    assert.deepEqual(v4.warnings, []);
+  });
+});
+
+// A draft root keyed by a short string, as an SAP document number is
+describe("draft: a new entity with a short string key", () => {
+  let s: TestServer, dir: string;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-number-"));
+    fs.writeFileSync(
+      path.join(dir, "metadata.xml"),
+      XML.replace(
+        '<Property Name="ID" Type="Edm.Guid" Nullable="false"/>',
+        '<Property Name="ID" Type="Edm.String" MaxLength="10" Nullable="false"/>',
+      ).replace(
+        '<Property Name="book_ID" Type="Edm.Guid"/>',
+        '<Property Name="book_ID" Type="Edm.String" MaxLength="10"/>',
+      ),
+    );
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.writeFileSync(
+      path.join(dir, "data", "Books.csv"),
+      "ID;title\n4500000059;Shirley\n4500000060;Villette\n",
+    );
+    s = await start(dir);
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("counts up from the highest key, as an SAP number range does", async () => {
+    const first = await send("POST", `${s.v4}/Books`, { title: "Agnes Grey" });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.ID, "4500000061");
+    const second = await send(
+      "POST",
+      `${s.v2}/Books`,
+      { title: "Emma" },
+      JSON_ACCEPT,
+    );
+    assert.equal(second.status, 201);
+    assert.equal(second.body.d.ID, "4500000062");
+  });
+});
+
+// CAP's V4 metadata served as V2, which has no containment: DraftAdministrativeData, which
+// CAP contains in each draft, gets an entity set of its own there
+describe("draft: V2 of a CAP service", () => {
+  let s: TestServer;
+  before(async () => (s = await start(DRAFT_MODEL)));
+  after(() => s.close());
+
+  it("declares SiblingEntity, DraftAdministrativeData and its entity set in the V2 metadata", async () => {
+    const xml = (await get(`${s.v2}/$metadata`)).body as string;
+    assert.match(
+      xml,
+      /<NavigationProperty Name="SiblingEntity" Relationship="CatalogService.Books_SiblingEntity"/,
+    );
+    assert.match(
+      xml,
+      /<NavigationProperty Name="DraftAdministrativeData" Relationship="CatalogService.Books_DraftAdministrativeData"/,
+    );
+    assert.match(
+      xml,
+      /<EntitySet Name="DraftAdministrativeData" EntityType="CatalogService.DraftAdministrativeData" sap:creatable="false"/,
+    );
+    // The draft actions by their function imports, which Fiori Elements V2 calls
+    assert.match(
+      xml,
+      /<PropertyValue Property="ActivationAction" String="CatalogService.EntityContainer\/draftActivate"\/>/,
+    );
+    assert.match(
+      xml,
+      /<PropertyValue Property="PreparationAction" String="CatalogService.EntityContainer\/draftPrepare_Chapters"\/>/,
+    );
+    // An optional parameter says so: Fiori Elements V2 takes one that doesn't as required
+    assert.match(
+      xml,
+      /<Parameter Name="SideEffectsQualifier" Type="Edm.String" Mode="In" Nullable="true"\/>/,
+    );
+    // Read back, as a V2 app reads it, it's the same draft service
+    const v2 = parseMetadata(xml);
+    assert.equal(v2.entitySets.Books.draft?.root, true);
+    for (const type of ["Books", "Chapters"])
+      assert.deepEqual(
+        Object.keys(
+          v2.entityTypes[`CatalogService.${type}`].draftNavigations ?? {},
+        ).sort(),
+        ["DraftAdministrativeData", "SiblingEntity"],
+      );
+    assert.deepEqual(v2.warnings, []);
+    const doc = await get(`${s.v2}/`, JSON_ACCEPT);
+    assert.ok(doc.body.d.EntitySets.includes("DraftAdministrativeData"));
+  });
+
+  it("links a draft to its record in that set, which reads it", async () => {
+    const edit = await send(
+      "POST",
+      `${s.v4}/${book()}/${ACTION("draftEdit")}`,
+      { PreserveChanges: true },
+    );
+    assert.equal(edit.status, 200);
+    const draft = await get(
+      `${s.v2}/Books(ID=guid'${BOOK}',IsActiveEntity=false)?$expand=DraftAdministrativeData`,
+      JSON_ACCEPT,
+    );
+    const { uri } = draft.body.d.DraftAdministrativeData.__metadata;
+    assert.match(
+      uri,
+      /\/odata\/v2\/T\/DraftAdministrativeData\(guid'[0-9a-f-]{36}'\)$/,
+    );
+    const record = await get(`${s.base}${uri}`, JSON_ACCEPT);
+    assert.equal(record.status, 200);
+    assert.equal(record.body.d.InProcessByUser, "anonymous");
+    const all = await get(`${s.v2}/DraftAdministrativeData`, JSON_ACCEPT);
+    assert.equal(all.body.d.results.length, 1);
+    assert.equal(
+      (await send("MERGE", `${s.base}${uri}`, { InProcessByUser: "someone" }))
+        .status,
+      405,
+    );
+    // V4 has it contained, as CAP does
+    assert.equal((await get(`${s.v4}/DraftAdministrativeData`)).status, 404);
+  });
 });

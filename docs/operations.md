@@ -31,6 +31,8 @@ V2 has no bound operations. SAP Gateway writes an operation on an entity as a fu
 | Function import with `sap:action-for` and the entity's key as parameters | Action or function bound to that entity type (`EntitySetPath` set when it returns that entity, so UI5 updates the page with the result) |
 | Any other function import                                                | Action or function import                                                                                                               |
 
+Each V2 parameter says whether it's optional (`Nullable="true"`), as SAP Gateway writes it: Fiori Elements V2 takes a parameter without it as required, and won't call the function import without it.
+
 An operation V2 can't express is left out of V2: one with complex or collection parameters, or bound to a type without an entity set. The startup log says so, in a `not in V2: ...` line.
 
 To try it: [examples/PurchaseOrderSrv](../examples/PurchaseOrderSrv/) has a V2 function import, `ApprovePurchaseOrder`, served as a function import on V2 and as a bound action on V4. [examples/TripPin](../examples/TripPin/) has V4 operations of both kinds.

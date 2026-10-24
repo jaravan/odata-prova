@@ -73,7 +73,9 @@ function functionImportsV2(
           ["Name", p.name],
           ["Type", v2TypeName(p)],
           ["Mode", "In"],
-          ["Nullable", p.nullable ? undefined : "false"],
+          // Always, as SAP Gateway writes it: Fiori Elements V2 takes a parameter without
+          // it as required, and refuses to call the import when it isn't given
+          ["Nullable", p.nullable ? "true" : "false"],
           ["MaxLength", p.maxLength],
         ])}/>`,
     );
@@ -93,8 +95,8 @@ interface AssociationOut {
   ends: { role: string; type: string; multiplicity: string; set: string }[];
   principal: { role: string; properties: string[] };
   dependent: { role: string; properties: string[] };
-  // Joined on a hidden key (see hiddenKey in navigations.ts): no ReferentialConstraint, as
-  // the document has no property for it
+  // No ReferentialConstraint: joined on a hidden key (see hiddenKey in navigations.ts), which
+  // the document has no property for, or a draft navigation, which has no join to write
   hidden?: boolean;
 }
 
@@ -174,6 +176,38 @@ function emitV2(model: Model): string {
         };
     }
   }
+  // SiblingEntity and DraftAdministrativeData (see resolveDraftNavigations in draft.ts), as
+  // RAP writes them: one to zero or one, with no ReferentialConstraint. Fiori Elements V2
+  // reads them from the metadata.
+  for (const et of Object.values(model.entityTypes)) {
+    const set = (byType[et.fullName] || [])[0];
+    for (const nav of Object.values(et.draftNavigations ?? {})) {
+      const targetSet = model.entitySets[nav.targetSet]
+        ? nav.targetSet
+        : model.draftAdminSetV2?.name;
+      if (!set || !targetSet) continue;
+      const name = `${et.name}_${nav.name}`;
+      const fromRole = `FromRole_${name}`,
+        toRole = `ToRole_${name}`;
+      const assoc: AssociationOut = {
+        name,
+        ends: [
+          { role: fromRole, type: et.fullName, multiplicity: "1", set },
+          {
+            role: toRole,
+            type: nav.targetType,
+            multiplicity: "0..1",
+            set: targetSet,
+          },
+        ],
+        principal: { role: fromRole, properties: [] },
+        dependent: { role: toRole, properties: [] },
+        hidden: true,
+      };
+      associations.push(assoc);
+      navAssoc[`${et.fullName}/${nav.name}`] = { assoc, fromRole, toRole };
+    }
+  }
 
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="utf-8"?>');
@@ -208,8 +242,13 @@ function emitV2(model: Model): string {
       );
       for (const p of Object.values(et.properties))
         out.push(...propertyV2(p, "        ", etag.has(p.name)));
-      for (const nav of Object.values(et.navigations)) {
-        if (!inV2(et, nav)) continue;
+      const navs = [
+        ...Object.values(et.navigations).filter((nav) => inV2(et, nav)),
+        ...Object.values(et.draftNavigations ?? {}).filter(
+          (nav) => navAssoc[`${et.fullName}/${nav.name}`],
+        ),
+      ];
+      for (const nav of navs) {
         const { assoc, fromRole, toRole } =
           navAssoc[`${et.fullName}/${nav.name}`];
         out.push(
@@ -263,6 +302,14 @@ function emitV2(model: Model): string {
         ]);
         out.push(`        <EntitySet${a}/>`);
       }
+      // The draft administrative data's, read-only (see draftAdminSetV2 in draft.ts)
+      const adminSet = model.draftAdminSetV2;
+      if (adminSet)
+        out.push(
+          `        <EntitySet Name="${esc(adminSet.name)}" EntityType="${esc(
+            adminSet.entityType,
+          )}" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>`,
+        );
       for (const assoc of associations) {
         out.push(
           `        <AssociationSet Name="${esc(

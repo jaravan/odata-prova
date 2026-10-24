@@ -31,6 +31,10 @@ export interface Model {
   // The link sets of the navigations no key can join, many-to-many ones (see linkSet in
   // navigations.ts), by name
   linkSets: Record<string, LinkSet>;
+  // The entity set V2, which has no containment, serves the draft administrative data in,
+  // when the document has none (CAP contains it in each draft), and its type (see
+  // resolveDraftNavigations in draft.ts)
+  draftAdminSetV2?: { name: string; entityType: string };
 }
 
 // Pairs of keys that link two entity sets' rows, which the store keeps as rows of their own,
