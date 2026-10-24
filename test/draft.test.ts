@@ -798,4 +798,72 @@ describe("draft: V2 metadata (RAP)", () => {
     assert.equal(activated.status, 200);
     assert.equal(activated.body.IsActiveEntity, true);
   });
+
+  it("declares SiblingEntity and DraftAdministrativeData in the generated V4 metadata", async () => {
+    const xml = (await get(`${s.v4}/$metadata`)).body as string;
+    assert.match(
+      xml,
+      /<NavigationProperty Name="SiblingEntity" Type="TravelService.TravelType"\/>/,
+    );
+    assert.match(
+      xml,
+      /<NavigationProperty Name="DraftAdministrativeData" Type="TravelService.I_DraftAdministrativeDataType"\/>/,
+    );
+    assert.match(
+      xml,
+      /<NavigationPropertyBinding Path="DraftAdministrativeData" Target="I_DraftAdministrativeData"\/>/,
+    );
+    // Read back, as a V4 app reads it, it's the same draft service
+    const v4 = parseMetadata(xml);
+    for (const type of ["TravelType", "BookingType"])
+      assert.deepEqual(
+        Object.keys(
+          v4.entityTypes[`TravelService.${type}`].draftNavigations ?? {},
+        ).sort(),
+        ["DraftAdministrativeData", "SiblingEntity"],
+      );
+    assert.deepEqual(v4.warnings, []);
+  });
+});
+
+// A draft root keyed by a short string, as an SAP document number is
+describe("draft: a new entity with a short string key", () => {
+  let s: TestServer, dir: string;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-number-"));
+    fs.writeFileSync(
+      path.join(dir, "metadata.xml"),
+      XML.replace(
+        '<Property Name="ID" Type="Edm.Guid" Nullable="false"/>',
+        '<Property Name="ID" Type="Edm.String" MaxLength="10" Nullable="false"/>',
+      ).replace(
+        '<Property Name="book_ID" Type="Edm.Guid"/>',
+        '<Property Name="book_ID" Type="Edm.String" MaxLength="10"/>',
+      ),
+    );
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.writeFileSync(
+      path.join(dir, "data", "Books.csv"),
+      "ID;title\n4500000059;Shirley\n4500000060;Villette\n",
+    );
+    s = await start(dir);
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("counts up from the highest key, as an SAP number range does", async () => {
+    const first = await send("POST", `${s.v4}/Books`, { title: "Agnes Grey" });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.ID, "4500000061");
+    const second = await send(
+      "POST",
+      `${s.v2}/Books`,
+      { title: "Emma" },
+      JSON_ACCEPT,
+    );
+    assert.equal(second.status, 201);
+    assert.equal(second.body.d.ID, "4500000062");
+  });
 });

@@ -156,6 +156,20 @@ function emitV4(model: Model): string {
           );
         else out.push(`        <NavigationProperty${a}/>`);
       }
+      // SiblingEntity and DraftAdministrativeData (see resolveDraftNavigations in draft.ts),
+      // which Fiori Elements V4 reads from the metadata. DraftAdministrativeData without an
+      // entity set of its type is contained, as CAP writes it.
+      for (const nav of Object.values(et.draftNavigations ?? {}))
+        out.push(
+          `        <NavigationProperty${attrs([
+            ["Name", nav.name],
+            ["Type", nav.targetType],
+            [
+              "ContainsTarget",
+              model.entitySets[nav.targetSet] ? undefined : "true",
+            ],
+          ])}/>`,
+        );
       out.push(...indented("        ", sap.entityType(et)));
       out.push("      </EntityType>");
     }
@@ -166,7 +180,12 @@ function emitV4(model: Model): string {
       for (const es of Object.values(model.entitySets)) {
         const et = model.entityTypes[es.entityType];
         const children = [
-          ...Object.values(et.navigations).map(
+          ...[
+            ...Object.values(et.navigations),
+            ...Object.values(et.draftNavigations ?? {}).filter(
+              (nav) => model.entitySets[nav.targetSet],
+            ),
+          ].map(
             (nav) =>
               `<NavigationPropertyBinding Path="${esc(
                 nav.name,

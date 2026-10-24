@@ -7,7 +7,7 @@
 //   SiblingEntity            the draft of an active entity, or the active entity of a draft
 //   DraftAdministrativeData  who edits the draft and since when
 // They are resolved here into type.draftNavigations, apart from type.navigations, so the
-// emitters and the mock data generator never see them.
+// mock data generator never sees them, and the V4 emitter writes them on their own.
 //
 // The Drafts class at the end implements the edit flow on top of the generic service:
 // draftEdit, PATCH on the draft, POST of new draft children, draftPrepare, draftActivate,
@@ -309,6 +309,20 @@ const INTEGER_TYPES = [
 ];
 
 const now = () => new Date().toISOString();
+
+// The number after the highest of these values that are all digits, as wide as the widest
+// of them: after 4500000060 comes 4500000061, after 0042 comes 0043, and with none, 1
+function nextNumber(values: unknown[]): string {
+  const numbers = values.filter(
+    (v): v is string => typeof v === "string" && /^\d+$/.test(v),
+  );
+  const next =
+    numbers.reduce((max, v) => (BigInt(v) > max ? BigInt(v) : max), 0n) + 1n;
+  return String(next).padStart(
+    Math.max(0, ...numbers.map((v) => v.length)),
+    "0",
+  );
+}
 
 class Drafts {
   svc: DraftHost;
@@ -647,8 +661,9 @@ class Drafts {
     });
   }
 
-  // Fiori Elements sends no key for a new entity: a missing Guid, integer or long enough
-  // string key is generated (IsActiveEntity is set by the caller)
+  // Fiori Elements sends no key for a new entity: a missing Guid, integer or string key is
+  // generated (IsActiveEntity is set by the caller). A string too short for a GUID counts
+  // up, as an SAP number range does.
   newKey(
     setName: string,
     type: EntityType,
@@ -669,6 +684,10 @@ class Drafts {
             0,
             ...this.store.rows(setName).map((r) => Number(r[k]) || 0),
           ) + 1;
+      else if (prop.type === "Edm.String") {
+        const next = nextNumber(this.store.rows(setName).map((r) => r[k]));
+        if (next.length <= Number(prop.maxLength)) key[k] = next;
+      }
     }
     return key;
   }
