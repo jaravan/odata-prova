@@ -73,7 +73,7 @@ The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySr
 
 Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
 
-A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `odata-prova-mock-data` writes them to files, see [Mock data](docs/mock-data.md).
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `odata-prova-mock-data` writes them to files, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
