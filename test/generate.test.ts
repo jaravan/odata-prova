@@ -6,6 +6,7 @@ import path from "node:path";
 import { createApp } from "../lib/app.ts";
 import { writeMockData } from "../lib/mock-data.ts";
 import { start, get, PO_MODEL, type TestServer } from "./helpers.ts";
+import type { Row } from "../lib/model.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const NORTHWIND_V4 = path.join(FIXTURES, "real", "NorthwindV4");
@@ -125,7 +126,51 @@ describe("mock data", () => {
       assert.match(row.OrderDate as string, /^2025-\d{2}-\d{2}$/);
     }
   });
+
+  it("gives a row's place, currency and company code from one location", () => {
+    const northwind = load(path.join(FIXTURES, "real", "NorthwindV2"), 40);
+    const customers = northwind.store.rows("Customers");
+    assert.ok(together(customers, "City", "Country") > 3);
+    together(customers, "City", "Region");
+    for (const row of customers)
+      if (row.Country === "Germany")
+        assert.match(row.PostalCode as string, /^\d{5}$/);
+      else if (row.Country === "United Kingdom")
+        assert.match(
+          row.PostalCode as string,
+          /^[A-Z]{1,2}\d[A-Z]? \d[A-Z]{2}$/,
+        );
+    together(northwind.store.rows("Orders"), "ShipCity", "ShipCountry");
+
+    const orders = load(modelCopy(PO_MODEL), 40).store.rows("PurchaseOrderSet");
+    assert.ok(together(orders, "CompanyCode", "Currency") > 3);
+
+    // Inside a complex value too
+    const partners = load(modelCopy(path.join(FIXTURES, "GatewaySrv")), 40)
+      .store.rows("BusinessPartnerSet")
+      .map((row) => row.Address as Row);
+    together(partners, "City", "Country");
+  });
+
+  it("gives a row's product and unit from one product", () => {
+    const items = load(modelCopy(PO_MODEL), 40).store.rows(
+      "PurchaseOrderItemSet",
+    );
+    assert.ok(together(items, "Material", "Unit") > 3);
+  });
 });
+
+// Asserts that each value of column a always comes with the same value of column b, and
+// returns how many values of a there are
+function together(rows: readonly Row[], a: string, b: string): number {
+  const seen = new Map<unknown, unknown>();
+  for (const row of rows) {
+    if (seen.has(row[a]))
+      assert.equal(row[b], seen.get(row[a]), `${a} ${String(row[a])}`);
+    seen.set(row[a], row[b]);
+  }
+  return seen.size;
+}
 
 describe("mock data: foreign keys point at real rows", () => {
   let s: TestServer;

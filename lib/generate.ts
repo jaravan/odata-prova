@@ -4,6 +4,9 @@
 // every restart (and every CI run) sees the same rows. What makes it usable, not just random:
 //   - values fit their property: MaxLength, Precision and Scale, enum members, complex types
 //   - property names pick plausible values: *Currency -> EUR, *Email -> an address, ...
+//   - the values that go together agree: a row's city, postal code, region, country,
+//     currency, language and company code come from one location, its product and unit
+//     from one product (see Anchors)
 //   - foreign keys hold the keys of real rows, so navigation and $expand return something.
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
 //     up per parent: items 0001, 0002 of one order, 0001 of the next.
@@ -22,13 +25,45 @@ import type {
 // A seeded random number generator, uniform in [0, 1)
 type Rng = () => number;
 
-// What a value is generated for: the property, the set's generator, the row's number (1..)
-// and the entity or complex type's name
+// What a value is generated for: the property, the set's generator, the row's number (1..),
+// the entity or complex type's name, and the row's anchors
 interface Ctx {
   prop: Property;
   rng: Rng;
   index: number;
   typeName: string;
+  anchors: Anchors;
+}
+
+// A place, and what goes with it. postal is the place's format: # is a random digit, @ a
+// random letter. Company codes in the style of SAP Best Practices (1010 Germany, 1710 United
+// States); language is SAP's language key.
+interface Location {
+  city: string;
+  postal: string;
+  region: string;
+  regionName: string;
+  country: string;
+  countryName: string;
+  currency: string;
+  language: string;
+  companyCode: string;
+}
+
+// A product, and its unit of measure. price is the usual range of its unit price; integral
+// units are counted (5 PC), the others measured (41.650 L).
+interface Product {
+  name: string;
+  unit: string;
+  price: [number, number];
+  integral: boolean;
+}
+
+// A row's location and product, each picked when a property first asks for it, so every
+// location-like and product-like property of the row (complex members included) agrees
+interface Anchors {
+  location(): Location;
+  product(): Product;
 }
 
 // "props of set hold principalProps of principal" (see foreignKeys)
@@ -55,17 +90,181 @@ const COMPANIES = [
   "Hooli Electronics",
   "Vandelay Imports",
 ];
-const PRODUCTS = [
-  "Steel Bracket",
-  "Aluminum Housing",
-  "Copper Wire",
-  "Hex Bolt M8",
-  "Rubber Gasket",
-  "Circuit Board",
-  "Hydraulic Pump",
-  "Ball Bearing",
-  "LED Panel",
-  "Safety Valve",
+const DE = {
+  country: "DE",
+  countryName: "Germany",
+  currency: "EUR",
+  language: "DE",
+  companyCode: "1010",
+};
+const US = {
+  country: "US",
+  countryName: "United States",
+  currency: "USD",
+  language: "EN",
+  companyCode: "1710",
+};
+const GB = {
+  country: "GB",
+  countryName: "United Kingdom",
+  currency: "GBP",
+  language: "EN",
+  companyCode: "1110",
+};
+const FR = {
+  country: "FR",
+  countryName: "France",
+  currency: "EUR",
+  language: "FR",
+  companyCode: "1210",
+};
+const LOCATIONS: Location[] = [
+  {
+    ...DE,
+    city: "Walldorf",
+    postal: "69###",
+    region: "BW",
+    regionName: "Baden-Württemberg",
+  },
+  {
+    ...DE,
+    city: "Berlin",
+    postal: "10###",
+    region: "BE",
+    regionName: "Berlin",
+  },
+  {
+    ...DE,
+    city: "Munich",
+    postal: "80###",
+    region: "BY",
+    regionName: "Bavaria",
+  },
+  {
+    ...DE,
+    city: "Hamburg",
+    postal: "20###",
+    region: "HH",
+    regionName: "Hamburg",
+  },
+  {
+    ...US,
+    city: "Palo Alto",
+    postal: "943##",
+    region: "CA",
+    regionName: "California",
+  },
+  {
+    ...US,
+    city: "New York",
+    postal: "100##",
+    region: "NY",
+    regionName: "New York",
+  },
+  {
+    ...US,
+    city: "Chicago",
+    postal: "606##",
+    region: "IL",
+    regionName: "Illinois",
+  },
+  {
+    ...GB,
+    city: "London",
+    postal: "EC#A #@@",
+    region: "ENG",
+    regionName: "England",
+  },
+  {
+    ...GB,
+    city: "Manchester",
+    postal: "M# #@@",
+    region: "ENG",
+    regionName: "England",
+  },
+  {
+    ...FR,
+    city: "Paris",
+    postal: "750##",
+    region: "IDF",
+    regionName: "Île-de-France",
+  },
+  {
+    ...FR,
+    city: "Lyon",
+    postal: "690##",
+    region: "ARA",
+    regionName: "Auvergne-Rhône-Alpes",
+  },
+  {
+    city: "Madrid",
+    postal: "280##",
+    region: "MD",
+    regionName: "Madrid",
+    country: "ES",
+    countryName: "Spain",
+    currency: "EUR",
+    language: "ES",
+    companyCode: "1310",
+  },
+  {
+    city: "Milan",
+    postal: "201##",
+    region: "MI",
+    regionName: "Lombardy",
+    country: "IT",
+    countryName: "Italy",
+    currency: "EUR",
+    language: "IT",
+    companyCode: "1410",
+  },
+  {
+    city: "Amsterdam",
+    postal: "10## @@",
+    region: "NH",
+    regionName: "North Holland",
+    country: "NL",
+    countryName: "Netherlands",
+    currency: "EUR",
+    language: "NL",
+    companyCode: "1510",
+  },
+  {
+    city: "Zurich",
+    postal: "80##",
+    region: "ZH",
+    regionName: "Zurich",
+    country: "CH",
+    countryName: "Switzerland",
+    currency: "CHF",
+    language: "DE",
+    companyCode: "1610",
+  },
+  {
+    city: "Tokyo",
+    postal: "1##-####",
+    region: "13",
+    regionName: "Tokyo",
+    country: "JP",
+    countryName: "Japan",
+    currency: "JPY",
+    language: "JA",
+    companyCode: "1810",
+  },
+];
+const PRODUCTS: Product[] = [
+  { name: "Steel Bracket", unit: "PC", price: [2, 20], integral: true },
+  { name: "Aluminum Housing", unit: "PC", price: [15, 80], integral: true },
+  { name: "Copper Wire", unit: "M", price: [0.5, 4], integral: false },
+  { name: "Hex Bolt M8", unit: "PC", price: [0.1, 2], integral: true },
+  { name: "Rubber Gasket", unit: "PC", price: [0.5, 5], integral: true },
+  { name: "Circuit Board", unit: "EA", price: [20, 150], integral: true },
+  { name: "Hydraulic Pump", unit: "EA", price: [300, 2500], integral: true },
+  { name: "Ball Bearing", unit: "PC", price: [3, 40], integral: true },
+  { name: "LED Panel", unit: "EA", price: [40, 300], integral: true },
+  { name: "Safety Valve", unit: "EA", price: [50, 400], integral: true },
+  { name: "Hydraulic Oil", unit: "L", price: [3, 15], integral: false },
+  { name: "Steel Sheet", unit: "KG", price: [1, 6], integral: false },
 ];
 const FIRST_NAMES = [
   "Anna",
@@ -91,28 +290,6 @@ const LAST_NAMES = [
   "Tanaka",
   "Silva",
 ];
-const CITIES = [
-  "Berlin",
-  "London",
-  "Paris",
-  "Madrid",
-  "Rome",
-  "Vienna",
-  "Amsterdam",
-  "Stockholm",
-  "Warsaw",
-  "Lisbon",
-];
-const COUNTRIES: [string, string][] = [
-  ["DE", "Germany"],
-  ["GB", "United Kingdom"],
-  ["FR", "France"],
-  ["ES", "Spain"],
-  ["IT", "Italy"],
-  ["US", "United States"],
-  ["JP", "Japan"],
-  ["NL", "Netherlands"],
-];
 const STREETS = [
   "Main Street",
   "Market Square",
@@ -120,10 +297,7 @@ const STREETS = [
   "Park Avenue",
   "Harbour Lane",
 ];
-const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "JPY"];
 const STATUSES = ["Open", "In Process", "Approved", "Completed", "Cancelled"];
-const UNITS = ["EA", "PC", "KG", "L", "M"];
-const LANGUAGES = ["EN", "DE", "FR", "ES"];
 const JOB_TITLES = [
   "Sales Manager",
   "Buyer",
@@ -132,7 +306,6 @@ const JOB_TITLES = [
   "Sales Representative",
   "Owner",
 ];
-const REGIONS = ["North", "South", "East", "West", "Central"];
 const WORDS = [
   "standard",
   "delivery",
@@ -175,6 +348,16 @@ function random(seed: string): Rng {
 const int = (rng: Rng, n: number) => Math.floor(rng() * n); // 0 .. n-1
 const pick = <T>(rng: Rng, list: T[]): T => list[int(rng, list.length)];
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
+
+// A new row's anchors: nothing is picked until a property asks
+function anchors(rng: Rng): Anchors {
+  let location: Location | undefined;
+  let product: Product | undefined;
+  return {
+    location: () => (location ??= pick(rng, LOCATIONS)),
+    product: () => (product ??= pick(rng, PRODUCTS)),
+  };
+}
 
 // --- Foreign keys -------------------------------------------------------------------------
 
@@ -252,6 +435,21 @@ function fit(s: string, maxLength: string | undefined): string {
   return max > 0 && s.length > max ? s.slice(0, max) : s;
 }
 
+// A postal code of the row's location, in its country's format: 69190, EC1A 4BX, 1012 KX
+function postalCode(c: Ctx): string {
+  return c.anchors
+    .location()
+    .postal.replace(/[#@]/g, (ch) =>
+      ch === "#"
+        ? String(int(c.rng, 10))
+        : String.fromCharCode(65 + int(c.rng, 26)),
+    );
+}
+
+// A code (at most 3 long: DE, BW) or a name (Germany), whichever the property can hold
+const codeOrName = (c: Ctx, code: string, name: string) =>
+  Number(c.prop.maxLength) <= 3 ? code : name;
+
 function uuid(rng: Rng): string {
   const hex = Array.from({ length: 32 }, () => int(rng, 16).toString(16));
   hex[12] = "4";
@@ -273,18 +471,28 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
     (c) => `+1 555 01${pad(int(c.rng, 100), 2)}`,
   ],
   [/url|website|homepage/, (c) => `https://example.com/${c.index}`],
-  [/currency|waers/, (c) => pick(c.rng, CURRENCIES)],
+  [/currency|waers/, (c) => c.anchors.location().currency],
   [
     /country|land1/,
-    (c) => pick(c.rng, COUNTRIES)[Number(c.prop.maxLength) <= 3 ? 0 : 1],
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.country, l.countryName);
+    },
   ],
-  [/city|town|ort01/, (c) => pick(c.rng, CITIES)],
-  [/postal|zip|postcode/, (c) => String(10000 + int(c.rng, 90000))],
+  [/city|town|ort01/, (c) => c.anchors.location().city],
+  [/postal|zip|postcode|pstlz/, postalCode],
   [/street|address/, (c) => `${1 + int(c.rng, 200)} ${pick(c.rng, STREETS)}`],
-  [/region|state/, (c) => pick(c.rng, REGIONS)],
-  [/language|langu/, (c) => pick(c.rng, LANGUAGES)],
+  [
+    /region|state/,
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.region, l.regionName);
+    },
+  ],
+  [/language|langu|spras/, (c) => c.anchors.location().language],
+  [/companycode|bukrs/, (c) => c.anchors.location().companyCode],
   [/status/, (c) => pick(c.rng, STATUSES)],
-  [/unit|uom|meins/, (c) => pick(c.rng, UNITS)],
+  [/unit|uom|meins/, (c) => c.anchors.product().unit],
   [/first ?name|given ?name/, (c) => pick(c.rng, FIRST_NAMES)],
   [/last ?name|surname|family ?name/, (c) => pick(c.rng, LAST_NAMES)],
   [
@@ -303,7 +511,7 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
     /company|supplier|vendor|customer|partner|manufacturer|shipper/,
     (c) => pick(c.rng, COMPANIES),
   ],
-  [/product|material|article/, (c) => pick(c.rng, PRODUCTS)],
+  [/product|material|article/, (c) => c.anchors.product().name],
   [
     /desc|text|note|comment|remark|memo/,
     (c) => {
@@ -466,7 +674,10 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
       return max > 0 && max <= 12 ? pad(seq, max) : String(seq);
     }
     default:
-      return primitiveValue({ prop, rng, index: seq, typeName: "" }, prop.type);
+      return primitiveValue(
+        { prop, rng, index: seq, typeName: "", anchors: anchors(rng) },
+        prop.type,
+      );
   }
 }
 
@@ -524,6 +735,7 @@ function generateData(
   for (const set of sets) {
     const type = typeOf(set);
     all[set].forEach((row, i) => {
+      const rowAnchors = anchors(rngs[set]);
       for (const prop of Object.values(type.properties)) {
         if (prop.name in row) continue;
         row[prop.name] = propertyValue({
@@ -531,6 +743,7 @@ function generateData(
           rng: rngs[set],
           index: i + 1,
           typeName: type.name,
+          anchors: rowAnchors,
         });
       }
     });
