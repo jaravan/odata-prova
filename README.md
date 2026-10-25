@@ -73,7 +73,7 @@ The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySr
 
 Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
 
-A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `odata-prova-mock-data` writes them to files, see [Mock data](docs/mock-data.md).
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `--write-data` writes them to files, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
@@ -113,6 +113,7 @@ npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 | `--page-size`     | `PAGE_SIZE`     | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
 | `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file, or a PostgreSQL database (`postgres://...`, which replicas can share), that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                             |
 | `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what was saved (`PERSIST_RESET=1`)                                                                                                                                                |
+| `--write-data`    |                 |                                                | Write the generated rows to `data/`, to edit them, and exit, see [Mock data](docs/mock-data.md#editing-the-generated-data)                                                                                                                                  |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 

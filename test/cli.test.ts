@@ -367,3 +367,37 @@ describe("odata-prova --persist", () => {
     assert.match(help.stdout, /--persist-reset/);
   });
 });
+
+describe("odata-prova --write-data", () => {
+  it("writes the generated rows to data/, and exits instead of serving", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "write-data-"));
+    try {
+      fs.copyFileSync(
+        path.join(PO_MODEL, "metadata.xml"),
+        path.join(dir, "metadata.xml"),
+      );
+      const r = run([dir, "--write-data", "--mock-rows", "3"]);
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /wrote data[\\/]PurchaseOrderSet\.csv \(3 rows\)/);
+      assert.doesNotMatch(r.stdout, /listening/);
+      assert.equal(
+        fs
+          .readFileSync(path.join(dir, "data", "PurchaseOrderSet.csv"), "utf8")
+          .trim()
+          .split("\n").length,
+        4, // the header, and 3 rows
+      );
+      // Again: every set has its file now, which it keeps
+      assert.match(run([dir, "--write-data"]).stdout, /nothing to write/);
+
+      const none = run([dir, "--write-data", "--mock-rows", "0"]);
+      assert.equal(none.status, 1);
+      assert.match(
+        none.stderr,
+        /--mock-rows is 0: --write-data would write nothing/,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -20,18 +20,20 @@ The generated rows:
 To edit the generated data, write it to files:
 
 ```sh
-npx -p odata-prova odata-prova-mock-data ./MySrv    # writes MySrv/data/, 20 rows per set (add a number for more)
+npx odata-prova ./MySrv --write-data    # writes MySrv/data/, 20 rows per set (--mock-rows 50 for more)
 # edit the files: realistic names, the statuses you need to test, edge cases
-npx odata-prova ./MySrv                             # serves your edited files
+npx odata-prova ./MySrv                 # serves your edited files
 ```
 
-It writes the rows the server would generate, as CSV files (JSON for complex values). It writes only for entity sets without a data file, and never overwrites one. Delete a file to have its entity set generated again.
+It writes the rows the server would generate, as CSV files (JSON for complex values), and exits. It writes only for entity sets without a data file, and never overwrites one. Delete a file to have its entity set generated again.
 
 With Docker:
 
 ```sh
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/MySrv:/model" ghcr.io/jaravan/odata-prova node mock-data.js /model
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/MySrv:/models/MySrv" ghcr.io/jaravan/odata-prova node server.js --write-data
 ```
+
+`odata-prova-mock-data ./MySrv`, and `node mock-data.js` in the image, do the same.
 
 ## Derived values
 

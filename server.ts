@@ -11,6 +11,7 @@ import type { Express } from "express";
 import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
 import type { ETagMode, JoinMode } from "./lib/app.ts";
 import { isPostgresUrl } from "./lib/postgres.ts";
+import { writeMockData } from "./lib/mock-data.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -29,6 +30,8 @@ Options (default):
                              (postgres://...), so writes survive a restart
                              (none: in memory only, reset at every start)
       --persist-reset        Start over: replace what was saved with the seed data
+      --write-data           Write the generated rows to modelDir/data, to edit them, and
+                             exit (--mock-rows of each); existing files are kept
   -h, --help                 Show this help
   -v, --version              Show the version
 
@@ -74,6 +77,7 @@ function readArgs() {
       ) as Record<Setting, { type: "string" }>),
       port: { type: "string", short: "p" },
       "persist-reset": { type: "boolean" },
+      "write-data": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -202,6 +206,22 @@ function wholeNumber(name: Setting, fallback: number): number {
 
 // Rows generated for each entity set that has no seed file; 0 leaves those sets empty
 const MOCK_ROWS = wholeNumber("mock-rows", 20);
+
+// --write-data: the generated rows into data/, to edit them, instead of serving them
+if (args.values["write-data"]) {
+  if (!MOCK_ROWS)
+    badSetting("mock-rows", "is 0: --write-data would write nothing");
+  try {
+    const written = writeMockData(MODEL_DIR, MOCK_ROWS);
+    if (!written.length)
+      console.log("Every entity set already has a data file, nothing to write");
+    for (const { file, rows } of written)
+      console.log(`wrote ${file} (${rows} rows)`);
+  } catch (err) {
+    exitWithError("cannot write the data", err);
+  }
+  process.exit(0);
+}
 
 // The most rows a collection's response holds, with a next link to the rest; 0 sends every row
 const PAGE_SIZE = wholeNumber("page-size", 0);

@@ -4,6 +4,9 @@
 //
 //   odata-prova-mock-data <modelDir> [rows]      (or: node mock-data.ts <modelDir> [rows])
 //
+// The same as odata-prova <modelDir> --write-data --mock-rows <rows>, kept for the scripts and
+// Docker commands that use it.
+//
 // An entity set is written as CSV, or as JSON when a row holds a complex or collection
 // value, or a text that would need quoting in CSV (this writer doesn't quote).
 
