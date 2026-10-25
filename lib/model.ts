@@ -142,6 +142,9 @@ export interface Property {
   enumType?: EnumType;
   // Core.Computed: the service fills the value in
   computed?: boolean;
+  // The property of the same type that holds this amount's currency, or this quantity's
+  // unit: Measures.ISOCurrency or Measures.Unit with a Path, or V2's sap:unit
+  measure?: { currency?: string; unit?: string };
   // ConcurrencyMode="Fixed" (V2): part of the entity's ETag (see etag.ts)
   concurrency?: boolean;
   // A collection-valued property, which V2 has no place for

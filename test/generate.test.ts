@@ -158,6 +158,37 @@ describe("mock data", () => {
     );
     assert.ok(together(items, "Material", "Unit") > 3);
   });
+
+  it("counts pieces and measures the rest: a quantity's decimals follow its unit", () => {
+    const counted = (unit: unknown) => unit === "PC" || unit === "EA";
+    const check = (rows: readonly Row[], quantity: string, unit: string) => {
+      const units = new Set(rows.map((r) => r[unit]));
+      assert.ok(
+        [...units].some(counted) && [...units].some((u) => !counted(u)),
+      );
+      for (const row of rows)
+        if (counted(row[unit]))
+          assert.match(
+            row[quantity] as string,
+            /^\d+\.0+$/,
+            `${row[quantity]} ${row[unit]}`,
+          );
+    };
+    // By name: Quantity and Unit
+    check(
+      load(modelCopy(PO_MODEL), 40).store.rows("PurchaseOrderItemSet"),
+      "Quantity",
+      "Unit",
+    );
+    // By the metadata: sap:unit="WeightUnit" on Weight, though neither is named so
+    const products = load(
+      path.join(FIXTURES, "SapAnnotationsV2"),
+      40,
+    ).store.rows("Products");
+    check(products, "Weight", "WeightUnit");
+    for (const row of products)
+      assert.match(row.Currency as string, /^[A-Z]{3}$/);
+  });
 });
 
 // Asserts that each value of column a always comes with the same value of column b, and

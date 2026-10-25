@@ -26,13 +26,24 @@ import type {
 type Rng = () => number;
 
 // What a value is generated for: the property, the set's generator, the row's number (1..),
-// the entity or complex type's name, and the row's anchors
+// the entity or complex type's name and what the metadata says its properties are, and the
+// row's anchors
 interface Ctx {
   prop: Property;
   rng: Rng;
   index: number;
   typeName: string;
+  measures: Measures;
   anchors: Anchors;
+}
+
+// A type's properties that the metadata marks as the currency of an amount, the unit of a
+// quantity, or a quantity (see measure in model.ts); sap:semantics marks a currency or unit
+// code on its own
+interface Measures {
+  currencies: Set<string>;
+  units: Set<string>;
+  quantities: Set<string>;
 }
 
 // A place, and what goes with it. postal is the place's format: # is a random digit, @ a
@@ -349,6 +360,24 @@ const int = (rng: Rng, n: number) => Math.floor(rng() * n); // 0 .. n-1
 const pick = <T>(rng: Rng, list: T[]): T => list[int(rng, list.length)];
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
 
+const measuresOfType = new WeakMap<Record<string, Property>, Measures>();
+function measuresOf(properties: Record<string, Property>): Measures {
+  let m = measuresOfType.get(properties);
+  if (m) return m;
+  m = { currencies: new Set(), units: new Set(), quantities: new Set() };
+  for (const p of Object.values(properties)) {
+    if (p.measure?.currency) m.currencies.add(p.measure.currency);
+    if (p.measure?.unit) {
+      m.units.add(p.measure.unit);
+      m.quantities.add(p.name);
+    }
+    if (p.sap.semantics === "currency-code") m.currencies.add(p.name);
+    if (p.sap.semantics === "unit-of-measure") m.units.add(p.name);
+  }
+  measuresOfType.set(properties, m);
+  return m;
+}
+
 // A new row's anchors: nothing is picked until a property asks
 function anchors(rng: Rng): Anchors {
   let location: Location | undefined;
@@ -534,11 +563,21 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
 ];
 
 function stringValue(c: Ctx): string {
+  // What the metadata says comes before what the name suggests
+  if (c.measures.currencies.has(c.prop.name))
+    return fit(c.anchors.location().currency, c.prop.maxLength);
+  if (c.measures.units.has(c.prop.name))
+    return fit(c.anchors.product().unit, c.prop.maxLength);
   const name = c.prop.name.toLowerCase();
   const rule = STRING_RULES.find(([re]) => re.test(name));
   const s = rule ? rule[1](c) : `${humanize(c.prop.name)} ${c.index}`;
   return fit(s, c.prop.maxLength);
 }
+
+// A quantity: one the metadata gives a unit, or one named like it
+const isQuantity = (c: Ctx) =>
+  c.measures.quantities.has(c.prop.name) ||
+  /quantity|qty|menge/.test(c.prop.name.toLowerCase());
 
 function numberRange(name: string): [number, number] {
   if (
@@ -578,6 +617,9 @@ function decimalValue(c: Ctx): string {
     max = Math.min(max, top);
     min = Math.min(min, max);
   }
+  // Pieces are counted: 5.000 PC, where litres are measured: 41.650 L
+  if (isQuantity(c) && c.anchors.product().integral)
+    return (min + int(c.rng, Math.floor(max - min) + 1)).toFixed(scale);
   return (min + c.rng() * (max - min)).toFixed(scale);
 }
 
@@ -631,7 +673,12 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
     const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
       out[p.name] = propertyValue(
-        { ...c, prop: p, typeName: prop.complexType.name },
+        {
+          ...c,
+          prop: p,
+          typeName: prop.complexType.name,
+          measures: measuresOf(prop.complexType.properties),
+        },
         depth + 1,
       );
     return out;
@@ -675,7 +722,14 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
     }
     default:
       return primitiveValue(
-        { prop, rng, index: seq, typeName: "", anchors: anchors(rng) },
+        {
+          prop,
+          rng,
+          index: seq,
+          typeName: "",
+          measures: measuresOf({}),
+          anchors: anchors(rng),
+        },
         prop.type,
       );
   }
@@ -743,6 +797,7 @@ function generateData(
           rng: rngs[set],
           index: i + 1,
           typeName: type.name,
+          measures: measuresOf(type.properties),
           anchors: rowAnchors,
         });
       }
