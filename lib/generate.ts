@@ -9,7 +9,8 @@
 //     from one product (see Anchors)
 //   - foreign keys hold the keys of real rows, so navigation and $expand return something.
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
-//     up per parent: items 0001, 0002 of one order, 0001 of the next.
+//     up per parent: items 00010, 00020 of one order, 00010 of the next (an item number
+//     counts by 10, as SAP's do; see isItemNumber).
 //
 // Values are produced in the store's internal representation (see types.ts).
 
@@ -722,6 +723,13 @@ function propertyValue(c: Ctx, depth = 0): PropertyValue {
   return depth > 2 ? [] : [elementValue(c, depth), elementValue(c, depth)];
 }
 
+// An item's number under its parent, as SAP keys a document's items (EBELP, POSNR): a short
+// string, which counts by 10, 00010, 00020, so items can be put in between
+const isItemNumber = (prop: Property) =>
+  prop.type === "Edm.String" &&
+  [5, 6].includes(Number(prop.maxLength)) &&
+  /item|position|posnr|ebelp/i.test(prop.name);
+
 // A key value that is unique by construction: seq counts up per set (or per parent, when
 // the key also holds a foreign key).
 function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
@@ -806,7 +814,12 @@ function generateData(
       const seq = (seqs.get(parent) || 0) + 1;
       seqs.set(parent, seq);
       for (const k of type.keys)
-        if (!(k in row)) row[k] = keyValue(type.properties[k], seq, rng);
+        if (!(k in row))
+          row[k] = keyValue(
+            type.properties[k],
+            keyFks.length && isItemNumber(type.properties[k]) ? seq * 10 : seq,
+            rng,
+          );
       const key = JSON.stringify(type.keys.map((k) => row[k]));
       if (seen.has(key)) continue;
       seen.add(key);

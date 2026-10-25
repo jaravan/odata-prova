@@ -263,7 +263,7 @@ describe("mock data: children of seeded parents", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
-  it("belong to the seeded rows, numbered per parent", () => {
+  it("belong to the seeded rows, numbered per parent by 10, as SAP numbers items", () => {
     const orders = new Set(
       s.store.rows("PurchaseOrderSet").map((o) => o.PurchaseOrderId),
     );
@@ -274,12 +274,13 @@ describe("mock data: children of seeded parents", () => {
     for (const item of items) {
       const order = String(item.PurchaseOrderId);
       assert.ok(orders.has(item.PurchaseOrderId), order);
+      assert.match(item.ItemPosition as string, /^\d{5}$/); // MaxLength 5
       (positions[order] ||= []).push(Number(item.ItemPosition));
     }
     for (const list of Object.values(positions))
       assert.deepEqual(
         list,
-        list.map((_, i) => i + 1),
+        list.map((_, i) => (i + 1) * 10),
       );
   });
 });
