@@ -93,7 +93,11 @@ describe("mock rules: what they apply to", () => {
         ]),
       ),
       {
-        PurchaseOrderSet: { Status: "Status" },
+        // and the built-in rule for a purchase order's number
+        PurchaseOrderSet: {
+          Status: "Status",
+          PurchaseOrderId: "PurchaseOrderId",
+        },
       },
     );
   });
@@ -271,5 +275,79 @@ describe("mock rules: the generated rows follow them", () => {
       .map((r) => r.Address as Record<string, unknown>);
     for (const a of addresses) assert.equal(a.City, "Walldorf");
     assert.ok(new Set(addresses.map((a) => a.Country)).size > 1);
+  });
+});
+
+describe("mock rules: the built-in SAP fields", () => {
+  // A classic Gateway service's DDIC names, and a RAP API's type with a bare ID key
+  const DDIC = `<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Z" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Ekko">
+        <Key><PropertyRef Name="Ebeln"/></Key>
+        <Property Name="Ebeln" Type="Edm.String" MaxLength="10" Nullable="false"/>
+        <Property Name="Lifnr" Type="Edm.String" MaxLength="10"/>
+        <Property Name="Supplier" Type="Edm.String" MaxLength="80"/>
+      </EntityType>
+      <EntityType Name="A_PurchaseRequisitionType">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.String" MaxLength="10" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="Order">
+        <Key><PropertyRef Name="PurchaseOrder"/></Key>
+        <Property Name="PurchaseOrder" Type="Edm.Int16" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="EkkoSet" EntityType="Z.Ekko"/>
+        <EntitySet Name="Requisitions" EntityType="Z.A_PurchaseRequisitionType"/>
+        <EntitySet Name="Orders" EntityType="Z.Order"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`;
+  const generate = (config?: object) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "builtin-"));
+    fs.writeFileSync(path.join(dir, "metadata.xml"), DDIC);
+    if (config)
+      fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(config));
+    const { store } = createApp({
+      modelDir: dir,
+      v4Path: "/v4",
+      log: () => {},
+      mockRows: 3,
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+    return store;
+  };
+
+  it("number SAP's documents and partners in SAP's ranges, with no config.json", () => {
+    const store = generate();
+    const ekko = store.rows("EkkoSet");
+    assert.deepEqual(
+      ekko.map((r) => r.Ebeln),
+      ["4500000001", "4500000002", "4500000003"],
+    );
+    assert.deepEqual(
+      ekko.map((r) => r.Lifnr),
+      ["17300001", "17300002", "17300003"],
+    );
+    // An 80-long Supplier is a name, not an ID
+    for (const r of ekko) assert.doesNotMatch(r.Supplier as string, /^\d+$/);
+    // A bare ID, by its type's name: A_PurchaseRequisitionType is a purchase requisition
+    assert.deepEqual(
+      store.rows("Requisitions").map((r) => r.ID),
+      ["0010000001", "0010000002", "0010000003"],
+    );
+    // A number that can't hold 4500000001 keeps counting from 1
+    assert.deepEqual(
+      store.rows("Orders").map((r) => r.PurchaseOrder),
+      [1, 2, 3],
+    );
+  });
+
+  it("give way to config.json", () => {
+    const store = generate({ mock: { Ebeln: "46########" } });
+    assert.equal(store.rows("EkkoSet")[0].Ebeln, "4600000001");
   });
 });

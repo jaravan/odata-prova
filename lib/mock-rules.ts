@@ -7,7 +7,8 @@
 // serves many models. A "Set.Property" rule wins over a "Property" rule for that set.
 
 import type { EntityType, Model, Property } from "./model.ts";
-import { configError, type MockRule } from "./config.ts";
+import { configError, parseMockValue, type MockRule } from "./config.ts";
+import { SAP_FIELDS } from "./sap-fields.ts";
 import { foreignKeys } from "./generate.ts";
 import { propToInternal } from "./types.ts";
 
@@ -28,6 +29,30 @@ const NUMBERS = [
   "Edm.Single",
 ];
 const DATES = ["Edm.Date", "Edm.DateTimeOffset"];
+
+// The built-in rules (see sap-fields.ts), read as a shared file's: skipped where they don't
+// apply
+const BUILTIN: MockRule[] = Object.entries(SAP_FIELDS).map(
+  ([key, written]) => ({
+    key,
+    path: key,
+    value: parseMockValue(written, `built-in "${key}"`),
+    file: "built-in",
+    shared: true,
+    builtin: true,
+  }),
+);
+
+// Whether a built-in rule's running number suits prop: a number, or a text of at most 12, an
+// ID's length. A longer text is a name (a Supplier of 100 is the company's), which the
+// generator fills in better.
+function idSized(rule: MockRule, prop: Property): boolean {
+  if (rule.value.kind !== "count") return true;
+  const type = prop.elementType || prop.type;
+  if (type !== "Edm.String") return true;
+  const max = Number(prop.maxLength);
+  return max > 0 && max <= 12;
+}
 
 // Edit distance, for "Did you mean"
 function distance(a: string, b: string): number {
@@ -138,7 +163,9 @@ function misfit(
 }
 
 // The rules, resolved per entity set; throws, listing every mistake in the model's own file
-function resolveMockRules(model: Model, rules: MockRule[]): MockRules {
+function resolveMockRules(model: Model, ownRules: MockRule[]): MockRules {
+  // The built-in ones first, so any other rule for the same property wins
+  const rules = [...BUILTIN, ...ownRules];
   const sets = Object.values(model.entitySets);
   const typeOf = (set: string): EntityType =>
     model.entityTypes[model.entitySets[set].entityType];
@@ -151,8 +178,8 @@ function resolveMockRules(model: Model, rules: MockRule[]): MockRules {
   const specific = new Set<string>(); // "set path" set by a Set.Property rule
   const errors: string[] = [];
   // A rule on every set: the sets it can't fit, and whether it fits any
-  const unfit: Record<string, string[]> = {};
-  const applied = new Set<string>();
+  const unfit = new Map<MockRule, string[]>();
+  const applied = new Set<MockRule>();
 
   for (const rule of rules) {
     // Only the model's own file's: a shared file's rule that doesn't apply here is skipped
@@ -236,26 +263,46 @@ function resolveMockRules(model: Model, rules: MockRule[]): MockRules {
         continue;
       }
       const isKey = memberName === undefined && type.keys.includes(prop.name);
+      if (rule.builtin && !idSized(rule, target)) continue;
       const wrong = misfit(rule, target, isKey);
       if (wrong) {
         // A rule on every set skips a set it can't fit, unless it fits none (see below)
         if (rule.set) fail(wrong);
-        else (unfit[rule.key] ??= []).push(`${set}: ${wrong}`);
+        else unfit.set(rule, [...(unfit.get(rule) ?? []), `${set}: ${wrong}`]);
         continue;
       }
       const at = `${set} ${path}`;
       if (!rule.set && specific.has(at)) continue;
       if (rule.set) specific.add(at);
       (resolved[set] ??= {})[path] = rule;
-      applied.add(rule.key);
+      applied.add(rule);
+    }
+  }
+  // A key named ID, Id, Number or Key takes the built-in rule of its entity type's name:
+  // PurchaseOrder.ID, or RAP's A_PurchaseOrderType.ID, that of "PurchaseOrder"
+  for (const es of sets) {
+    const type = typeOf(es.name);
+    const name = type.name.replace(/^[ACI]_/, "").replace(/Type$/, "");
+    const rule = BUILTIN.find(
+      (r) => r.key.toLowerCase() === name.toLowerCase(),
+    );
+    if (!rule) continue;
+    for (const k of type.keys) {
+      const prop = type.properties[k];
+      if (
+        /^(id|number|key)$/i.test(k) &&
+        !resolved[es.name]?.[k] &&
+        !fkProps[es.name]?.has(k) &&
+        idSized(rule, prop) &&
+        !misfit(rule, prop, true)
+      )
+        (resolved[es.name] ??= {})[k] = rule;
     }
   }
   // A rule on every set that fits none of them is a mistake: say why, for each
-  for (const [key, why] of Object.entries(unfit)) {
-    const rule = rules.find((r) => r.key === key)!;
-    if (!applied.has(key) && !rule.shared)
-      errors.push(`mock "${key}": ${why.join("; ")}`);
-  }
+  for (const [rule, why] of unfit)
+    if (!applied.has(rule) && !rule.shared)
+      errors.push(`mock "${rule.key}": ${why.join("; ")}`);
   // The file once, each mistake on a line of its own
   if (errors.length) {
     const file = rules.find((r) => !r.shared)!.file;

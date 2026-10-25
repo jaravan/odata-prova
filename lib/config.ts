@@ -51,6 +51,8 @@ export interface MockRule {
   // set or property the model doesn't have is skipped there, not an error
   file: string;
   shared: boolean;
+  // One of the built-in rules (see sap-fields.ts)
+  builtin?: boolean;
 }
 
 export interface Config {
