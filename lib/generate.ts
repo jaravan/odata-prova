@@ -1015,4 +1015,5 @@ function generateLinks(
   return links;
 }
 
-export { generateData, generateLinks };
+export { generateData, generateLinks, foreignKeys };
+export type { ForeignKey };

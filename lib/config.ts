@@ -64,28 +64,34 @@ type Scalar = string | number | boolean | null;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
+// A mistake in config.json: its code makes the startup show the message alone, not a stack
+// trace (see server.ts)
+function configError(message: string, options?: ErrorOptions): Error {
+  return Object.assign(new Error(message, options), { code: "ECONFIG" });
+}
+
 // A rule's value, from what's written; throws with what's wrong. file and key are for the
 // message.
 function parseMockValue(written: Json, where: string): MockValue {
   if (Array.isArray(written)) {
     if (!written.length)
-      throw new Error(`${where}: an empty list, give at least one value`);
+      throw configError(`${where}: an empty list, give at least one value`);
     for (const v of written)
       if (v !== null && typeof v === "object")
-        throw new Error(
+        throw configError(
           `${where}: a list holds values, not ${Array.isArray(v) ? "lists" : "objects"}`,
         );
     return { kind: "list", values: written as Scalar[] };
   }
   if (written !== null && typeof written === "object")
-    throw new Error(
+    throw configError(
       `${where}: write a value ("EUR"), a running number ("45########"), a range ("100..500") or a list (["A", "B"])`,
     );
   if (typeof written !== "string") return { kind: "constant", value: written };
 
   const runs = written.match(/#+/g) ?? [];
   if (runs.length > 1)
-    throw new Error(
+    throw configError(
       `${where}: "${written}" has ${runs.length} runs of #, a running number has one ("45########"); for a value with a # in it, write a list: ["${written}"]`,
     );
   if (runs.length === 1) {
@@ -110,7 +116,7 @@ function parseMockValue(written: Json, where: string): MockValue {
     if (type) {
       const lower = type === "number" ? Number(min) <= Number(max) : min <= max;
       if (!lower)
-        throw new Error(
+        throw configError(
           `${where}: "${written}" starts after it ends, write "${max}..${min}"`,
         );
       return { kind: "range", type, min, max };
@@ -135,7 +141,7 @@ function readChain(
   chain: string[],
 ): { operations: Config["operations"]; mock: MockRule[] } {
   if (chain.includes(file))
-    throw new Error(
+    throw configError(
       `${chain[chain.length - 1]}: extends ${file}, which extends it back: ${[...chain, file].join(" -> ")}`,
     );
   let config: { [key: string]: Json };
@@ -147,17 +153,19 @@ function readChain(
       err.code === "ENOENT"
         ? `no such file, extended by ${chain[chain.length - 1]}`
         : err.message;
-    throw new Error(`${file}: ${reason}`, { cause: e });
+    throw configError(`${file}: ${reason}`, { cause: e });
   }
   if (config === null || typeof config !== "object" || Array.isArray(config))
-    throw new Error(`${file}: an object is expected, { "mock": { ... } }`);
+    throw configError(`${file}: an object is expected, { "mock": { ... } }`);
 
   const operations: Config["operations"] = {};
   const mock: MockRule[] = [];
   const bases = config.extends ?? [];
   for (const base of Array.isArray(bases) ? bases : [bases]) {
     if (typeof base !== "string")
-      throw new Error(`${file}: extends names files: "../shared/config.json"`);
+      throw configError(
+        `${file}: extends names files: "../shared/config.json"`,
+      );
     const from = readChain(path.resolve(path.dirname(file), base), true, [
       ...chain,
       file,
@@ -173,7 +181,7 @@ function readChain(
 
   const rules = config.mock ?? {};
   if (rules === null || typeof rules !== "object" || Array.isArray(rules))
-    throw new Error(
+    throw configError(
       `${file}: mock is an object of rules, { "PurchaseOrderSet.Status": ["Open", "Approved"] }`,
     );
   for (const [key, written] of Object.entries(rules))
@@ -205,4 +213,4 @@ function loadConfig(modelDir: string): Config {
   return readChain(file, false, []);
 }
 
-export { loadConfig, parseMockValue, parseMockKey };
+export { loadConfig, parseMockValue, parseMockKey, configError };

@@ -18,7 +18,8 @@ import {
 import { SqlitePersistence } from "./sqlite.ts";
 import { PostgresPersistence, isPostgresUrl } from "./postgres.ts";
 import type { Protocol, Rules } from "./protocol.ts";
-import { loadConfig, type Config } from "./config.ts";
+import { configError, loadConfig, type Config } from "./config.ts";
+import { resolveMockRules } from "./mock-rules.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { ETAG_MODES } from "./etag.ts";
@@ -70,12 +71,12 @@ function operationRules(model: Model, config: Config): Rules {
       .map((op) => op.binding?.entityType || op.bindsTo?.type)
       .find(Boolean);
     if (!type)
-      throw new Error(
+      throw configError(
         `${file}: operations.${name}: no operation of that name acts on an entity`,
       );
     for (const prop of Object.keys(rule.set || {}))
       if (!type.properties[prop])
-        throw new Error(
+        throw configError(
           `${file}: operations.${name}.set: ${type.name} has no property ${prop}`,
         );
   }
@@ -163,6 +164,8 @@ function createApp({
     );
   const config = loadConfig(modelDir);
   const rules = operationRules(model, config);
+  // Checked at startup, a mistake stopping it with how to fix it
+  resolveMockRules(model, config.mock);
 
   // Instantiate storage
   const store = new Store(model, modelDir, log, { mockRows });
