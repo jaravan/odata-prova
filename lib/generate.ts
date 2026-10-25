@@ -480,6 +480,16 @@ function fit(s: string, maxLength: string | undefined): string {
   return max > 0 && s.length > max ? s.slice(0, max) : s;
 }
 
+// A label made of a name and the row's number ("Category 3"), or digits as long as the
+// property, when the label wouldn't fit whole: Extension, MaxLength 4, is 4521, not "Exte"
+function labelOr(c: Ctx, name: string): string {
+  const s = `${humanize(name)} ${c.index}`;
+  const max = Number(c.prop.maxLength);
+  if (!(max > 0 && s.length > max)) return s;
+  const width = Math.min(max, 10);
+  return pad(int(c.rng, 10 ** width), width);
+}
+
 // A postal code of the row's location, in its country's format: 69190, EC1A 4BX, 1012 KX
 function postalCode(c: Ctx): string {
   return c.anchors
@@ -516,6 +526,8 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
     (c) => `+1 555 01${pad(int(c.rng, 100), 2)}`,
   ],
   [/url|website|homepage/, (c) => `https://example.com/${c.index}`],
+  [/photo|image|picture|path/, (c) => `/images/${c.index}.jpg`],
+  [/courtesy|salutation|anrede/, (c) => pick(c.rng, ["Mr.", "Ms.", "Dr."])],
   [/currency|waers/, (c) => c.anchors.location().currency],
   [
     /country|land1/,
@@ -553,7 +565,7 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
     (c) => `${pick(c.rng, FIRST_NAMES)} ${pick(c.rng, LAST_NAMES)}`,
   ],
   [
-    /company|supplier|vendor|customer|partner|manufacturer|shipper/,
+    /company|supplier|vendor|customer|partner|manufacturer|shipper|shipname/,
     (c) => pick(c.rng, COMPANIES),
   ],
   [/product|material|article/, (c) => c.anchors.product().name],
@@ -573,7 +585,7 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
     /name$|title$/,
     (c) => {
       const base = c.prop.name.replace(/(Name|Title)$/i, "");
-      return `${humanize(base || c.typeName)} ${c.index}`;
+      return labelOr(c, base || c.typeName);
     },
   ],
 ];
@@ -586,8 +598,7 @@ function stringValue(c: Ctx): string {
     return fit(c.anchors.product().unit, c.prop.maxLength);
   const name = c.prop.name.toLowerCase();
   const rule = STRING_RULES.find(([re]) => re.test(name));
-  const s = rule ? rule[1](c) : `${humanize(c.prop.name)} ${c.index}`;
-  return fit(s, c.prop.maxLength);
+  return fit(rule ? rule[1](c) : labelOr(c, c.prop.name), c.prop.maxLength);
 }
 
 // A quantity: one the metadata gives a unit, or one named like it

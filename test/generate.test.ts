@@ -183,6 +183,18 @@ describe("mock data", () => {
     assert.ok(checked > 5);
   });
 
+  it("leaves no stand-in showing: no cut label, a courtesy title, an image path, a ship's name", () => {
+    const { store } = load(path.join(FIXTURES, "real", "NorthwindV2"), 20);
+    for (const e of store.rows("Employees")) {
+      // Extension has MaxLength 4: "Extension 1" doesn't fit, so digits, not "Exte"
+      assert.match(e.Extension as string, /^\d{4}$/);
+      assert.ok(["Mr.", "Ms.", "Dr."].includes(e.TitleOfCourtesy as string));
+      assert.match(e.PhotoPath as string, /^\/images\/\d+\.jpg$/);
+    }
+    for (const o of store.rows("Orders"))
+      assert.doesNotMatch(o.ShipName as string, /^Ship \d/);
+  });
+
   it("puts a row's dates in order, and later rows later", () => {
     const orders = load(
       path.join(FIXTURES, "real", "NorthwindV2"),
