@@ -165,10 +165,10 @@ function createApp({
   const config = loadConfig(modelDir);
   const rules = operationRules(model, config);
   // Checked at startup, a mistake stopping it with how to fix it
-  resolveMockRules(model, config.mock);
+  const mockRules = resolveMockRules(model, config.mock);
 
   // Instantiate storage
-  const store = new Store(model, modelDir, log, { mockRows });
+  const store = new Store(model, modelDir, log, { mockRows, mockRules });
 
   // Whichever flavour the model was written in is served verbatim on that protocol's
   // $metadata; the other one is generated from the model.

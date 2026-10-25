@@ -175,3 +175,101 @@ describe("mock rules: mistakes, and how to fix them", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("mock rules: the generated rows follow them", () => {
+  // A model's generated rows, with these rules in its config.json
+  const generate = (from: string, mock: Record<string, unknown>) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rules-"));
+    fs.copyFileSync(
+      path.join(from, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ mock }));
+    const { store } = createApp({
+      modelDir: dir,
+      v4Path: "/v4",
+      log: () => {},
+      mockRows: 30,
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+    return store;
+  };
+
+  it("a key's running number, per set, and per order for its items", () => {
+    const store = generate(PO_MODEL, {
+      "PurchaseOrderSet.PurchaseOrderId": "45########",
+      "PurchaseOrderItemSet.ItemPosition": "###0",
+    });
+    assert.deepEqual(
+      store
+        .rows("PurchaseOrderSet")
+        .map((o) => o.PurchaseOrderId)
+        .slice(0, 3),
+      ["4500000001", "4500000002", "4500000003"],
+    );
+    const positions: Record<string, string[]> = {};
+    for (const item of store.rows("PurchaseOrderItemSet")) {
+      assert.match(item.PurchaseOrderId as string, /^45\d{8}$/); // its order's
+      (positions[item.PurchaseOrderId as string] ??= []).push(
+        item.ItemPosition as string,
+      );
+    }
+    for (const list of Object.values(positions))
+      assert.deepEqual(
+        list,
+        list.map((_, i) => `${String(i + 1).padStart(3, "0")}0`),
+      );
+  });
+
+  it("a list, a range of dates or of numbers, a value, on its column only", () => {
+    const store = generate(PO_MODEL, {
+      "PurchaseOrderSet.Status": ["Open", "Approved"],
+      "PurchaseOrderSet.OrderDate": "2025-03-01..2025-03-31",
+      "PurchaseOrderSet.CompanyCode": "1000..1999",
+      Quantity: "1..10",
+      "PurchaseOrderSet.Supplier": "Acme",
+    });
+    const orders = store.rows("PurchaseOrderSet");
+    assert.deepEqual([...new Set(orders.map((o) => o.Status))].sort(), [
+      "Approved",
+      "Open",
+    ]);
+    for (const o of orders) {
+      assert.match(o.OrderDate as string, /^2025-03-\d{2}$/);
+      assert.ok(Number(o.CompanyCode) >= 1000 && Number(o.CompanyCode) <= 1999);
+      assert.match(o.CompanyCode as string, /^\d{4}$/); // text, no decimals
+      assert.equal(o.Supplier, "Acme");
+    }
+    for (const item of store.rows("PurchaseOrderItemSet")) {
+      const q = Number(item.Quantity);
+      assert.ok(q >= 1 && q <= 10, String(q));
+      // Still whole for a counted unit
+      if (item.Unit === "PC" || item.Unit === "EA") assert.equal(q % 1, 0);
+    }
+  });
+
+  it("wins over what items take from their order, and over its total", () => {
+    const store = generate(PO_MODEL, {
+      "PurchaseOrderSet.Currency": "EUR",
+      "PurchaseOrderItemSet.Currency": "USD",
+      "PurchaseOrderSet.TotalAmount": "1.00",
+    });
+    for (const o of store.rows("PurchaseOrderSet")) {
+      assert.equal(o.Currency, "EUR");
+      assert.equal(o.TotalAmount, "1.00");
+    }
+    for (const item of store.rows("PurchaseOrderItemSet"))
+      assert.equal(item.Currency, "USD");
+  });
+
+  it("a complex property's member, the rest of it as without the rule", () => {
+    const store = generate(path.join(FIXTURES, "GatewaySrv"), {
+      "Address/City": ["Walldorf"],
+    });
+    const addresses = store
+      .rows("BusinessPartnerSet")
+      .map((r) => r.Address as Record<string, unknown>);
+    for (const a of addresses) assert.equal(a.City, "Walldorf");
+    assert.ok(new Set(addresses.map((a) => a.Country)).size > 1);
+  });
+});

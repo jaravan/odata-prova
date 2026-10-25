@@ -18,6 +18,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
 import { generateData, generateLinks } from "./generate.ts";
+import type { MockRules } from "./mock-rules.ts";
 import { asActive } from "./draft.ts";
 
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
@@ -168,12 +169,16 @@ class Store {
   // first asked for, dropped by a change to the set that could move a row between buckets.
   private indexes: Record<string, Map<string, Map<string, Row[]>>> = {};
 
-  // mockRows: rows to generate for each entity set without a seed file (0: leave it empty)
+  // mockRows: rows to generate for each entity set without a seed file (0: leave it empty);
+  // mockRules: config.json's rules for them (see mock-rules.ts)
   constructor(
     model: Model,
     modelDir: string,
     log: (message: string) => void = console.log,
-    { mockRows = 0 }: { mockRows?: number } = {},
+    {
+      mockRows = 0,
+      mockRules = {},
+    }: { mockRows?: number; mockRules?: MockRules } = {},
   ) {
     this.model = model;
     this.data = {};
@@ -215,6 +220,7 @@ class Store {
         this.data,
         this.generated,
         mockRows,
+        mockRules,
       );
       for (const name of this.generated) {
         const es = model.entitySets[name];

@@ -25,13 +25,17 @@ import type {
   PropertyValue,
   Row,
 } from "./model.ts";
+import type { MockRule, MockValue } from "./config.ts";
+import type { MockRules } from "./mock-rules.ts";
+import { propToInternal } from "./types.ts";
 
 // A seeded random number generator, uniform in [0, 1)
 type Rng = () => number;
 
 // What a value is generated for: the property, the set's generator, the row's number (1..),
-// the entity or complex type's name and what the metadata says its properties are, and the
-// row's anchors
+// the entity or complex type's name and what the metadata says its properties are, the row's
+// anchors, and the set's mock rules (see mock-rules.ts), with path, the complex property the
+// value is inside ("Address/"), "" at the top
 interface Ctx {
   prop: Property;
   rng: Rng;
@@ -39,6 +43,8 @@ interface Ctx {
   typeName: string;
   measures: Measures;
   anchors: Anchors;
+  rules: Record<string, MockRule>;
+  path: string;
 }
 
 // A type's properties that the metadata marks as the currency of an amount, the unit of a
@@ -726,6 +732,7 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
           prop: p,
           typeName: prop.complexType.name,
           measures: measuresOf(prop.complexType.properties),
+          path: `${c.path}${prop.name}/`,
         },
         depth + 1,
       );
@@ -736,8 +743,81 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
 }
 
 function propertyValue(c: Ctx, depth = 0): PropertyValue {
+  const rule = c.rules[`${c.path}${c.prop.name}`];
+  if (rule) return ruleValue(c, rule.value);
   if (!c.prop.isCollection) return elementValue(c, depth);
   return depth > 2 ? [] : [elementValue(c, depth), elementValue(c, depth)];
+}
+
+// The value a mock rule gives (see config.ts), in the store's form of the property's type.
+// seq numbers a running number: the row's, or for a key, its number among its parent's.
+function ruleValue(c: Ctx, value: MockValue, seq = c.index): PropertyValue {
+  switch (value.kind) {
+    case "count":
+      return propToInternal(
+        `${value.prefix}${pad(seq, value.width)}${value.suffix}`,
+        c.prop,
+      );
+    case "range":
+      return value.type === "number"
+        ? numberIn(c, value.min, value.max)
+        : dateIn(c, value.min, value.max);
+    case "constant":
+      return propToInternal(value.value, c.prop);
+    case "list":
+      return propToInternal(pick(c.rng, value.values), c.prop);
+  }
+}
+
+// A number from min to max, with the property's decimals: its Scale, none for an integer, or
+// for a text the most either end was written with ("0.5..2.25": 2). A quantity of a counted
+// unit is whole, as without a rule (see decimalValue).
+function numberIn(c: Ctx, min: string, max: string): PropertyValue {
+  const type = c.prop.elementType || c.prop.type;
+  const [low, high] = [Number(min), Number(max)];
+  const decimals =
+    type === "Edm.Decimal"
+      ? decimalScale(c.prop)
+      : type === "Edm.Double" || type === "Edm.Single"
+        ? 2
+        : type === "Edm.String"
+          ? Math.max(...[min, max].map((s) => s.split(".")[1]?.length ?? 0))
+          : 0;
+  const whole = !decimals || (isQuantity(c) && c.anchors.product().integral);
+  const n = whole
+    ? Math.ceil(low) + int(c.rng, Math.floor(high) - Math.ceil(low) + 1)
+    : low + c.rng() * (high - low);
+  return propToInternal(n.toFixed(decimals), c.prop);
+}
+
+// A day from min to max (YYYY-MM-DD), with a time of day when the property has one
+function dateIn(c: Ctx, min: string, max: string): PropertyValue {
+  const [low, high] = [Date.parse(min), Date.parse(max)];
+  const day = low + int(c.rng, Math.round((high - low) / DAY) + 1) * DAY;
+  const type = c.prop.elementType || c.prop.type;
+  const date = new Date(
+    type === "Edm.DateTimeOffset"
+      ? day + int(c.rng, 24 * 4) * QUARTER_HOUR
+      : day,
+  ).toISOString();
+  return propToInternal(
+    type === "Edm.DateTimeOffset" ? date : date.slice(0, 10),
+    c.prop,
+  );
+}
+
+// What a key value is made for: the key alone, numbered seq, no row around it yet
+function keyCtx(prop: Property, rng: Rng, seq: number): Ctx {
+  return {
+    prop,
+    rng,
+    index: seq,
+    typeName: "",
+    measures: measuresOf({}),
+    anchors: anchors(rng, seq, seq),
+    rules: {},
+    path: "",
+  };
 }
 
 // An item's number under its parent, as SAP keys a document's items (EBELP, POSNR): a short
@@ -776,17 +856,7 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
       return max > 0 && max <= 12 ? pad(seq, max) : String(seq);
     }
     default:
-      return primitiveValue(
-        {
-          prop,
-          rng,
-          index: seq,
-          typeName: "",
-          measures: measuresOf({}),
-          anchors: anchors(rng, seq, seq),
-        },
-        prop.type,
-      );
+      return primitiveValue(keyCtx(prop, rng, seq), prop.type);
   }
 }
 
@@ -801,6 +871,7 @@ function generateData(
   data: Record<string, Row[]>,
   sets: string[],
   rows: number,
+  rules: MockRules = {},
 ): Record<string, Row[]> {
   const fks = foreignKeys(model);
   const all = { ...data };
@@ -830,13 +901,20 @@ function generateData(
       const parent = JSON.stringify(type.keys.map((k) => row[k]));
       const seq = (seqs.get(parent) || 0) + 1;
       seqs.set(parent, seq);
-      for (const k of type.keys)
-        if (!(k in row))
-          row[k] = keyValue(
-            type.properties[k],
-            keyFks.length && isItemNumber(type.properties[k]) ? seq * 10 : seq,
-            rng,
-          );
+      for (const k of type.keys) {
+        if (k in row) continue;
+        const prop = type.properties[k];
+        // A rule's running number (see mock-rules.ts: a key takes no other), as written:
+        // "####0" counts by 10 itself
+        const rule = rules[set]?.[k];
+        row[k] = rule
+          ? ruleValue(keyCtx(prop, rng, seq), rule.value, seq)
+          : keyValue(
+              prop,
+              keyFks.length && isItemNumber(prop) ? seq * 10 : seq,
+              rng,
+            );
+      }
       const key = JSON.stringify(type.keys.map((k) => row[k]));
       if (seen.has(key)) continue;
       seen.add(key);
@@ -859,6 +937,8 @@ function generateData(
           typeName: type.name,
           measures: measuresOf(type.properties),
           anchors: rowAnchors,
+          rules: rules[set] ?? {},
+          path: "",
         });
       }
     });
@@ -882,7 +962,7 @@ function generateData(
   // Last, items agree with their header
   for (const fk of fks)
     if (isKeyPart(model, fk) && sets.includes(fk.set))
-      itemsAgree(model, all, fk, sets.includes(fk.principal));
+      itemsAgree(model, all, fk, sets.includes(fk.principal), rules);
 
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
 }
@@ -951,27 +1031,32 @@ function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
 // its currency, in the currency properties both have, and, when the header was generated
 // too (generated, its total can be changed), its total is the sum of theirs. Only when it's
 // clear which properties those are (see lineValue, headerTotal); a header with no items
-// keeps its total.
+// keeps its total. A property a mock rule sets keeps the rule's value.
 function itemsAgree(
   model: Model,
   all: Record<string, Row[]>,
   fk: ForeignKey,
   headerGenerated: boolean,
+  rules: MockRules,
 ): void {
   const typeOf = (set: string) =>
     model.entityTypes[model.entitySets[set].entityType];
   const header = typeOf(fk.principal);
   const item = typeOf(fk.set);
   const itemMeasures = measuresOf(item.properties);
+  // A property a mock rule sets keeps the rule's value
+  const ruled = (set: string, prop: string) => !!rules[set]?.[prop];
   const currencies = Object.values(item.properties).filter(
     (p) =>
       p.name in header.properties &&
       !fk.props.includes(p.name) &&
+      !ruled(fk.set, p.name) &&
       (itemMeasures.currencies.has(p.name) ||
         (p.type === "Edm.String" && /currency|waers/i.test(p.name))),
   );
   const line = lineValue(item);
-  const total = headerGenerated ? headerTotal(header) : undefined;
+  let total = headerGenerated ? headerTotal(header) : undefined;
+  if (total && ruled(fk.principal, total.name)) total = undefined;
   const keyOf = (row: Row, props: string[]) =>
     JSON.stringify(props.map((p) => row[p]));
   const headers = new Map(
