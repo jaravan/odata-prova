@@ -186,6 +186,63 @@ describe("mock data", () => {
     assert.ok(checked > 5);
   });
 
+  it("gives items their header's company code and plant too", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-"));
+    // An SAP purchase order's header and items, by their DDIC names
+    const props = `
+        <Property Name="Bukrs" Type="Edm.String" MaxLength="4"/>
+        <Property Name="Werks" Type="Edm.String" MaxLength="4"/>
+        <Property Name="Waers" Type="Edm.String" MaxLength="5"/>`;
+    fs.writeFileSync(
+      path.join(dir, "metadata.xml"),
+      `<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Z" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Ekko">
+        <Key><PropertyRef Name="Ebeln"/></Key>
+        <Property Name="Ebeln" Type="Edm.String" MaxLength="10" Nullable="false"/>${props}
+        <NavigationProperty Name="Items" Type="Collection(Z.Ekpo)" Partner="Header"/>
+      </EntityType>
+      <EntityType Name="Ekpo">
+        <Key><PropertyRef Name="Ebeln"/><PropertyRef Name="Ebelp"/></Key>
+        <Property Name="Ebeln" Type="Edm.String" MaxLength="10" Nullable="false"/>
+        <Property Name="Ebelp" Type="Edm.String" MaxLength="5" Nullable="false"/>${props}
+        <NavigationProperty Name="Header" Type="Z.Ekko" Partner="Items">
+          <ReferentialConstraint Property="Ebeln" ReferencedProperty="Ebeln"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="EkkoSet" EntityType="Z.Ekko">
+          <NavigationPropertyBinding Path="Items" Target="EkpoSet"/>
+        </EntitySet>
+        <EntitySet Name="EkpoSet" EntityType="Z.Ekpo">
+          <NavigationPropertyBinding Path="Header" Target="EkkoSet"/>
+        </EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`,
+    );
+    try {
+      const { store } = load(dir, 30);
+      const headers = new Map(store.rows("EkkoSet").map((h) => [h.Ebeln, h]));
+      const items = store.rows("EkpoSet");
+      assert.ok(items.length > 10);
+      for (const i of items) {
+        const h = headers.get(i.Ebeln)!;
+        for (const p of ["Bukrs", "Werks", "Waers"])
+          assert.equal(
+            i[p],
+            h[p],
+            `${String(i.Ebeln)}/${String(i.Ebelp)} ${p}`,
+          );
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
+
   it("leaves no stand-in showing: no cut label, a courtesy title, an image path, a ship's name", () => {
     const { store } = load(path.join(FIXTURES, "real", "NorthwindV2"), 20);
     for (const e of store.rows("Employees")) {

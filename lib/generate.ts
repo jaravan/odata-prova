@@ -11,8 +11,9 @@
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
 //     up per parent: items 00010, 00020 of one order, 00010 of the next (an item number
 //     counts by 10, as SAP's do; see isItemNumber).
-//   - items agree with their header: they take its currency, and its total is the sum of
-//     theirs, when it's clear which properties those are (see itemsAgree)
+//   - items agree with their header: they take its currency, company code and plant, and
+//     its total is the sum of theirs, when it's clear which properties those are (see
+//     itemsAgree)
 //
 // Values are produced in the store's internal representation (see types.ts).
 
@@ -1089,9 +1090,10 @@ function headerTotal(header: EntityType): Property | undefined {
   );
 }
 
-// The currency properties an item takes from its header: the ones both have, that the
-// metadata marks as a currency or that are named like one, and that no mock rule sets
-function headerCurrencies(
+// The properties an item takes from its header, as an SAP document's items have them: its
+// currency, company code and plant. The ones both have, that the metadata marks as a
+// currency or that are named like one of those, and that no mock rule sets.
+function fromHeader(
   header: EntityType,
   item: EntityType,
   fk: ForeignKey,
@@ -1104,7 +1106,8 @@ function headerCurrencies(
       !fk.props.includes(p.name) &&
       !rules[fk.set]?.[p.name] &&
       (measures.currencies.has(p.name) ||
-        (p.type === "Edm.String" && /currency|waers/i.test(p.name))),
+        (p.type === "Edm.String" &&
+          /currency|waers|companycode|bukrs|plant|werks/i.test(p.name))),
   );
 }
 
@@ -1124,7 +1127,7 @@ function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
 }
 
 // The items of a header (fk: their foreign key, part of their key) agree with it: they take
-// its currency, in the currency properties both have, and, when the header was generated
+// its currency, company code and plant (see fromHeader), and, when the header was generated
 // too (generated, its total can be changed), its total is the sum of theirs. Only when it's
 // clear which properties those are (see lineValue, headerTotal); a header with no items
 // keeps its total. A property a mock rule sets keeps the rule's value.
@@ -1139,7 +1142,7 @@ function itemsAgree(
     model.entityTypes[model.entitySets[set].entityType];
   const header = typeOf(fk.principal);
   const item = typeOf(fk.set);
-  const currencies = headerCurrencies(header, item, fk, rules);
+  const inherited = fromHeader(header, item, fk, rules);
   const line = lineValue(item);
   let total = headerGenerated ? headerTotal(header) : undefined;
   // A property a mock rule sets keeps the rule's value
@@ -1153,7 +1156,7 @@ function itemsAgree(
   for (const row of all[fk.set]) {
     const h = headers.get(keyOf(row, fk.props));
     if (!h) continue;
-    for (const p of currencies) row[p.name] = h[p.name];
+    for (const p of inherited) row[p.name] = h[p.name];
     if (line && total) sums.set(h, (sums.get(h) ?? 0) + line(row));
   }
   if (total)
@@ -1230,12 +1233,13 @@ function sourceOf(
                 : "a running number",
       };
     }
-    // An item's currency is its header's; a header's total, the sum of its items
+    // An item's currency, company code and plant are its header's; a header's total,
+    // the sum of its items
     for (const f of fks) {
       if (!isKeyPart(model, f)) continue;
       if (
         f.set === set &&
-        headerCurrencies(typeOf(f.principal), type, f, rules).some(
+        fromHeader(typeOf(f.principal), type, f, rules).some(
           (p) => p.name === name,
         )
       )
