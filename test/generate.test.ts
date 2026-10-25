@@ -390,4 +390,27 @@ describe("mock-data.js", () => {
       fs.rmSync(dir, { recursive: true });
     }
   });
+
+  it("writes the rows config.json's mock rules make, and refuses a rule that doesn't fit", () => {
+    const dir = modelCopy(PO_MODEL);
+    const config = (mock: object) =>
+      fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ mock }));
+    try {
+      config({ "PurchaseOrderSet.Staus": "Open" });
+      assert.throws(() => writeMockData(dir, 3), /Did you mean "Status"\?/);
+      assert.ok(!fs.existsSync(path.join(dir, "data")));
+
+      config({ "PurchaseOrderSet.PurchaseOrderId": "45########" });
+      writeMockData(dir, 3);
+      const ids = fs
+        .readFileSync(path.join(dir, "data", "PurchaseOrderSet.csv"), "utf8")
+        .trim()
+        .split("\n")
+        .slice(1)
+        .map((line) => line.split(";")[0]);
+      assert.deepEqual(ids, ["4500000001", "4500000002", "4500000003"]);
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
 });

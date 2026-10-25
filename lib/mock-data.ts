@@ -10,6 +10,8 @@ import path from "node:path";
 import type { EntityType, PropertyValue, Row } from "./model.ts";
 import { parseMetadata } from "./metadata.ts";
 import { Store } from "./store.ts";
+import { loadConfig } from "./config.ts";
+import { resolveMockRules } from "./mock-rules.ts";
 
 function toCsv(columns: string[], rows: readonly Row[]): string {
   const cell = (v: PropertyValue | undefined) =>
@@ -41,7 +43,12 @@ function writeMockData(
   const model = parseMetadata(
     fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
   );
-  const store = new Store(model, modelDir, () => {}, { mockRows: rows });
+  // The rows the server would generate: by config.json's mock rules too, checked the same way
+  const mockRules = resolveMockRules(model, loadConfig(modelDir).mock);
+  const store = new Store(model, modelDir, () => {}, {
+    mockRows: rows,
+    mockRules,
+  });
   const dataDir = path.join(modelDir, "data");
   const written: { file: string; rows: number }[] = [];
   const write = (file: string, text: string) => {
