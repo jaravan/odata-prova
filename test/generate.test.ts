@@ -7,6 +7,9 @@ import { createApp } from "../lib/app.ts";
 import { writeMockData } from "../lib/mock-data.ts";
 import { start, get, PO_MODEL, type TestServer } from "./helpers.ts";
 import type { Row } from "../lib/model.ts";
+import { loadConfig } from "../lib/config.ts";
+import { resolveMockRules } from "../lib/mock-rules.ts";
+import { sourceOf } from "../lib/generate.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const NORTHWIND_V4 = path.join(FIXTURES, "real", "NorthwindV4");
@@ -411,6 +414,92 @@ describe("mock-data.js", () => {
       assert.deepEqual(ids, ["4500000001", "4500000002", "4500000003"]);
     } finally {
       fs.rmSync(dir, { recursive: true });
+    }
+  });
+});
+
+describe("mock data: where a value comes from", () => {
+  const explain = (dir: string, set: string, prop: string, mock = {}) => {
+    const copy = modelCopy(dir);
+    fs.writeFileSync(path.join(copy, "config.json"), JSON.stringify({ mock }));
+    try {
+      const { model } = load(copy);
+      const rules = resolveMockRules(model, loadConfig(copy).mock);
+      return sourceOf(model, rules, set, prop);
+    } finally {
+      fs.rmSync(copy, { recursive: true });
+    }
+  };
+
+  it("names the rule, the row or the set that decides it", () => {
+    const po = (set: string, p: string, mock = {}) => {
+      const { how, from, filler } = explain(PO_MODEL, set, p, mock);
+      return {
+        how,
+        from: from?.endsWith("config.json") ? "config.json" : from,
+        filler,
+      };
+    };
+    assert.deepEqual(
+      po("PurchaseOrderSet", "Status", {
+        "PurchaseOrderSet.Status": ["Open", "Approved"],
+      }),
+      {
+        how: "one of 2 values",
+        from: "config.json",
+        filler: undefined,
+      },
+    );
+    assert.deepEqual(po("PurchaseOrderSet", "PurchaseOrderId"), {
+      how: '"45########"',
+      from: "built-in",
+      filler: undefined,
+    });
+    assert.deepEqual(po("PurchaseOrderItemSet", "PurchaseOrderId"), {
+      how: "the row it points at",
+      from: "PurchaseOrderSet",
+      filler: undefined,
+    });
+    assert.equal(
+      po("PurchaseOrderItemSet", "ItemPosition").how,
+      "a running number per parent, by 10",
+    );
+    assert.equal(po("PurchaseOrderItemSet", "Currency").how, "its header's");
+    assert.equal(
+      po("PurchaseOrderSet", "TotalAmount").how,
+      "the sum of its items",
+    );
+    assert.equal(po("PurchaseOrderSet", "Supplier").how, "a company's name");
+    assert.equal(
+      po("PurchaseOrderItemSet", "Unit").how,
+      "follows the row's product",
+    );
+  });
+
+  it("calls a value filler where the generator makes one", () => {
+    for (const dir of [
+      "real/NorthwindV2",
+      "real/NorthwindV4",
+      "real/TripPin",
+      "cap",
+    ]) {
+      const { model, store } = load(path.join(FIXTURES, dir), 10);
+      const rules = resolveMockRules(model, []);
+      for (const set of store.generated) {
+        const type = model.entityTypes[model.entitySets[set].entityType];
+        for (const p of Object.keys(type.properties)) {
+          const { how, filler } = sourceOf(model, rules, set, p);
+          if (!filler) continue;
+          // A collection's values each, as it says ("two values, each ...")
+          for (const row of store.rows(set))
+            for (const v of [row[p]].flat())
+              assert.match(
+                String(v),
+                how.endsWith("random digits") ? /^\d+$/ : /^[A-Z][\w ]* \d+$/,
+                `${dir} ${set}.${p}: ${how}`,
+              );
+        }
+      }
     }
   });
 });
