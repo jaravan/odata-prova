@@ -159,6 +159,30 @@ describe("mock data", () => {
     assert.ok(together(items, "Material", "Unit") > 3);
   });
 
+  it("makes items agree with their header: its currency, and its total the sum of theirs", () => {
+    const { store } = load(modelCopy(PO_MODEL), 40);
+    const items = store.rows("PurchaseOrderItemSet");
+    let checked = 0;
+    for (const order of store.rows("PurchaseOrderSet")) {
+      const its = items.filter(
+        (i) => i.PurchaseOrderId === order.PurchaseOrderId,
+      );
+      if (!its.length) continue;
+      checked++;
+      for (const i of its) assert.equal(i.Currency, order.Currency);
+      const sum = its.reduce(
+        (s, i) => s + Number(i.NetPrice) * Number(i.Quantity),
+        0,
+      );
+      assert.equal(
+        order.TotalAmount,
+        sum.toFixed(2),
+        String(order.PurchaseOrderId),
+      );
+    }
+    assert.ok(checked > 5);
+  });
+
   it("puts a row's dates in order, and later rows later", () => {
     const orders = load(
       path.join(FIXTURES, "real", "NorthwindV2"),
@@ -281,6 +305,30 @@ describe("mock data: children of seeded parents", () => {
       assert.deepEqual(
         list,
         list.map((_, i) => (i + 1) * 10),
+      );
+  });
+
+  it("take a seeded order's currency, and leave its total as the file has it", () => {
+    const seeded = new Map(
+      fs
+        .readFileSync(
+          path.join(PO_MODEL, "data", "PurchaseOrderSet.csv"),
+          "utf8",
+        )
+        .trim()
+        .split("\n")
+        .slice(1)
+        .map((line) => line.split(";"))
+        .map((f) => [f[0], f[6]]),
+    );
+    const orders = s.store.rows("PurchaseOrderSet");
+    for (const o of orders)
+      assert.equal(o.TotalAmount, seeded.get(o.PurchaseOrderId as string));
+    for (const item of s.store.rows("PurchaseOrderItemSet"))
+      assert.equal(
+        item.Currency,
+        orders.find((o) => o.PurchaseOrderId === item.PurchaseOrderId)!
+          .Currency,
       );
   });
 });

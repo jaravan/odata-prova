@@ -11,10 +11,13 @@
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
 //     up per parent: items 00010, 00020 of one order, 00010 of the next (an item number
 //     counts by 10, as SAP's do; see isItemNumber).
+//   - items agree with their header: they take its currency, and its total is the sum of
+//     theirs, when it's clear which properties those are (see itemsAgree)
 //
 // Values are produced in the store's internal representation (see types.ts).
 
 import type {
+  EntityType,
   LinkSet,
   Model,
   PrimitiveValue,
@@ -624,7 +627,10 @@ function decimalScale(prop: Property): number {
 
 function decimalValue(c: Ctx): string {
   const scale = decimalScale(c.prop);
-  let [min, max] = numberRange(c.prop.name.toLowerCase());
+  // A price is the row's product's: a bolt costs cents, a pump thousands
+  let [min, max] = /price/i.test(c.prop.name)
+    ? c.anchors.product().price
+    : numberRange(c.prop.name.toLowerCase());
   if (/^\d+$/.test(c.prop.precision ?? "")) {
     const top = 10 ** (Number(c.prop.precision) - scale) - 1;
     max = Math.min(max, top);
@@ -862,7 +868,116 @@ function generateData(
       copyForeignKey(row, fk, pick(rngs[fk.set], all[fk.principal]));
   }
 
+  // Last, items agree with their header
+  for (const fk of fks)
+    if (isKeyPart(model, fk) && sets.includes(fk.set))
+      itemsAgree(model, all, fk, sets.includes(fk.principal));
+
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
+}
+
+// --- Headers and items --------------------------------------------------------------------
+
+const NUMBER_TYPES = ["Edm.Decimal", "Edm.Double", "Edm.Single"];
+const isNumber = (p: Property) => NUMBER_TYPES.includes(p.type);
+
+// The one property of props that matches, or undefined when none or several do
+function only(
+  props: Property[],
+  test: (p: Property) => boolean,
+): Property | undefined {
+  const found = props.filter(test);
+  return found.length === 1 ? found[0] : undefined;
+}
+
+// What an item adds to its header's total: its price times its quantity, or its amount;
+// undefined when its type doesn't say which properties those are, unambiguously
+function lineValue(item: EntityType): ((row: Row) => number) | undefined {
+  const props = Object.values(item.properties).filter(
+    (p) => !item.keys.includes(p.name),
+  );
+  const measures = measuresOf(item.properties);
+  const price = only(props, (p) => isNumber(p) && /price/i.test(p.name));
+  const quantity = only(
+    props,
+    (p) =>
+      isNumber(p) &&
+      (measures.quantities.has(p.name) || /quantity|qty|menge/i.test(p.name)),
+  );
+  if (price && quantity)
+    return (row) => Number(row[price.name]) * Number(row[quantity.name]);
+  const amount = only(
+    props,
+    (p) => isNumber(p) && /amount|value|total/i.test(p.name),
+  );
+  if (amount) return (row) => Number(row[amount.name]);
+}
+
+// A header's total: its one amount named like a total (TotalAmount, NetValue, GrossAmount)
+function headerTotal(header: EntityType): Property | undefined {
+  return only(
+    Object.values(header.properties),
+    (p) => isNumber(p) && /^(total|net|gross).*(amount|value)$/i.test(p.name),
+  );
+}
+
+// A sum, in the store's form of the property's type; undefined when it doesn't fit the
+// property's Precision
+function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
+  if (prop.type !== "Edm.Decimal") return Math.round(sum * 100) / 100;
+  const scale = decimalScale(prop);
+  const text = sum.toFixed(scale);
+  if (
+    /^\d+$/.test(prop.precision ?? "") &&
+    text.replace(/\D/g, "").replace(/^0+(?=\d)/, "").length >
+      Number(prop.precision)
+  )
+    return undefined;
+  return text;
+}
+
+// The items of a header (fk: their foreign key, part of their key) agree with it: they take
+// its currency, in the currency properties both have, and, when the header was generated
+// too (generated, its total can be changed), its total is the sum of theirs. Only when it's
+// clear which properties those are (see lineValue, headerTotal); a header with no items
+// keeps its total.
+function itemsAgree(
+  model: Model,
+  all: Record<string, Row[]>,
+  fk: ForeignKey,
+  headerGenerated: boolean,
+): void {
+  const typeOf = (set: string) =>
+    model.entityTypes[model.entitySets[set].entityType];
+  const header = typeOf(fk.principal);
+  const item = typeOf(fk.set);
+  const itemMeasures = measuresOf(item.properties);
+  const currencies = Object.values(item.properties).filter(
+    (p) =>
+      p.name in header.properties &&
+      !fk.props.includes(p.name) &&
+      (itemMeasures.currencies.has(p.name) ||
+        (p.type === "Edm.String" && /currency|waers/i.test(p.name))),
+  );
+  const line = lineValue(item);
+  const total = headerGenerated ? headerTotal(header) : undefined;
+  const keyOf = (row: Row, props: string[]) =>
+    JSON.stringify(props.map((p) => row[p]));
+  const headers = new Map(
+    (all[fk.principal] ?? []).map((h) => [keyOf(h, fk.principalProps), h]),
+  );
+  const sums = new Map<Row, number>();
+  for (const row of all[fk.set]) {
+    const h = headers.get(keyOf(row, fk.props));
+    if (!h) continue;
+    for (const p of currencies) row[p.name] = h[p.name];
+    if (line && total) sums.set(h, (sums.get(h) ?? 0) + line(row));
+  }
+  if (total)
+    for (const [h, sum] of sums) {
+      const value = totalValue(total, sum);
+      if (value !== undefined) h[total.name] = value;
+    }
 }
 
 // The rows of a link set without a data file (see linkSet in navigations.ts): each row of its
