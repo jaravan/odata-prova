@@ -70,11 +70,13 @@ interface Product {
   integral: boolean;
 }
 
-// A row's location and product, each picked when a property first asks for it, so every
-// location-like and product-like property of the row (complex members included) agrees
+// A row's location, product and date, each picked when a property first asks for it, so
+// every location-like and product-like property of the row (complex members included)
+// agrees, and its dates are in order (see DATE_ROLES). The date is in ms.
 interface Anchors {
   location(): Location;
   product(): Product;
+  date(): number;
 }
 
 // "props of set hold principalProps of principal" (see foreignKeys)
@@ -86,6 +88,7 @@ interface ForeignKey {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+const QUARTER_HOUR = 15 * 60 * 1000;
 // Dates fall in 2025, not "the last year", so the data does not change over time
 const DATE_FROM = Date.UTC(2025, 0, 1);
 
@@ -378,13 +381,22 @@ function measuresOf(properties: Record<string, Property>): Measures {
   return m;
 }
 
-// A new row's anchors: nothing is picked until a property asks
-function anchors(rng: Rng): Anchors {
+// A new row's anchors: nothing is picked until a property asks. The date grows with the row,
+// row index of count, across the year, a few days either way: documents made later have
+// higher numbers, as an SAP number range assigns them.
+function anchors(rng: Rng, index: number, count: number): Anchors {
   let location: Location | undefined;
   let product: Product | undefined;
+  let date: number | undefined;
   return {
     location: () => (location ??= pick(rng, LOCATIONS)),
     product: () => (product ??= pick(rng, PRODUCTS)),
+    date: () =>
+      (date ??=
+        DATE_FROM +
+        (Math.floor(((index - 1) / Math.max(count, 1)) * 330) + int(rng, 7)) *
+          DAY +
+        int(rng, 24 * 4) * QUARTER_HOUR),
   };
 }
 
@@ -623,11 +635,29 @@ function decimalValue(c: Ctx): string {
   return (min + c.rng() * (max - min)).toFixed(scale);
 }
 
+// A date's role, from its name, in order: the first that matches. A document is created,
+// ordered or posted on the row's date; it's changed, shipped or due after it; an open
+// validity ends on 9999-12-31, as SAP writes "no end".
+const DATE_ROLES: [RegExp, (c: Ctx) => number][] = [
+  [/validto|validityend|validuntil/, () => Date.UTC(9999, 11, 31)],
+  [/birth/, (c) => Date.UTC(1960, 0, 1) + int(c.rng, 40 * 365) * DAY],
+  [
+    /creat|order|document|posting|start|begin|validfrom/,
+    (c) => c.anchors.date(),
+  ],
+  [
+    /chang|modif|required|requested|delivery|due|ship|end/,
+    (c) => c.anchors.date() + (1 + int(c.rng, 30)) * DAY,
+  ],
+];
+
 function dateTimeValue(c: Ctx): Date {
-  if (/birth/.test(c.prop.name.toLowerCase()))
-    return new Date(Date.UTC(1960, 0, 1) + int(c.rng, 40 * 365) * DAY);
+  const name = c.prop.name.toLowerCase();
+  const role = DATE_ROLES.find(([re]) => re.test(name));
   return new Date(
-    DATE_FROM + int(c.rng, 365) * DAY + int(c.rng, 24 * 4) * 15 * 60 * 1000,
+    role
+      ? role[1](c)
+      : DATE_FROM + int(c.rng, 365) * DAY + int(c.rng, 24 * 4) * QUARTER_HOUR,
   );
 }
 
@@ -728,7 +758,7 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
           index: seq,
           typeName: "",
           measures: measuresOf({}),
-          anchors: anchors(rng),
+          anchors: anchors(rng, seq, seq),
         },
         prop.type,
       );
@@ -789,7 +819,7 @@ function generateData(
   for (const set of sets) {
     const type = typeOf(set);
     all[set].forEach((row, i) => {
-      const rowAnchors = anchors(rngs[set]);
+      const rowAnchors = anchors(rngs[set], i + 1, all[set].length);
       for (const prop of Object.values(type.properties)) {
         if (prop.name in row) continue;
         row[prop.name] = propertyValue({

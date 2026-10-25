@@ -159,6 +159,24 @@ describe("mock data", () => {
     assert.ok(together(items, "Material", "Unit") > 3);
   });
 
+  it("puts a row's dates in order, and later rows later", () => {
+    const orders = load(
+      path.join(FIXTURES, "real", "NorthwindV2"),
+      20,
+    ).store.rows("Orders");
+    let previous = "";
+    for (const o of orders) {
+      const ordered = o.OrderDate as string;
+      assert.ok(ordered < (o.RequiredDate as string), `order ${o.OrderID}`);
+      assert.ok(ordered < (o.ShippedDate as string), `order ${o.OrderID}`);
+      assert.ok(
+        ordered > previous,
+        `order ${o.OrderID} before the one before it`,
+      );
+      previous = ordered;
+    }
+  });
+
   it("counts pieces and measures the rest: a quantity's decimals follow its unit", () => {
     const counted = (unit: unknown) => unit === "PC" || unit === "EA";
     const check = (rows: readonly Row[], quantity: string, unit: string) => {
