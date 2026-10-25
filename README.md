@@ -66,14 +66,14 @@ MySrv/
   metadata.xml         # the service's $metadata, V2 or V4
   data/                # optional, one file per entity set (the others get mock data)
     MyEntitySet.csv    # header row, ; or , separated, quoted as spreadsheets write it (JSON also works)
-  config.json          # optional, what operations change (see docs/operations.md)
+  config.json          # optional, mock data rules and what operations change (see docs/mock-data.md, docs/operations.md)
 ```
 
 The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`.
 
 Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
 
-A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `--write-data` writes them to files, see [Mock data](docs/mock-data.md).
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. Something off? `npx odata-prova ./MySrv --explain` tells you what to add to `config.json`, and `--write-data` writes the rows to files to edit, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
@@ -190,7 +190,7 @@ For quick UI work inside a single app, the fe-mockserver is still simpler.
 
 ## Documentation
 
-- [Mock data](docs/mock-data.md): how rows are generated, and editing them as files
+- [Mock data](docs/mock-data.md): how rows are generated, changing a column with `config.json`, and editing rows as files
 - [Supported OData features](docs/odata-support.md): types, query options, and what's rejected
 - [Actions and functions](docs/operations.md): how operations answer, the V2/V4 mapping, and `config.json` rules
 - [Architecture](docs/architecture.md): how it's built, using it in code, planned improvements, and the specs it follows
