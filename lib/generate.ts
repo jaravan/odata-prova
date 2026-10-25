@@ -1352,5 +1352,5 @@ function generateLinks(
   return links;
 }
 
-export { generateData, generateLinks, foreignKeys, sourceOf };
+export { generateData, generateLinks, foreignKeys, sourceOf, humanize };
 export type { ForeignKey, Source };
