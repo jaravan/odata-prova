@@ -107,6 +107,15 @@ function fromText(source: Source, modelDir: string): string {
     : source.from;
 }
 
+// How many generated properties are on filler values, as --explain counts them: for the
+// startup's hint (see server.ts)
+function fillerCount(model: Model, store: Store, modelDir: string): number {
+  const rules = resolveMockRules(model, loadConfig(modelDir).mock);
+  return lines(model, rules, store).flatMap((s) =>
+    s.lines.filter((l) => l.source.filler),
+  ).length;
+}
+
 // The --explain text for the model in modelDir, generating rows rows per set
 function explain(modelDir: string, rows: number, all: boolean): string {
   const model = parseMetadata(
@@ -183,4 +192,4 @@ function explain(modelDir: string, rows: number, all: boolean): string {
   return out.join("\n");
 }
 
-export { explain };
+export { explain, fillerCount };

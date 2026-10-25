@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { explain } from "../lib/explain.ts";
 import { PO_MODEL } from "./helpers.ts";
 
@@ -131,5 +131,46 @@ describe("--explain", () => {
       bad.stderr,
       /--explain takes nothing, or all, got 'everything'/,
     );
+  });
+});
+
+describe("the startup's hint", () => {
+  // What the server prints until it listens, then it's stopped
+  const startupLog = (...args: string[]) =>
+    new Promise<string>((resolve, reject) => {
+      const server = path.join(import.meta.dirname, "..", "server.ts");
+      const child = spawn(process.execPath, [server, ...args, "--port", "0"]);
+      let output = "";
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error(`did not start:\n${output}`));
+      }, 30000);
+      const read = (d: Buffer) => {
+        output += String(d);
+        if (!/listening on port/.test(output)) return;
+        clearTimeout(timer);
+        child.kill();
+        resolve(output);
+      };
+      child.stdout.on("data", read);
+      child.stderr.on("data", read);
+    });
+
+  it("is one line when properties are on filler values, and none when not", async () => {
+    assert.match(
+      await startupLog(NORTHWIND),
+      /\n {2}4 properties use filler values: add --explain to see them, and what to put in config\.json\n/,
+    );
+    const srv = model(PO_MODEL);
+    try {
+      assert.doesNotMatch(await startupLog(srv), /filler/);
+      // Nothing generated, nothing to say
+      assert.doesNotMatch(
+        await startupLog(NORTHWIND, "--mock-rows", "0"),
+        /filler/,
+      );
+    } finally {
+      done(srv);
+    }
   });
 });

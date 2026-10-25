@@ -12,7 +12,7 @@ import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
 import type { ETagMode, JoinMode } from "./lib/app.ts";
 import { isPostgresUrl } from "./lib/postgres.ts";
 import { writeMockData } from "./lib/mock-data.ts";
-import { explain } from "./lib/explain.ts";
+import { explain, fillerCount } from "./lib/explain.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -290,8 +290,10 @@ if (!/^\d+$/.test(DELAY_TEXT))
       { code: "ESETTING" },
     ),
   );
+// Generated properties on filler values: one line says so, and how to see them
+let fillers = 0;
 try {
-  ({ app, ready, close } = createApp({
+  const built = createApp({
     modelDir: MODEL_DIR,
     v2Path: V2_PATH,
     v4Path: V4_PATH,
@@ -302,10 +304,16 @@ try {
     persist: PERSIST,
     persistReset: PERSIST_RESET,
     serviceName: SERVICE_NAME,
-  }));
+  });
+  ({ app, ready, close } = built);
+  if (MOCK_ROWS) fillers = fillerCount(built.model, built.store, MODEL_DIR);
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);
 }
+if (fillers)
+  console.log(
+    `  ${fillers === 1 ? "1 property uses" : `${fillers} properties use`} filler values: add --explain to see them, and what to put in config.json`,
+  );
 
 // The saved state, when there is persistence: requests can't be answered without it
 try {
