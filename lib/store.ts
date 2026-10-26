@@ -17,7 +17,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
 import { propToInternal } from "./types.ts";
-import { generateData, generateLinks } from "./generate.ts";
+import { foreignKeys, generateData, generateLinks } from "./generate.ts";
 import type { MockRules } from "./mock-rules.ts";
 import { asActive } from "./draft.ts";
 
@@ -168,6 +168,11 @@ class Store {
   // Rows by the values of some of their columns, per set and columns (see lookup). Built when
   // first asked for, dropped by a change to the set that could move a row between buckets.
   private indexes: Record<string, Map<string, Map<string, Row[]>>> = {};
+  // The sets a saved commit, or a write outside a transaction, has changed: a generated one
+  // that isn't in it is the generator's still, so regenerate may replace its rows
+  private changed = new Set<string>();
+  // Rows generated per set (see regenerate)
+  private mockRows: number;
 
   // mockRows: rows to generate for each entity set without a seed file (0: leave it empty);
   // mockRules: config.json's rules for them (see mock-rules.ts)
@@ -181,6 +186,7 @@ class Store {
     }: { mockRows?: number; mockRules?: MockRules } = {},
   ) {
     this.model = model;
+    this.mockRows = mockRows;
     this.data = {};
     this.generated = [];
     this.generatedLinks = [];
@@ -215,19 +221,7 @@ class Store {
 
     if (mockRows > 0) {
       this.generated = Object.keys(files).filter((name) => !files[name]);
-      const generated = generateData(
-        model,
-        this.data,
-        this.generated,
-        mockRows,
-        mockRules,
-      );
-      for (const name of this.generated) {
-        const es = model.entitySets[name];
-        const et = model.entityTypes[es.entityType];
-        this.data[name] = generated[name].map((row) => this.normalize(et, row));
-        if (es.draft) this.data[name].forEach((row) => asActive(row, true));
-      }
+      Object.assign(this.data, this.generate(this.generated, mockRules));
     }
 
     // The link sets, kept like entity sets: a data file's, or generated ones
@@ -262,6 +256,103 @@ class Store {
       const what = model.linkSets[name] ? "links" : "rows";
       log(`  ${name}: ${this.data[name].length} ${what}${how}`);
     }
+  }
+
+  // New rows for sets, by rules, built on the other sets' rows as they are now
+  private generate(sets: string[], rules: MockRules): Record<string, Row[]> {
+    const generated = generateData(
+      this.model,
+      this.data,
+      sets,
+      this.mockRows,
+      rules,
+    );
+    return Object.fromEntries(
+      sets.map((name) => {
+        const es = this.model.entitySets[name];
+        const et = this.model.entityTypes[es.entityType];
+        const rows = generated[name].map((row) => this.normalize(et, row));
+        if (es.draft) rows.forEach((row) => asActive(row, true));
+        return [name, rows];
+      }),
+    );
+  }
+
+  // Whether a saved commit, or a write outside a transaction, has changed setName
+  hasChanges(setName: string): boolean {
+    return this.changed.has(setName);
+  }
+
+  // Generates the generated sets that nothing has changed again, by new mock rules (see
+  // live-rules.ts), and the generated links between them. Only the ones whose rows come out
+  // different are replaced: those are regenerated. A set whose new rows would lose a key
+  // that a row of a set left as it is points at is kept instead, in kept with that set.
+  // Not inside a transaction, which couldn't undo it.
+  regenerate(rules: MockRules): {
+    regenerated: string[];
+    kept: Record<string, string>;
+  } {
+    if (this.marks.length || this.held)
+      throw new Error("rows regenerated inside a transaction");
+    const model = this.model;
+    // What points at each set: a foreign key's columns, or a link set's end
+    const refs = [
+      ...foreignKeys(model).map((fk) => ({
+        set: fk.principal,
+        from: fk.set,
+        columns: fk.props,
+        keys: fk.principalProps,
+      })),
+      ...Object.values(model.linkSets).flatMap((ls) =>
+        ls.ends.map((end) => ({
+          set: end.set,
+          from: ls.name,
+          columns: end.columns,
+          keys: end.keys,
+        })),
+      ),
+    ];
+    const values = (rows: readonly Row[], columns: string[]) =>
+      rows.map((row) => valuesKey(columns.map((c) => row[c])));
+    const linksOf = (sets: string[]) =>
+      this.generatedLinks.filter(
+        (name) =>
+          !this.changed.has(name) &&
+          model.linkSets[name].ends.some((end) => sets.includes(end.set)),
+      );
+
+    const kept: Record<string, string> = {};
+    let sets = this.generated.filter((name) => !this.changed.has(name));
+    let rows = this.generate(sets, rules);
+    for (;;) {
+      const replaced = [...sets, ...linksOf(sets)];
+      // A key gone that a row left as it is points at
+      const lost = refs.find(({ set, from, columns, keys }) => {
+        if (!sets.includes(set) || replaced.includes(from)) return false;
+        const before = new Set(values(this.data[set], keys));
+        const now = new Set(values(rows[set], keys));
+        return values(this.data[from], columns).some(
+          (v) => before.has(v) && !now.has(v),
+        );
+      });
+      if (!lost) break;
+      kept[lost.set] = lost.from;
+      sets = sets.filter((name) => name !== lost.set);
+      rows = this.generate(sets, rules);
+    }
+
+    const regenerated = sets.filter(
+      (name) => !isDeepStrictEqual(rows[name], this.data[name]),
+    );
+    for (const name of regenerated) this.data[name] = rows[name];
+    for (const name of linksOf(regenerated)) {
+      const links = generateLinks(model, this.data, model.linkSets[name]);
+      if (isDeepStrictEqual(links, this.data[name])) continue;
+      this.data[name] = links;
+      regenerated.push(name);
+    }
+    this.indexes = {};
+    return { regenerated, kept };
   }
 
   // Converts an incoming object into an entity. Known properties converted to their Edm
@@ -428,6 +519,7 @@ class Store {
   private record(change: Change): void {
     this.invalidate(change);
     if (this.marks.length) this.log.push(change);
+    else this.changed.add(change.set);
   }
 
   // Opens a transaction, and returns its mark for commit or rollback
@@ -455,6 +547,7 @@ class Store {
     const changes = this.log;
     this.log = [];
     this.held = false;
+    if (saved) changes.forEach((c) => this.changed.add(c.set));
     if (!saved) {
       undo(this.data, changes);
       changes.forEach((c) => this.invalidate(c));

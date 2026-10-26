@@ -304,6 +304,8 @@ try {
     persist: PERSIST,
     persistReset: PERSIST_RESET,
     serviceName: SERVICE_NAME,
+    // Without persistence, a change to the mock rules shows at once (see live-rules.ts)
+    watchRules: !PERSIST,
   });
   ({ app, ready, close } = built);
   if (MOCK_ROWS) fillers = fillerCount(built.model, built.store, MODEL_DIR);

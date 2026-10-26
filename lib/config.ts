@@ -58,6 +58,8 @@ export interface MockRule {
 export interface Config {
   operations: Record<string, OperationRule & { file: string }>;
   mock: MockRule[];
+  // The files read: config.json, then what it extends (see live-rules.ts)
+  files: string[];
 }
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -137,11 +139,7 @@ function parseMockKey(key: string): { set?: string; path: string } {
 
 // Reads one file and what it extends, the nearer file's keys last so they win. chain: the
 // files being read, to tell a cycle.
-function readChain(
-  file: string,
-  shared: boolean,
-  chain: string[],
-): { operations: Config["operations"]; mock: MockRule[] } {
+function readChain(file: string, shared: boolean, chain: string[]): Config {
   if (chain.includes(file))
     throw configError(
       `${chain[chain.length - 1]}: extends ${file}, which extends it back: ${[...chain, file].join(" -> ")}`,
@@ -162,6 +160,7 @@ function readChain(
 
   const operations: Config["operations"] = {};
   const mock: MockRule[] = [];
+  const files = [file];
   const bases = config.extends ?? [];
   for (const base of Array.isArray(bases) ? bases : [bases]) {
     if (typeof base !== "string")
@@ -174,6 +173,7 @@ function readChain(
     ]);
     Object.assign(operations, from.operations);
     mock.push(...from.mock);
+    files.push(...from.files);
   }
 
   for (const [name, rule] of Object.entries(
@@ -194,7 +194,7 @@ function readChain(
       file,
       shared,
     });
-  return { operations, mock: mergeRules(mock) };
+  return { operations, mock: mergeRules(mock), files };
 }
 
 // One rule per key, the last one written winning; keys match whatever their case
@@ -211,7 +211,7 @@ function mergeRules(rules: MockRule[]): MockRule[] {
 // The model's config.json and what it extends; none: nothing configured
 function loadConfig(modelDir: string): Config {
   const file = path.join(modelDir, "config.json");
-  if (!fs.existsSync(file)) return { operations: {}, mock: [] };
+  if (!fs.existsSync(file)) return { operations: {}, mock: [], files: [] };
   return readChain(file, false, []);
 }
 

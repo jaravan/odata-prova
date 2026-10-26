@@ -20,6 +20,7 @@ import { PostgresPersistence, isPostgresUrl } from "./postgres.ts";
 import type { Protocol, Rules } from "./protocol.ts";
 import { configError, loadConfig, type Config } from "./config.ts";
 import { resolveMockRules } from "./mock-rules.ts";
+import { liveRules } from "./live-rules.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { ETAG_MODES } from "./etag.ts";
@@ -116,6 +117,9 @@ export interface AppOptions {
   serviceName?: string;
   // What saves each commit, instead of persist's file (see persistence.ts): for the tests
   persistence?: Persistence;
+  // Watch config.json and the files it extends, and regenerate the generated rows when the
+  // mock rules change (see live-rules.ts). Only without persistence.
+  watchRules?: boolean;
 }
 
 function createApp({
@@ -135,6 +139,7 @@ function createApp({
     : isPostgresUrl(persist)
       ? new PostgresPersistence(persist, serviceName)
       : new SqlitePersistence(persist),
+  watchRules = false,
 }: AppOptions): {
   app: Express;
   model: Model;
@@ -143,6 +148,8 @@ function createApp({
   // Settles once requests can be answered: rejected when the saved state couldn't be loaded
   ready: Promise<void>;
   close: () => Promise<void>;
+  // With watchRules: reads the mock rules again, as a change to config.json does
+  reloadRules?: () => Promise<void>;
 } {
   // Read input metadata file
   const metadataXml = fs.readFileSync(
@@ -221,6 +228,20 @@ function createApp({
       }),
     );
   }
+
+  const live =
+    watchRules && !persistence && mockRows > 0
+      ? liveRules({
+          modelDir,
+          model,
+          store,
+          queue,
+          services,
+          mockRows,
+          rules: mockRules,
+          log,
+        })
+      : undefined;
 
   const app = express();
   app.disable("x-powered-by");
@@ -357,11 +378,20 @@ function createApp({
 
   // Once every request so far has been answered and saved: closes persistence
   async function close(): Promise<void> {
+    live?.close();
     await queue.idle();
     await persistence?.close();
   }
 
-  return { app, model, store, services, ready, close };
+  return {
+    app,
+    model,
+    store,
+    services,
+    ready,
+    close,
+    reloadRules: live?.reload,
+  };
 }
 
 export type { ETagMode, JoinMode };

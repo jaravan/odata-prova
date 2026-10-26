@@ -125,6 +125,7 @@ describe("config.json: extends", () => {
     assert.deepEqual(loadConfig(files({ "Srv/metadata.xml": "" })), {
       operations: {},
       mock: [],
+      files: [],
     });
   });
 
@@ -174,6 +175,11 @@ describe("config.json: extends", () => {
       ]),
     );
     assert.deepEqual(values, { Z: "c", Y: "a", X: "b" });
+    // Every file read, the model's own first (see live-rules.ts)
+    assert.deepEqual(
+      loadConfig(path.join(dir, "Srv")).files.map((f) => path.relative(dir, f)),
+      [path.join("Srv", "config.json"), "a.json", "c.json", "b.json"],
+    );
   });
 
   it("refuses a cycle, a file that isn't there, and one that isn't JSON", () => {

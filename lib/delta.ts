@@ -51,6 +51,13 @@ class DeltaTokens {
     const copy = this.copies.get(token);
     return copy?.setName === setName ? copy.rows : undefined;
   }
+
+  // Drops the entity set's tokens: its rows were replaced, not changed (see live-rules.ts), so
+  // reading one of its delta links is a 410 Gone, as after a restart
+  forget(setName: string): void {
+    for (const [token, copy] of this.copies)
+      if (copy.setName === setName) this.copies.delete(token);
+  }
 }
 
 // What differs between the rows a token stands for and the current ones, for the client's
