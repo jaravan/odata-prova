@@ -54,7 +54,7 @@ Paste it into `MySrv/config.json`, inside `{ }`, and edit the values:
 }
 ```
 
-Restart, and every generated order has one of those Incoterms, FOB the most, and a project numbered `PRJ-0001`, `PRJ-0002`, and so on. Any property can have a rule, not only the ones `--explain` lists. `--explain all` shows how every property is generated, and what decides it.
+Save it, and refresh the app: every generated order has one of those Incoterms, FOB the most, and a project numbered `PRJ-0001`, `PRJ-0002`, and so on. Any property can have a rule, not only the ones `--explain` lists. `--explain all` shows how every property is generated, and what decides it.
 
 ## Editing the generated data
 
@@ -158,3 +158,20 @@ MySrv/config.json: 2 mock rules that don't fit the model:
 ```
 
 A rule from a shared file that names a set or property this model doesn't have is skipped instead: `--explain all` lists it as unused.
+
+While the server runs, a mistake doesn't stop it: the log shows the same message, and the rows stay as they were until the rules are fixed.
+
+### Changing rules while the server runs
+
+The server watches `config.json`, and the files it extends. When the mock rules change, the generated sets are generated again, and the log says which:
+
+```
+MySrv/config.json: mock rules changed
+  PurchaseOrderSet: regenerated
+  PurchaseOrderItemSet: has your changes, kept (restart to regenerate it)
+```
+
+- **Your writes are kept.** A set changed by a write since the start keeps its rows. So does a set whose rows other kept rows point at, when the new rules change its keys: `PurchaseOrderSet: kept, PurchaseOrderItemSet refers to it and has your changes`.
+- **Only the sets that come out different** are replaced. Their delta links answer `410 Gone`, as after a restart.
+- **Not with `--persist`.** The saved rows stay as they are: start once with `--persist-reset` to generate them by the new rules, which drops your writes too.
+- **Only the mock rules.** A change to `operations`, `metadata.xml` or a data file needs a restart.

@@ -34,22 +34,23 @@ One model, parsed once at startup, backs a V2 service and a V4 service. Both sha
 - **`dispatch.ts`** walks the resource path and follows navigations, whatever the protocol, and hands each part of the work to its own module.
 - **`service.ts`** keeps what they all share: the model's lookups, navigations, and a collection's response.
 
-| Module                                                                           | What it does                                                            |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `app.ts`, `batch.ts`                                                             | the Express app: routes, CORS, `$batch`, errors outside the service     |
-| `service.ts`, `dispatch.ts`                                                      | a request from its path to its answer                                   |
-| `protocol.ts`, `protocols/v2.ts`, `protocols/v4.ts`                              | each protocol's literals, query options and responses                   |
-| `metadata.ts`, `navigations.ts`, `operation-views.ts`                            | reading `metadata.xml` into the model                                   |
-| `emit.ts`, `emit-v2.ts`, `emit-v4.ts`, `annotations-v2.ts`, `sap-annotations.ts` | the `$metadata` of the protocol the document wasn't written in          |
-| `resource-path.ts`, `query.ts`                                                   | the path and its keys, the query options                                |
-| `filter.ts`, `apply-query.ts`, `compute.ts`                                      | `$filter`, `$orderby`, `$search`, `$top`, `$skip`; `$compute`           |
-| `apply-parse.ts`, `aggregation.ts`, `aggregates.ts`, `hierarchy.ts`              | `$apply`: parsing, running, aggregate values, hierarchies               |
-| `paging.ts`, `delta.ts`                                                          | server-driven paging, delta links                                       |
-| `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets            |
-| `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                    |
-| `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data        |
-| `queue.ts`, `persistence.ts`, `sqlite.ts`, `postgres.ts`                         | requests one at a time; saving the data, in a SQLite file or PostgreSQL |
-| `types.ts`, `model.ts`                                                           | Edm values, the model's types                                           |
+| Module                                                                           | What it does                                                                         |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `app.ts`, `batch.ts`                                                             | the Express app: routes, CORS, `$batch`, errors outside the service                  |
+| `service.ts`, `dispatch.ts`                                                      | a request from its path to its answer                                                |
+| `protocol.ts`, `protocols/v2.ts`, `protocols/v4.ts`                              | each protocol's literals, query options and responses                                |
+| `metadata.ts`, `navigations.ts`, `operation-views.ts`                            | reading `metadata.xml` into the model                                                |
+| `emit.ts`, `emit-v2.ts`, `emit-v4.ts`, `annotations-v2.ts`, `sap-annotations.ts` | the `$metadata` of the protocol the document wasn't written in                       |
+| `resource-path.ts`, `query.ts`                                                   | the path and its keys, the query options                                             |
+| `filter.ts`, `apply-query.ts`, `compute.ts`                                      | `$filter`, `$orderby`, `$search`, `$top`, `$skip`; `$compute`                        |
+| `apply-parse.ts`, `aggregation.ts`, `aggregates.ts`, `hierarchy.ts`              | `$apply`: parsing, running, aggregate values, hierarchies                            |
+| `paging.ts`, `delta.ts`                                                          | server-driven paging, delta links                                                    |
+| `writes.ts`, `references.ts`, `links.ts`                                         | creates, updates, deletes; links between entities; link sets                         |
+| `operations.ts`, `draft.ts`, `etag.ts`                                           | actions and functions, drafts, ETags                                                 |
+| `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data                     |
+| `config.ts`, `mock-rules.ts`, `sap-fields.ts`, `explain.ts`, `live-rules.ts`     | `config.json` and its mock rules, SAP's field names, `--explain`, rules changed live |
+| `queue.ts`, `persistence.ts`, `sqlite.ts`, `postgres.ts`                         | requests one at a time; saving the data, in a SQLite file or PostgreSQL              |
+| `types.ts`, `model.ts`                                                           | Edm values, the model's types                                                        |
 
 The sources are TypeScript, in `lib/`, and `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
 
