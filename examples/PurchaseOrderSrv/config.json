@@ -1,5 +1,28 @@
 {
   "operations": {
     "ApprovePurchaseOrder": { "set": { "Status": "Approved" } }
+  },
+  "mock": {
+    "PurchaseOrderSet.Status": [
+      "Cancelled",
+      "Approved",
+      "Approved",
+      "In Approval",
+      "In Approval",
+      "Open",
+      "Open",
+      "Open",
+      "Open",
+      "Open",
+      "Open"
+    ],
+    "PurchaseOrderItemSet.Description": [
+      "Standard delivery",
+      "Urgent: needed on site",
+      "Framework contract call-off",
+      "Replacement part",
+      "Annual maintenance stock"
+    ],
+    "PurchaseOrderItemSet.Quantity": "1..50"
   }
 }

@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/odata-prova)](https://www.npmjs.com/package/odata-prova)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-![In a terminal, npx odata-prova starts on a folder holding a metadata.xml and a CSV file for each of its two entity sets, loads their rows and prints the V2 and V4 URLs. In VS Code, the SAP Fiori generator connects to the V4 URL and generates a List Report app on PurchaseOrderSet. The app then runs in the browser, showing the purchase orders and the object page of one with its items](img/hero.gif)
+![In a terminal, npx odata-prova starts on a folder holding only a metadata.xml, generates rows for its two entity sets and prints the V2 and V4 URLs. In VS Code, the SAP Fiori generator connects to the V4 URL and generates a List Report app on PurchaseOrderSet. The app then runs in the browser, showing the generated purchase orders and the object page of one with its items, whose prices add up to its total](img/hero.gif)
 
 A mock OData V2 and V4 server generated from your service's `metadata.xml`. Point it at the file, and it serves the service as V2 and V4 at once, with mock data or your own CSV files. No project, no code and no SAP system needed.
 
@@ -54,7 +54,7 @@ docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" ghcr.io/jaravan/odata-p
 
 The image is built for amd64 and arm64, and tagged by version (e.g. `0.21.0` or `0.21`) and `latest`.
 
-[examples/](examples/) has three services to try: [PurchaseOrderSrv](examples/PurchaseOrderSrv/) (V2, with a function import), [Northwind](examples/Northwind/) (V4) and [TripPin](examples/TripPin/) (V4, with actions and functions).
+[examples/](examples/) has three services to try: [PurchaseOrderSrv](examples/PurchaseOrderSrv/) (V2, all generated, with mock rules and a function import), [Northwind](examples/Northwind/) (V4, data files and mock rules) and [TripPin](examples/TripPin/) (V4, with actions and functions).
 
 > [!TIP]
 > **See it in a full project:** [fiori-devstack](https://github.com/jaravan/fiori-devstack) runs V2 and V4 Fiori Elements apps on odata-prova, with Docker Compose or Kubernetes, and OPA tests in CI.

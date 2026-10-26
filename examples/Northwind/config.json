@@ -1,0 +1,17 @@
+{
+  "mock": {
+    "CustomerID": "C####",
+    "Employees.Extension": "4###",
+    "Employees.Title": [
+      "Sales Representative",
+      "Sales Representative",
+      "Sales Representative",
+      "Inside Sales Coordinator",
+      "Sales Manager",
+      "Vice President, Sales"
+    ],
+    "Employees.HireDate": "2012-01-01..2024-12-31",
+    "Freight": "1..250",
+    "ShipVia": "1..3"
+  }
+}
