@@ -173,5 +173,20 @@ MySrv/config.json: mock rules changed
 
 - **Your writes are kept.** A set changed by a write since the start keeps its rows. So does a set whose rows other kept rows point at, when the new rules change its keys: `PurchaseOrderSet: kept, PurchaseOrderItemSet refers to it and has your changes`.
 - **Only the sets that come out different** are replaced. Their delta links answer `410 Gone`, as after a restart.
-- **Not with `--persist`.** The saved rows stay as they are: start once with `--persist-reset` to generate them by the new rules, which drops your writes too.
+- **Not with `--persist`:** there the rules apply at the next start, see below.
 - **Only the mock rules.** A change to `operations`, `metadata.xml` or a data file needs a restart.
+
+### With --persist
+
+With `--persist`, the generated rows are saved at the first start, and loaded from then on. At each start after, the generated sets are generated again, by the rules as they are then, and the ones that come out different replace what was saved:
+
+```
+Saved state: loaded from MySrv.db (the rows above are not used)
+The mock rules or the generator changed since the state was saved:
+  PurchaseOrderSet: regenerated
+  PurchaseOrderItemSet: has your changes, kept (--persist-reset to regenerate it)
+```
+
+That's a change to the mock rules, to `--mock-rows`, or a new version of odata-prova that generates rows differently. A set with your writes is kept, as is a set whose keys would change under rows with writes that point at them. `--persist-reset` starts over from the data files and generated rows, your writes dropped. With replicas on PostgreSQL, the first server that starts does it, and the others load what it saved.
+
+A state saved by version 0.20.0 or before doesn't record which sets are as generated: its sets are all kept. Start once with `--persist-reset` for the rules to apply from then on.

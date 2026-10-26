@@ -135,7 +135,7 @@ The first start creates the file and saves the data to it. Every start after tha
 
 - **Every write is saved before it's answered.** If it can't be saved, the request fails with `500` and nothing changes.
 - **The file replaces your data files.** Edited a CSV? Start once with `--persist-reset` to go back to them.
-- **Changed the mock rules?** The saved rows stay as they were generated. Start once with `--persist-reset` to generate them by the new rules. Without `--persist`, a rules change shows at once, see [Mock data](docs/mock-data.md#changing-rules-while-the-server-runs).
+- **Changed the mock rules?** The next start generates the generated sets again, and saves them. A set with your writes is kept, and the log says so. The same happens when `--mock-rows` changes, or a new version generates rows differently. See [Mock data](docs/mock-data.md#with---persist).
 - **Changed `metadata.xml`?** The next start adapts the saved rows to it, and the log lists what changed. Changed keys can't be adapted: the server stops and asks for `--persist-reset`.
 - **One server per file.** A second one is refused while the first runs.
 
