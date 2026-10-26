@@ -51,4 +51,4 @@ Without a rule, an operation changes no data. A model's optional `config.json` c
 
 The rule applies on both protocols. An operation or property the model doesn't have is an error at startup. Rules can also come from a shared file, see [extends](mock-data.md#sharing-rules-extends).
 
-What a rule changes is a write like any other: rolled back when the request fails, and saved with [`--persist`](../README.md#keeping-the-data), even when the operation is a function called with `GET`.
+What a rule changes is a write like any other: rolled back when the request fails, and saved with [`--persist`](persistence.md), even when the operation is a function called with `GET`.

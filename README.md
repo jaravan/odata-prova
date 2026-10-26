@@ -100,87 +100,44 @@ Every setting is optional, and can be given as an option or an environment varia
 npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 ```
 
-| Option            | Variable        | Default                                        | Purpose                                                                                                                                                                                                                                                     |
-| ----------------- | --------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-p`, `--port`    | `PORT`          | `3000`                                         | HTTP port                                                                                                                                                                                                                                                   |
-| `modelDir`        | `MODEL_DIR`     | the current directory (`/models` in the image) | The model to serve, or a folder holding exactly one model                                                                                                                                                                                                   |
-| `--service-name`  | `SERVICE_NAME`  | the model's folder name                        | Used to build the default service paths                                                                                                                                                                                                                     |
-| `--v2-path`       | `V2_PATH`       | `/odata/v2/<SERVICE_NAME>`                     | V2 service root - set to `""` to disable V2                                                                                                                                                                                                                 |
-| `--v4-path`       | `V4_PATH`       | `/odata/v4/<SERVICE_NAME>`                     | V4 service root - set to `""` to disable V4                                                                                                                                                                                                                 |
-| `--mock-rows`     | `MOCK_ROWS`     | `20`                                           | Rows generated for each entity set without a data file - `0` leaves it empty                                                                                                                                                                                |
-| `--etags`         | `ETAGS`         | `lenient`                                      | How strictly `If-Match` is checked: `lenient`, `strict` or `off`, see [ETags](docs/odata-support.md#etags)                                                                                                                                                  |
-| `--joins`         | `JOINS`         | `guess`                                        | A navigation without a `ReferentialConstraint`: `guess` its join from property names, or `strict` to give it a key of its own instead, see [Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint) |
-| `--page-size`     | `PAGE_SIZE`     | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
-| `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file, or a PostgreSQL database (`postgres://...`, which replicas can share), that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                             |
-| `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what was saved (`PERSIST_RESET=1`)                                                                                                                                                |
-| `--explain`       |                 |                                                | Show the generated properties on filler values, and what to add to `config.json`, and exit - `--explain all` shows every property                                                                                                                           |
-| `--write-data`    |                 |                                                | Write the generated rows to `data/`, to edit them, and exit, see [Mock data](docs/mock-data.md#editing-the-generated-data)                                                                                                                                  |
+| Option            | Variable        | Default            | Purpose                                                                                                                    |
+| ----------------- | --------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `-p`, `--port`    | `PORT`          | `3000`             | HTTP port                                                                                                                  |
+| `modelDir`        | `MODEL_DIR`     | current directory  | The model, or a folder holding one                                                                                         |
+| `--service-name`  | `SERVICE_NAME`  | the model's folder | The name in the default paths                                                                                              |
+| `--v2-path`       | `V2_PATH`       | `/odata/v2/<name>` | V2 root, `""` turns V2 off                                                                                                 |
+| `--v4-path`       | `V4_PATH`       | `/odata/v4/<name>` | V4 root, `""` turns V4 off                                                                                                 |
+| `--mock-rows`     | `MOCK_ROWS`     | `20`               | Rows generated per set without a data file                                                                                 |
+| `--etags`         | `ETAGS`         | `lenient`          | How [`If-Match`](docs/odata-support.md#etags) is checked: `lenient`, `strict` or `off`                                     |
+| `--joins`         | `JOINS`         | `guess`            | [Navigations without a constraint](docs/odata-support.md#navigations-without-a-referentialconstraint): `guess` or `strict` |
+| `--page-size`     | `PAGE_SIZE`     | `0`: every row     | Rows per response, with a [next link](docs/odata-support.md#server-driven-paging)                                          |
+| `--persist`       | `PERSIST`       | none: in memory    | A SQLite file or `postgres://` URL, see [Keeping the data](docs/persistence.md)                                            |
+| `--persist-reset` | `PERSIST_RESET` | off                | Start over from the data files (`PERSIST_RESET=1`)                                                                         |
+| `--explain`       |                 |                    | Show [filler values](docs/mock-data.md#changing-a-column) and what to add to `config.json`, then exit                      |
+| `--write-data`    |                 |                    | Write the generated rows to [`data/`](docs/mock-data.md#editing-the-generated-data), then exit                             |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
-> [!IMPORTANT]
-> Run one server per service, unless the data is in PostgreSQL. Each server keeps its own copy of the data in memory, so with several replicas, a write lands on one and a read may come from another. With `--persist postgres://...`, replicas catch up with each other: see [In PostgreSQL, with replicas](#in-postgresql-with-replicas).
-
 ## Keeping the data
 
-By default, every start begins fresh from your data files and mock rows. That's what CI wants.
-
-To keep what your app writes, give the server a file:
+By default, every start begins fresh from your data files and mock rows, which is what CI wants. To keep what your app writes across restarts, give the server a SQLite file, or a PostgreSQL database that several replicas can share:
 
 ```sh
 npx odata-prova ./MySrv --persist ./MySrv.db
+npx odata-prova ./MySrv --persist postgres://user:password@db:5432/mocks
 ```
 
-The first start creates the file and saves the data to it. Every start after that loads the file, so your writes are still there.
-
-- **Every write is saved before it's answered.** If it can't be saved, the request fails with `500` and nothing changes.
-- **The file replaces your data files.** Edited a CSV? Start once with `--persist-reset` to go back to them.
-- **Changed the mock rules?** The next start generates the generated sets again, and saves them. A set with your writes is kept, and the log says so. The same happens when `--mock-rows` changes, or a new version generates rows differently. See [Mock data](docs/mock-data.md#with---persist).
-- **Changed `metadata.xml`?** The next start adapts the saved rows to it, and the log lists what changed. Changed keys can't be adapted: the server stops and asks for `--persist-reset`.
-- **One server per file.** A second one is refused while the first runs.
-
-With Docker, keep the file in a volume at `/state`:
-
-```sh
-docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
-  -v mysrv-data:/state -e PERSIST=/state/MySrv.db ghcr.io/jaravan/odata-prova
-```
-
-A folder of your own works too, if the image's `node` user (uid 1000) can write to it. Or run the container as yourself, with `--user "$(id -u)"`.
-
-### In PostgreSQL, with replicas
-
-To keep the data out of the container, in a database you already run, give the server a `postgres://` URL instead of a file:
-
-```sh
-docker run -p 3000:3000 -v "$PWD/MySrv:/models/MySrv:ro" \
-  -e PERSIST=postgres://user:password@db:5432/mocks ghcr.io/jaravan/odata-prova
-```
-
-The container keeps nothing: replace it, and the next one starts from what was saved. And several servers can serve the same service on one database: replicas behind a load balancer, scaled up and down, and updated one at a time.
-
-- **Every server answers alike.** Each holds all the data in memory, so size its memory for that. Before every request, it catches up with what the others saved. A write on one is there for the next request, on any of them, so Fiori's drafts and save-then-read work across replicas.
-- **Reads scale, writes don't.** Each request costs one small query, about a millisecond. Writes are saved one at a time across all the servers of a service: a few hundred a second, however many servers. Under more load, a write that waits over 5 seconds answers `503`, and so does any request that waits over 30 seconds for its turn.
-- **The database is needed to answer.** While it can't be reached, requests fail with `503` at once, and work again when it's back. If it's restored from a backup, or emptied and seeded anew by a new server, the servers load it again. If its tables are gone, `/healthz` fails, and the restarted servers seed it anew.
-- **Several services can share a database.** The server creates four tables, `odata_prova_meta`, `odata_prova_sets`, `odata_prova_rows` and `odata_prova_log`, and keeps each service's rows under its name (`--service-name`, by default the model folder's). For another schema than the default, add `?options=-c%20search_path%3Dmyschema` to the URL. The database user needs to be allowed to create tables at the first start.
-- **Don't leave `PERSIST_RESET=1` set for all the servers.** Every server that starts resets the data, the ones added to scale up too. Reset once, with one server.
-- **A changed `metadata.xml` in a rolling update:** the first new server adapts the saved rows to it, and from then on, the old ones answer `503` until they're replaced.
-- **Delta links are each server's own.** One handed out by another server is a `410 Gone`, and the client reads the set again.
-
-The user and password can stay out of the URL: the standard `PGUSER` and `PGPASSWORD` variables work too (and the other `PG*` ones, e.g. `PGSSLMODE=require`).
+`--persist-reset` starts over from your data files. How writes are saved, what happens when `metadata.xml` or the mock rules change, Docker volumes and replicas: [Keeping the data](docs/persistence.md).
 
 ## What's supported
 
-- **Reads and writes**, including deep insert, links to existing entities (`@odata.bind`, `$ref`, V2's `$links`), and `$batch` with atomic changesets.
-- **Query options**: `$filter` (with V4's `any` and `all`), `$orderby`, `$top`, `$skip`, `$select`, `$expand` (with nested V4 options, and `*`), `$count`/`$inlinecount`, `$search` and V4's `$compute`. Server-driven paging with `$skiptoken` is opt-in, see [`PAGE_SIZE`](docs/odata-support.md#server-driven-paging).
-- **Aggregation**: V4's `$apply`, for UI5's grouped and aggregated tables, totals included. What it doesn't cover is rejected with `501`, see [Aggregation](docs/odata-support.md#aggregation-apply).
-- **Types**: all primitive Edm types, complex and enum types, collections and inheritance.
-- **Actions and functions**, bound and imported, served on both protocols: a V2 function import with `sap:action-for` becomes a V4 bound action. A `config.json` rule can make one change data, e.g. set `Status` to `Approved`.
-- **Drafts** (`Common.DraftRoot`, from CAP or RAP, V4 or V2): the Fiori Elements create and edit flows - create, edit, change, save or discard an entity and its compositions in a draft. See [Drafts](docs/odata-support.md#drafts).
-- **ETags** (`Core.OptimisticConcurrency`, or V2's `ConcurrencyMode="Fixed"`): a change sent with an ETag that's gone stale is a `412`. `ETAGS=strict` also requires one, and `ETAGS=off` ignores it. See [ETags](docs/odata-support.md#etags).
-- **Delta links**: read an entity set with `Prefer: odata.track-changes`, and its delta link later answers what was added, changed or deleted since: `@odata.deltaLink` in V4, SAP Gateway's `__delta` with `!deltatoken` in V2. See [Delta links](docs/odata-support.md#delta-links).
+- **Reads and writes**, with deep insert, links (`@odata.bind`, `$ref`, V2's `$links`) and `$batch` changesets.
+- **Query options**: `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`, `$search`, `$compute`, and V4's `$apply` for grouped and aggregated tables.
+- **Types**: every primitive Edm type, complex and enum types, collections and inheritance.
+- **Actions and functions**, bound and imported, on both protocols.
+- **What Fiori Elements needs**: drafts (CAP or RAP), ETags, delta links and server-driven paging.
 
-The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, including those with no foreign key in the metadata ([Navigations without a ReferentialConstraint](docs/odata-support.md#navigations-without-a-referentialconstraint)).
+Northwind (V2 and V4) and TripPin load unmodified, every navigation working. The details, and what's rejected: [Supported OData features](docs/odata-support.md).
 
 ## Why not the fe-mockserver or CAP?
 
@@ -193,6 +150,7 @@ For quick UI work inside a single app, the fe-mockserver is still simpler.
 
 - [Mock data](docs/mock-data.md): how rows are generated, changing a column with `config.json`, and editing rows as files
 - [Supported OData features](docs/odata-support.md): types, query options, and what's rejected
+- [Keeping the data](docs/persistence.md): a SQLite file or PostgreSQL, Docker volumes, replicas
 - [Actions and functions](docs/operations.md): how operations answer, the V2/V4 mapping, and `config.json` rules
 - [Architecture](docs/architecture.md): how it's built, using it in code, planned improvements, and the specs it follows
 
