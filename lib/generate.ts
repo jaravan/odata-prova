@@ -423,6 +423,8 @@ function foreignKeys(model: Model): ForeignKey[] {
   for (const et of Object.values(model.entityTypes)) {
     for (const nav of Object.values(et.navigations)) {
       if (nav.links) continue; // see generateLinks
+      // A target that isn't an entity set (a binding to nothing) joins nothing
+      if (!model.entitySets[nav.targetSet]) continue;
       for (const source of setsOfType[et.fullName] || []) {
         const fromSource = nav.dependentSide === "source";
         const fk = {
@@ -933,6 +935,9 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
       return new Date(DATE_FROM + seq * DAY).toISOString().slice(0, 10);
     case "Edm.TimeOfDay":
       return `${pad(Math.floor(seq / 60) % 24, 2)}:${pad(seq % 60, 2)}:00`;
+    case "Edm.Binary":
+      // Base64, as binary values are kept
+      return Buffer.from(String(seq)).toString("base64");
     case "Edm.String": {
       // Short string keys are zero-padded the way SAP shows document numbers: 0000000001
       const max = Number(prop.maxLength);
@@ -977,10 +982,21 @@ function generateData(
     const seqs = new Map<string, number>();
     const seen = new Set<string>();
     const out: Row[] = [];
+    // A key that is its parent's whole (a product's detail, 1:1): each parent at most once, in
+    // order. Picked at random, some would be left out, and a set pointing back at this one
+    // (Product.Detail) would point at nothing.
+    const sole =
+      keyFks.length === 1 &&
+      type.keys.every((k) => keyFks[0].props.includes(k));
     for (let i = 0; i < rows; i++) {
       const row: Row = {};
+      if (sole && i >= all[keyFks[0].principal].length) break;
       for (const fk of keyFks)
-        copyForeignKey(row, fk, pick(rng, all[fk.principal]));
+        copyForeignKey(
+          row,
+          fk,
+          sole ? all[fk.principal][i] : pick(rng, all[fk.principal]),
+        );
       const parent = JSON.stringify(type.keys.map((k) => row[k]));
       const seq = (seqs.get(parent) || 0) + 1;
       seqs.set(parent, seq);
@@ -999,6 +1015,10 @@ function generateData(
             );
       }
       const key = JSON.stringify(type.keys.map((k) => row[k]));
+      // A key that couldn't be made (joined to a column its parent doesn't have): no row,
+      // which no request could find, nor a data file hold
+      if (type.keys.some((k) => row[k] === null || row[k] === undefined))
+        continue;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(row);
@@ -1042,10 +1062,21 @@ function generateData(
       copyForeignKey(row, fk, pick(rngs[fk.set], all[fk.principal]));
   }
 
-  // Last, items agree with their header
+  // Last, items agree with their header: generated items take from it, and a generated header
+  // totals its items, generated or not (regenerated alone, see Store.regenerate)
   for (const fk of fks)
-    if (isKeyPart(model, fk) && sets.includes(fk.set))
-      itemsAgree(model, all, fk, sets.includes(fk.principal), rules);
+    if (
+      isKeyPart(model, fk) &&
+      (sets.includes(fk.set) || sets.includes(fk.principal))
+    )
+      itemsAgree(
+        model,
+        all,
+        fk,
+        sets.includes(fk.principal),
+        sets.includes(fk.set),
+        rules,
+      );
 
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
 }
@@ -1131,9 +1162,9 @@ function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
   return text;
 }
 
-// The items of a header (fk: their foreign key, part of their key) agree with it: they take
-// its currency, company code and plant (see fromHeader), and, when the header was generated
-// too (generated, its total can be changed), its total is the sum of theirs. Only when it's
+// The items of a header (fk: their foreign key, part of their key) agree with it: generated
+// items take its currency, company code and plant (see fromHeader), and, when the header was
+// generated (generated, its total can be changed), its total is the sum of theirs. Only when it's
 // clear which properties those are (see lineValue, headerTotal); a header with no items
 // keeps its total. A property a mock rule sets keeps the rule's value.
 function itemsAgree(
@@ -1141,13 +1172,14 @@ function itemsAgree(
   all: Record<string, Row[]>,
   fk: ForeignKey,
   headerGenerated: boolean,
+  itemsGenerated: boolean,
   rules: MockRules,
 ): void {
   const typeOf = (set: string) =>
     model.entityTypes[model.entitySets[set].entityType];
   const header = typeOf(fk.principal);
   const item = typeOf(fk.set);
-  const inherited = fromHeader(header, item, fk, rules);
+  const inherited = itemsGenerated ? fromHeader(header, item, fk, rules) : [];
   const line = lineValue(item);
   let total = headerGenerated ? headerTotal(header) : undefined;
   // A property a mock rule sets keeps the rule's value

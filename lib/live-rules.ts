@@ -57,6 +57,16 @@ function liveRules({
   let files = [...new Set([own, ...loadConfig(modelDir).files])];
   const watchers = new Map<string, fs.FSWatcher>();
   let timer: NodeJS.Timeout | undefined;
+  // The files' modification times and sizes, as last read: what tells a change. Not the name
+  // an event gives: events of files written together can come as one, naming one of them.
+  const stamps = () =>
+    files
+      .map((f) => {
+        const st = fs.statSync(f, { throwIfNoEntry: false });
+        return st ? `${st.mtimeMs}:${st.size}` : "-";
+      })
+      .join("|");
+  let read = stamps();
 
   // A watch on the folder of each file, none on folders no file is in any more
   function watch(): void {
@@ -69,11 +79,11 @@ function liveRules({
     for (const dir of dirs) {
       if (watchers.has(dir)) continue;
       try {
-        const watcher = fs.watch(dir, (_, name) => {
-          // Some platforms don't say which file changed
-          if (name && !files.includes(path.join(dir, name.toString()))) return;
+        const watcher = fs.watch(dir, () => {
           clearTimeout(timer);
-          timer = setTimeout(() => void reload(), SETTLE);
+          timer = setTimeout(() => {
+            if (stamps() !== read) void reload();
+          }, SETTLE);
         });
         // A folder removed: nothing more to watch there
         watcher.on("error", () => watchers.delete(dir));
@@ -97,9 +107,9 @@ function liveRules({
       return;
     } finally {
       watch();
+      read = stamps();
     }
     if (isDeepStrictEqual(ruleValues(next), ruleValues(current))) return;
-    const before = current;
     let result: ReturnType<Store["regenerate"]>;
     try {
       result = await queue.run(() => store.regenerate(next));
@@ -112,15 +122,7 @@ function liveRules({
     current = next;
     for (const service of services)
       for (const set of result.regenerated) service.deltaTokens.forget(set);
-    // Sets kept whose rules changed: there's a write in them, or rows kept point at them
-    const ruled = (set: string) =>
-      !isDeepStrictEqual(ruleValues(before)[set], ruleValues(next)[set]);
-    const lines = regenerationNotes(
-      store,
-      result,
-      ruled,
-      "restart to regenerate it",
-    );
+    const lines = regenerationNotes(store, result, "restart to regenerate it");
     log(
       lines.length
         ? `${own}: mock rules changed\n${lines.join("\n")}`

@@ -13,10 +13,8 @@ import type {
   PropertyValue,
   Row,
 } from "./model.ts";
-import { createHash } from "node:crypto";
-import type { Change, Store } from "./store.ts";
-import type { MockValue } from "./config.ts";
-import { regenerationNotes, ruleValues } from "./mock-rules.ts";
+import { fingerprint, type Change, type Store } from "./store.ts";
+import { regenerationNotes } from "./mock-rules.ts";
 import { ADMIN } from "./draft.ts";
 import { HttpError } from "./query.ts";
 import { propToInternal } from "./types.ts";
@@ -40,10 +38,11 @@ interface Shape {
   >;
   // Not the rows' shape, but saved with it: the generated sets as they were generated, so a
   // start can tell the ones no write has changed since, and generate them again when their
-  // rules or the generator changed (see open). Their rows by fingerprint, and the mock rules.
+  // generation changed (see open): the fingerprints of their rows, while no write has changed
+  // them, and of what they were generated from (see Store.generatedFrom)
   mock?: {
     rows: Record<string, string>;
-    rules: Record<string, Record<string, MockValue>>;
+    from: Record<string, string>;
   };
 }
 
@@ -229,17 +228,13 @@ const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const sameShape = (a: Shape, b: Shape) =>
   JSON.stringify(a.sets) === JSON.stringify(b.sets);
 
-// A set's rows, in a few characters: the same as long as they're the same, in the same order
-const fingerprint = (rows: readonly Row[]) =>
-  createHash("sha256").update(toJson(rows)).digest("base64url");
-
 // The store's generated sets, entity and link sets, that no write has changed, as Shape saves
 // them
 function mockOf(store: Store): Shape["mock"] {
   const rows: Record<string, string> = {};
   for (const set of [...store.generated, ...store.generatedLinks])
     if (!store.hasChanges(set)) rows[set] = fingerprint(store.rows(set));
-  return { rows, rules: ruleValues(store.mockRules) };
+  return { rows, from: store.generatedFrom };
 }
 
 // Rows saved with shape `was`, adapted to the model's: a property that's gone is dropped, a
@@ -385,6 +380,9 @@ async function open(
     );
     store.load(adapted?.state ?? saved.state);
     store.assumeChanged(changed);
+    // What the saved sets were generated from; a set new since, from what it was just now
+    if (savedMock)
+      store.generatedFrom = { ...store.generatedFrom, ...savedMock.from };
     log(`Saved state: loaded from${where} (the rows above are not used)`);
     if (adapted) {
       log("The metadata changed since the state was saved:");
@@ -392,15 +390,9 @@ async function open(
       replace = "adapted";
     }
     const result = store.regenerate();
-    // A kept set is listed when its rules changed
-    const ruled = (set: string) =>
-      !!savedMock &&
-      JSON.stringify(savedMock.rules[set]) !==
-        JSON.stringify(ruleValues(store.mockRules)[set]);
     const lines = regenerationNotes(
       store,
       result,
-      ruled,
       "--persist-reset to regenerate it",
     );
     if (lines.length) {

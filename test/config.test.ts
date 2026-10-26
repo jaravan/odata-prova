@@ -79,6 +79,14 @@ describe("config.json: mock rule values", () => {
       () => value("500..100"),
       /"500..100" starts after it ends, write "100..500"/,
     );
+    // Shaped like dates, and not ones
+    for (const range of ["2025-02-30..2025-03-31", "2025-01-01..2025-13-01"])
+      assert.throws(
+        () => value(range),
+        (e: Error & { code?: string }) =>
+          e.code === "ECONFIG" &&
+          /isn't a date, write YYYY-MM-DD/.test(e.message),
+      );
   });
 });
 
@@ -94,6 +102,23 @@ describe("config.json: mock rule keys", () => {
       path: "Address/City",
     });
     assert.deepEqual(parseMockKey("Address/City"), { path: "Address/City" });
+  });
+
+  it("refuses a key with a part left out", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "keys-"));
+    for (const key of [".Status", "PurchaseOrderSet.", ""]) {
+      fs.writeFileSync(
+        path.join(dir, "config.json"),
+        JSON.stringify({ mock: { [key]: "A" } }),
+      );
+      assert.throws(
+        () => loadConfig(dir),
+        new RegExp(
+          `mock "${key.replace(".", "\\.")}": a key is "Set.Property" or "Property"`,
+        ),
+      );
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

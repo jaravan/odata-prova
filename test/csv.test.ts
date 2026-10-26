@@ -83,3 +83,75 @@ describe("CSV seed files", () => {
     );
   });
 });
+
+describe("seed files that can't be used: the start says why, naming the file and row", () => {
+  const MANY = path.join(import.meta.dirname, "fixtures", "ManyToMany");
+  // A start on from's metadata and data files, with these files written (null: removed)
+  const start = (from: string, files: Record<string, string | null>) => () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seed-"));
+    try {
+      fs.copyFileSync(
+        path.join(from, "metadata.xml"),
+        path.join(dir, "metadata.xml"),
+      );
+      fs.cpSync(path.join(from, "data"), path.join(dir, "data"), {
+        recursive: true,
+      });
+      for (const [file, text] of Object.entries(files))
+        if (text === null) fs.rmSync(path.join(dir, "data", file));
+        else fs.writeFileSync(path.join(dir, "data", file), text);
+      return createApp({ modelDir: dir, v4Path: "/v4", log: () => {} });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const HEADER =
+    "PurchaseOrderId;Supplier;CompanyCode;OrderDate;Status;Currency;TotalAmount";
+  const ROW = "4500000001;Acme;1000;2025-01-01;Open;EUR;1.00";
+
+  it("two rows with the same key: a request could reach one, and persistence keep one", () => {
+    assert.throws(
+      start(PO_MODEL, {
+        "PurchaseOrderSet.csv": `${HEADER}\n${ROW}\n${ROW}\n`,
+      }),
+      /PurchaseOrderSet\.csv: rows 2 and 3 have the same key, PurchaseOrderId "4500000001"/,
+    );
+    // The same link twice
+    assert.throws(
+      start(MANY, {
+        "Courses-Students.csv": "CourseId;Students_StudentId\n10;1\n10;1\n",
+      }),
+      /Courses-Students\.csv: rows 2 and 3 have the same key/,
+    );
+  });
+
+  it("a link that doesn't fit its columns' types", () => {
+    assert.throws(
+      start(MANY, {
+        "Courses-Students.csv": "CourseId;Students_StudentId\n10;x\n",
+      }),
+      /Courses-Students\.csv: row 2: Invalid Edm\.Int32 value: x/,
+    );
+  });
+
+  it("JSON that isn't a list of rows", () => {
+    for (const [json, message] of [
+      [
+        '{ "value": [] }',
+        /PurchaseOrderSet\.json: a JSON data file is a list of rows/,
+      ],
+      ["[1]", /PurchaseOrderSet\.json: row 1: a row is an object/],
+      [
+        '[{ "PurchaseOrderId": "1" }, null]',
+        /PurchaseOrderSet\.json: row 2: a row is an object/,
+      ],
+    ] as const)
+      assert.throws(
+        start(PO_MODEL, {
+          "PurchaseOrderSet.csv": null,
+          "PurchaseOrderSet.json": json,
+        }),
+        message,
+      );
+  });
+});

@@ -577,6 +577,37 @@ for (const backend of BACKENDS) {
       }
     });
 
+    it("a write to a set: the next start regenerates nothing, not the rows that point at it either", async () => {
+      const { db, reopen, done } = backend.open();
+      const { dir } = generatedPo();
+      try {
+        const first = await start(dir, { persistence: db, mockRows: 5 });
+        await first.ready;
+        const order = first.store.rows("PurchaseOrderSet")[0];
+        await send(
+          "DELETE",
+          `${first.v4}/PurchaseOrderSet('${first.store.rows("PurchaseOrderSet")[4].PurchaseOrderId}')`,
+        );
+        await send(
+          "PATCH",
+          `${first.v4}/PurchaseOrderSet('${order.PurchaseOrderId}')`,
+          {
+            Supplier: "mine",
+          },
+        );
+        const items = structuredClone(first.store.rows("PurchaseOrderItemSet"));
+        await first.close();
+        const again = reopen();
+        const second = await startOn(dir, again);
+        assert.deepEqual(second.notes, []);
+        assert.equal(again.commits, 0);
+        assert.deepEqual(second.app.store.rows("PurchaseOrderItemSet"), items);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+        done();
+      }
+    });
+
     it("unchanged mock rules: nothing regenerated, nothing saved", async () => {
       const { db, reopen, done } = backend.open();
       const { dir } = generatedPo();
@@ -612,6 +643,7 @@ for (const backend of BACKENDS) {
         assert.deepEqual(second.notes, [
           "The mock rules or the generator changed since the state was saved:",
           "  PurchaseOrderSet: kept, PurchaseOrderItemSet refers to it and has your changes (--persist-reset to regenerate it)",
+          "  PurchaseOrderItemSet: has your changes, kept (--persist-reset to regenerate it)",
         ]);
         assert.deepEqual(second.app.store.rows("PurchaseOrderSet"), orders);
       } finally {

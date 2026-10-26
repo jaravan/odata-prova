@@ -187,6 +187,52 @@ describe("mock rules: mistakes, and how to fix them", () => {
     );
   });
 
+  it("a number out of an integer's range, or with more digits than a Decimal's Precision", () => {
+    const northwind = model(path.join(FIXTURES, "real", "NorthwindV4"));
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(northwind, [
+          rule("Products.UnitsInStock", 40000),
+          rule("Products.ReorderLevel", ["1", "1.5"]),
+          rule("Products.UnitsOnOrder", "-40000..1"),
+        ]),
+      ),
+      [
+        'mock "Products.UnitsInStock": 40000 can\'t fit Edm.Int16 (-32768 to 32767)',
+        'mock "Products.ReorderLevel": "1.5" doesn\'t fit ReorderLevel (Edm.Int16)',
+        'mock "Products.UnitsOnOrder": "-40000..1": -40000 can\'t fit Edm.Int16 (-32768 to 32767)',
+      ],
+    );
+    // TotalAmount: Precision 15, Scale 2: 13 digits before the point
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(PO, [
+          rule("PurchaseOrderSet.TotalAmount", "1..99999999999999"),
+        ]),
+      ),
+      [
+        'mock "PurchaseOrderSet.TotalAmount": "1..99999999999999": 99999999999999 has 14 digits before the point, TotalAmount has room for 13 (Precision 15)',
+      ],
+    );
+    assert.equal(
+      resolveMockRules(PO, [
+        rule("PurchaseOrderSet.TotalAmount", "1..9999999999999"),
+      ]).PurchaseOrderSet.TotalAmount.key,
+      "PurchaseOrderSet.TotalAmount",
+    );
+  });
+
+  it("an empty value on a property that can't be empty", () => {
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(PO, [rule("PurchaseOrderSet.Status", "")]),
+      ),
+      [
+        'mock "PurchaseOrderSet.Status": Status can\'t be empty (Nullable="false")',
+      ],
+    );
+  });
+
   it("a rule on a collection of complex values, for a member instead", () => {
     const trippin = model(path.join(FIXTURES, "real", "TripPin"));
     assert.deepEqual(

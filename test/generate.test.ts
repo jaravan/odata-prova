@@ -348,6 +348,25 @@ describe("mock data: foreign keys point at real rows", () => {
   });
 });
 
+describe("mock data: a key that is its parent's whole (1:1)", () => {
+  it("gives each parent at most one row, so both point at each other", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "one-"));
+    fs.copyFileSync(
+      path.join(FIXTURES, "OneToOne", "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    const { store } = createApp({ modelDir: dir, mockRows: 5, log: () => {} });
+    const ids = (set: string) =>
+      store
+        .rows(set)
+        .map((r) => r.ProductID)
+        .sort();
+    assert.ok(ids("Products").length > 0);
+    assert.deepEqual(ids("Products"), ids("ProductDetails"));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe("mock data: children of seeded parents", () => {
   let s: TestServer;
   const dir = modelCopy(PO_MODEL, ["PurchaseOrderSet.csv"]);

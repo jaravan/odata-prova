@@ -117,6 +117,16 @@ function parseMockValue(written: Json, where: string): MockValue {
         : DATE.test(min) && DATE.test(max)
           ? "date"
           : undefined;
+    // A date of the calendar: 2025-02-30 is shaped like one, and isn't
+    const bad =
+      type === "date" &&
+      [min, max].find(
+        (d) =>
+          Number.isNaN(Date.parse(d)) ||
+          new Date(d).toISOString().slice(0, 10) !== d,
+      );
+    if (bad)
+      throw configError(`${where}: "${bad}" isn't a date, write YYYY-MM-DD`);
     if (type) {
       const lower = type === "number" ? Number(min) <= Number(max) : min <= max;
       if (!lower)
@@ -186,14 +196,20 @@ function readChain(file: string, shared: boolean, chain: string[]): Config {
     throw configError(
       `${file}: mock is an object of rules, { "PurchaseOrderSet.Status": ["Open", "Approved"] }`,
     );
-  for (const [key, written] of Object.entries(rules))
+  for (const [key, written] of Object.entries(rules)) {
+    const parsed = parseMockKey(key);
+    if (parsed.set === "" || !parsed.path)
+      throw configError(
+        `${file}: mock "${key}": a key is "Set.Property" or "Property", e.g. "PurchaseOrderSet.Status"`,
+      );
     mock.push({
       key,
-      ...parseMockKey(key),
+      ...parsed,
       value: parseMockValue(written, `${file}: mock "${key}"`),
       file,
       shared,
     });
+  }
   return { operations, mock: mergeRules(mock), files };
 }
 

@@ -102,6 +102,26 @@ describe("live mock rules", () => {
     assert.equal(orders()[0].PurchaseOrderId, order);
   });
 
+  it("leaves the rows that point at a set with a write as they are", async () => {
+    const itemsBefore = structuredClone(items());
+    const r = await send(
+      "PATCH",
+      `${s.v4}/PurchaseOrderSet('${orders()[0].PurchaseOrderId}')`,
+      { Supplier: "mine" },
+    );
+    assert.equal(r.status, 204);
+    config({ "PurchaseOrderSet.Status": ["Approved"] });
+    assert.equal(
+      await reload(),
+      [
+        `${path.join(dir, "config.json")}: mock rules changed`,
+        "  PurchaseOrderSet: has your changes, kept (restart to regenerate it)",
+      ].join("\n"),
+    );
+    // Its items' generation didn't change: they aren't picked again from the orders
+    assert.deepEqual(items(), itemsBefore);
+  });
+
   it("not a write rolled back", async () => {
     // A changeset whose second request fails: its first, done, is undone
     const item = items()[0];
@@ -141,6 +161,8 @@ describe("live mock rules", () => {
       [
         `${path.join(dir, "config.json")}: mock rules changed`,
         "  PurchaseOrderSet: kept, PurchaseOrderItemSet refers to it and has your changes (restart to regenerate it)",
+        // Its items hold the orders' keys: theirs would change too
+        "  PurchaseOrderItemSet: has your changes, kept (restart to regenerate it)",
       ].join("\n"),
     );
     assert.deepEqual(orders(), before);

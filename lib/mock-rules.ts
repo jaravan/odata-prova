@@ -28,6 +28,37 @@ const INT_MAX: Record<string, number> = {
   "Edm.Int32": 2147483647,
   "Edm.Int64": Number.MAX_SAFE_INTEGER,
 };
+const INT_MIN: Record<string, number> = {
+  "Edm.Byte": 0,
+  "Edm.SByte": -128,
+  "Edm.Int16": -32768,
+  "Edm.Int32": -2147483648,
+  "Edm.Int64": Number.MIN_SAFE_INTEGER,
+};
+
+// Why the number n can't go into prop, of type: an integer's range, or the digits a Decimal's
+// Precision leaves before its point; undefined when it can
+function numberMisfit(
+  n: number,
+  prop: Property,
+  type: string,
+): string | undefined {
+  if (type in INT_MAX) {
+    if (!Number.isInteger(n))
+      return `${n} isn't a whole number, ${prop.name} is ${type}`;
+    if (n < INT_MIN[type] || n > INT_MAX[type])
+      return `${n} can't fit ${type} (${INT_MIN[type]} to ${INT_MAX[type]})`;
+  }
+  if (type === "Edm.Decimal" && /^\d+$/.test(prop.precision ?? "")) {
+    const room = Number(prop.precision) - (Number(prop.scale) || 0);
+    const digits =
+      Math.abs(n) < 1 ? 0 : Math.floor(Math.log10(Math.abs(n))) + 1;
+    if (digits > room)
+      return `${n} has ${digits} digits before the point, ${prop.name} has room for ${room} (Precision ${prop.precision})`;
+  }
+  return undefined;
+}
+
 const NUMBERS = [
   ...Object.keys(INT_MAX),
   "Edm.Decimal",
@@ -131,15 +162,22 @@ function misfit(
         return `a running number is for text or number properties, ${prop.name} is ${type}`;
       if (!/^\d*$/.test(value.prefix + value.suffix))
         return `"${written}" has text around its #s, and ${prop.name} is a number (${type})`;
-      if (!(type in INT_MAX)) return undefined;
+      if (!(type in INT_MAX)) {
+        const top = Math.max(
+          Number(`${value.prefix}${"9".repeat(value.width)}${value.suffix}`),
+          Number(last),
+        );
+        const wrong = numberMisfit(top, prop, type);
+        return wrong && `"${written}" counts to ${top}: ${wrong}`;
+      }
       if (
         Number(`${value.prefix}${"9".repeat(value.width)}${value.suffix}`) >
         INT_MAX[type]
       )
         return `"${written}" can't fit ${type} (at most ${INT_MAX[type]})`;
-      return Number(last) > INT_MAX[type]
-        ? `${runsOut}, and ${type} holds at most ${INT_MAX[type]}`
-        : undefined;
+      if (Number(last) > INT_MAX[type])
+        return `${runsOut}, and ${type} holds at most ${INT_MAX[type]}`;
+      return undefined;
     }
     case "range":
       if (type === "Edm.String") {
@@ -162,11 +200,16 @@ function misfit(
         return `"${value.min}..${value.max}" is a range of numbers, ${prop.name} is ${type}`;
       if (value.type === "date" && !DATES.includes(type))
         return `"${value.min}..${value.max}" is a range of dates, ${prop.name} is ${type}`;
-      if (value.type === "number" && type in INT_MAX) {
-        if (!/^-?\d+$/.test(value.min) || !/^-?\d+$/.test(value.max))
+      if (value.type === "number") {
+        if (
+          type in INT_MAX &&
+          (!/^-?\d+$/.test(value.min) || !/^-?\d+$/.test(value.max))
+        )
           return `"${value.min}..${value.max}" has decimals, ${prop.name} is ${type}`;
-        if (Number(value.max) > INT_MAX[type])
-          return `"${value.min}..${value.max}" can't fit ${type} (at most ${INT_MAX[type]})`;
+        for (const end of [value.min, value.max]) {
+          const wrong = numberMisfit(Number(end), prop, type);
+          if (wrong) return `"${value.min}..${value.max}": ${wrong}`;
+        }
       }
       return undefined;
     default: {
@@ -180,13 +223,20 @@ function misfit(
             return `${JSON.stringify(v)} isn't a member of ${prop.enumType.name}: ${prop.enumType.members.map((m) => m.name).join(", ")}`;
           continue;
         }
+        let internal;
         try {
-          propToInternal(v, prop);
+          internal = propToInternal(v, prop);
         } catch {
           return `${JSON.stringify(v)} doesn't fit ${prop.name} (${type})`;
         }
-        if (v === null && !prop.nullable)
+        // "" is empty too, as in a data file
+        if (internal === null && !prop.nullable)
           return `${prop.name} can't be empty (Nullable="false")`;
+        const wrong =
+          v !== null && NUMBERS.includes(type)
+            ? numberMisfit(Number(v), prop, type)
+            : undefined;
+        if (wrong) return wrong;
         if (type === "Edm.String" && max > 0 && String(v ?? "").length > max)
           return `${JSON.stringify(v)} is ${String(v).length} long, MaxLength is ${max}`;
       }
@@ -370,12 +420,11 @@ function ruleValues(
   );
 }
 
-// What Store.regenerate did, a line per set for the log: the sets regenerated, and the
-// generated ones kept whose rules changed (ruled), with how to regenerate them anyway (again)
+// What Store.regenerate did, a line per set for the log: the sets regenerated, and the ones
+// kept although their generation changed, with how to regenerate them anyway (again)
 function regenerationNotes(
   store: Store,
-  { regenerated, kept }: ReturnType<Store["regenerate"]>,
-  ruled: (set: string) => boolean,
+  { regenerated, kept, stale }: ReturnType<Store["regenerate"]>,
   again: string,
 ): string[] {
   const lines = regenerated.map((set) => `  ${set}: regenerated`);
@@ -386,7 +435,7 @@ function regenerationNotes(
       lines.push(
         `  ${set}: kept, ${by} refers to it and ${store.hasChanges(by) ? "has your changes" : "is from a data file"} (${again})`,
       );
-    else if (store.hasChanges(set) && ruled(set))
+    else if (stale.includes(set))
       lines.push(`  ${set}: has your changes, kept (${again})`);
   }
   return lines;

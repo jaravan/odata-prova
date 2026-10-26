@@ -86,6 +86,7 @@ function guess(line: Line): string {
 
 // Text in columns, each as wide as its widest cell
 function table(rows: string[][], indent = "  "): string[] {
+  if (!rows.length) return [];
   const widths = rows[0].map((_, i) =>
     Math.max(...rows.map((r) => r[i].length)),
   );
