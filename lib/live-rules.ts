@@ -19,24 +19,18 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { Model } from "./model.ts";
 import { loadConfig } from "./config.ts";
-import { resolveMockRules, type MockRules } from "./mock-rules.ts";
+import {
+  regenerationNotes,
+  resolveMockRules,
+  ruleValues,
+  type MockRules,
+} from "./mock-rules.ts";
 import type { Store } from "./store.ts";
 import type { Queue } from "./queue.ts";
 import type { ODataService } from "./service.ts";
 
 // How long after the last change to a file it's read: an editor's save can be several writes
 const SETTLE = 100;
-
-// What each set's properties get, whatever file a rule came from
-const values = (rules: MockRules) =>
-  Object.fromEntries(
-    Object.entries(rules).map(([set, props]) => [
-      set,
-      Object.fromEntries(
-        Object.entries(props).map(([p, rule]) => [p, rule.value]),
-      ),
-    ]),
-  );
 
 function liveRules({
   modelDir,
@@ -104,7 +98,7 @@ function liveRules({
     } finally {
       watch();
     }
-    if (isDeepStrictEqual(values(next), values(current))) return;
+    if (isDeepStrictEqual(ruleValues(next), ruleValues(current))) return;
     const before = current;
     let result: ReturnType<Store["regenerate"]>;
     try {
@@ -116,30 +110,17 @@ function liveRules({
       return;
     }
     current = next;
-    const { regenerated, kept } = result;
     for (const service of services)
-      for (const set of regenerated) service.deltaTokens.forget(set);
-
-    // Sets kept, whose rules changed: there's a write in them, or a set kept as it is holds
-    // rows that point at them
+      for (const set of result.regenerated) service.deltaTokens.forget(set);
+    // Sets kept whose rules changed: there's a write in them, or rows kept point at them
     const ruled = (set: string) =>
-      !isDeepStrictEqual(
-        values({ [set]: before[set] ?? {} }),
-        values({ [set]: next[set] ?? {} }),
-      );
-    const lines = regenerated.map((set) => `  ${set}: regenerated`);
-    for (const set of store.generated) {
-      if (regenerated.includes(set)) continue;
-      const by = kept[set];
-      if (by)
-        lines.push(
-          `  ${set}: kept, ${by} refers to it and ${store.hasChanges(by) ? "has your changes" : "is from a data file"} (restart to regenerate it)`,
-        );
-      else if (store.hasChanges(set) && ruled(set))
-        lines.push(
-          `  ${set}: has your changes, kept (restart to regenerate it)`,
-        );
-    }
+      !isDeepStrictEqual(ruleValues(before)[set], ruleValues(next)[set]);
+    const lines = regenerationNotes(
+      store,
+      result,
+      ruled,
+      "restart to regenerate it",
+    );
     log(
       lines.length
         ? `${own}: mock rules changed\n${lines.join("\n")}`

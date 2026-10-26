@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -454,6 +456,42 @@ describe("PostgresPersistence", { skip }, () => {
     } finally {
       await a.close();
       await b.close();
+    }
+  });
+
+  it("replicas starting at once on changed mock rules: one regenerates, for all", async () => {
+    const serviceName = fresh();
+    // PO_MODEL's metadata without its data files: its orders are generated
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "replicas-"));
+    fs.copyFileSync(
+      path.join(PO_MODEL, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    const options = { persist: url, serviceName, mockRows: 5 };
+    const first = await start(dir, options);
+    await first.ready;
+    await first.close();
+    fs.writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({ mock: { Currency: "EUR" } }),
+    );
+    const a = await start(dir, options);
+    const b = await start(dir, options);
+    try {
+      await Promise.all([a.ready, b.ready]);
+      // A read on each catches it up
+      for (const s of [a, b]) await get(`${s.v4}/PurchaseOrderSet`);
+      const orders = a.store.rows("PurchaseOrderSet");
+      assert.ok(orders.every((o) => o.Currency === "EUR"));
+      assert.deepEqual(b.store.rows("PurchaseOrderSet"), orders);
+      const db = new PostgresPersistence(url, serviceName);
+      const saved = await db.load();
+      await db.close();
+      assert.deepEqual(saved?.state.PurchaseOrderSet, orders);
+    } finally {
+      await a.close();
+      await b.close();
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

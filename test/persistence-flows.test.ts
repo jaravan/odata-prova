@@ -17,7 +17,7 @@ import {
 } from "./helpers.ts";
 import { MemoryPersistence } from "./memory-persistence.ts";
 import { createApp } from "../lib/app.ts";
-import { everything } from "../lib/persistence.ts";
+import { everything, shapeOf } from "../lib/persistence.ts";
 import type { Persistence, SetChanges, Shape } from "../lib/persistence.ts";
 import { SqlitePersistence } from "../lib/sqlite.ts";
 import { PostgresPersistence } from "../lib/postgres.ts";
@@ -501,6 +501,148 @@ for (const backend of BACKENDS) {
         for (const set of kept)
           assert.deepEqual(second.store.rows(set), first.store.rows(set));
       } finally {
+        done();
+      }
+    });
+
+    // PO_MODEL's metadata without its data files, so its orders and items are generated, and
+    // a config.json with these mock rules
+    const generatedPo = () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rules-"));
+      fs.copyFileSync(
+        path.join(PO_MODEL, "metadata.xml"),
+        path.join(dir, "metadata.xml"),
+      );
+      return {
+        dir,
+        rules: (mock: Record<string, unknown>) =>
+          fs.writeFileSync(
+            path.join(dir, "config.json"),
+            JSON.stringify({ mock }),
+          ),
+      };
+    };
+    // A start on what persistence saved: its app, closed, and what it logged
+    const startOn = async (dir: string, persistence: Persistence) => {
+      const logged: string[] = [];
+      const app = createApp({
+        modelDir: dir,
+        v4Path: "/v4",
+        log: (m) => logged.push(m),
+        mockRows: 5,
+        persistence,
+      });
+      await app.ready;
+      await app.close();
+      const at = logged.findIndex((l) => l.startsWith("The mock rules"));
+      return { app, notes: at === -1 ? [] : logged.slice(at) };
+    };
+
+    it("changed mock rules: the generated sets without writes are regenerated, the others kept", async () => {
+      const { db, reopen, done } = backend.open();
+      const { dir, rules } = generatedPo();
+      try {
+        const first = await start(dir, { persistence: db, mockRows: 5 });
+        await first.ready;
+        const item = first.store.rows("PurchaseOrderItemSet")[0];
+        const r = await send(
+          "PATCH",
+          `${first.v4}/PurchaseOrderItemSet(PurchaseOrderId='${item.PurchaseOrderId}',ItemPosition='${item.ItemPosition}')`,
+          { Description: "mine" },
+        );
+        assert.equal(r.status, 204);
+        await first.close();
+
+        rules({ Currency: "EUR" });
+        const second = await startOn(dir, reopen());
+        assert.deepEqual(second.notes, [
+          "The mock rules or the generator changed since the state was saved:",
+          "  PurchaseOrderSet: regenerated",
+          "  PurchaseOrderItemSet: has your changes, kept (--persist-reset to regenerate it)",
+        ]);
+        const orders = second.app.store.rows("PurchaseOrderSet");
+        assert.ok(orders.every((o) => o.Currency === "EUR"));
+        // Saved, and the start after has nothing more to do or say
+        const third = await startOn(dir, reopen());
+        assert.deepEqual(third.notes, []);
+        assert.deepEqual(third.app.store.rows("PurchaseOrderSet"), orders);
+        assert.ok(
+          third.app.store
+            .rows("PurchaseOrderItemSet")
+            .some((i) => i.Description === "mine"),
+        );
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+        done();
+      }
+    });
+
+    it("unchanged mock rules: nothing regenerated, nothing saved", async () => {
+      const { db, reopen, done } = backend.open();
+      const { dir } = generatedPo();
+      try {
+        await startOn(dir, db);
+        const again = reopen();
+        const second = await startOn(dir, again);
+        assert.deepEqual(second.notes, []);
+        assert.equal(again.commits, 0);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+        done();
+      }
+    });
+
+    it("a set whose keys would change under rows with writes that point at them is kept", async () => {
+      const { db, reopen, done } = backend.open();
+      const { dir, rules } = generatedPo();
+      try {
+        const first = await start(dir, { persistence: db, mockRows: 5 });
+        await first.ready;
+        const orders = structuredClone(first.store.rows("PurchaseOrderSet"));
+        const item = first.store.rows("PurchaseOrderItemSet")[0];
+        await send(
+          "PATCH",
+          `${first.v4}/PurchaseOrderItemSet(PurchaseOrderId='${item.PurchaseOrderId}',ItemPosition='${item.ItemPosition}')`,
+          { Description: "mine" },
+        );
+        await first.close();
+
+        rules({ "PurchaseOrderSet.PurchaseOrderId": "46########" });
+        const second = await startOn(dir, reopen());
+        assert.deepEqual(second.notes, [
+          "The mock rules or the generator changed since the state was saved:",
+          "  PurchaseOrderSet: kept, PurchaseOrderItemSet refers to it and has your changes (--persist-reset to regenerate it)",
+        ]);
+        assert.deepEqual(second.app.store.rows("PurchaseOrderSet"), orders);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+        done();
+      }
+    });
+
+    it("a state saved without fingerprints (0.20.0 and before): every set kept", async () => {
+      const { db, reopen, done } = backend.open();
+      const { dir, rules } = generatedPo();
+      try {
+        const { app } = await startOn(dir, db);
+        // Saved again as 0.20.0 saved it: the shape alone
+        const old = reopen();
+        await old.load(app.model);
+        await old.replace(
+          everything(app.model, app.store.sets()),
+          shapeOf(app.model),
+        );
+        await old.close();
+
+        rules({ Currency: "EUR" });
+        const second = await startOn(dir, reopen());
+        assert.deepEqual(second.notes, []);
+        assert.deepEqual(
+          second.app.store.rows("PurchaseOrderSet"),
+          app.store.rows("PurchaseOrderSet"),
+        );
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
         done();
       }
     });

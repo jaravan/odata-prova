@@ -7,7 +7,13 @@
 // serves many models. A "Set.Property" rule wins over a "Property" rule for that set.
 
 import type { EntityType, Model, Property } from "./model.ts";
-import { configError, parseMockValue, type MockRule } from "./config.ts";
+import {
+  configError,
+  parseMockValue,
+  type MockRule,
+  type MockValue,
+} from "./config.ts";
+import type { Store } from "./store.ts";
 import { SAP_FIELDS } from "./sap-fields.ts";
 import { foreignKeys } from "./generate.ts";
 import { propToInternal } from "./types.ts";
@@ -349,4 +355,41 @@ function resolveMockRules(
   return resolved;
 }
 
-export { resolveMockRules, suggest };
+// What each set's properties get, whatever file a rule came from: rules as they're compared,
+// and saved with a state (see persistence.ts)
+function ruleValues(
+  rules: MockRules,
+): Record<string, Record<string, MockValue>> {
+  return Object.fromEntries(
+    Object.entries(rules).map(([set, props]) => [
+      set,
+      Object.fromEntries(
+        Object.entries(props).map(([p, rule]) => [p, rule.value]),
+      ),
+    ]),
+  );
+}
+
+// What Store.regenerate did, a line per set for the log: the sets regenerated, and the
+// generated ones kept whose rules changed (ruled), with how to regenerate them anyway (again)
+function regenerationNotes(
+  store: Store,
+  { regenerated, kept }: ReturnType<Store["regenerate"]>,
+  ruled: (set: string) => boolean,
+  again: string,
+): string[] {
+  const lines = regenerated.map((set) => `  ${set}: regenerated`);
+  for (const set of store.generated) {
+    if (regenerated.includes(set)) continue;
+    const by = kept[set];
+    if (by)
+      lines.push(
+        `  ${set}: kept, ${by} refers to it and ${store.hasChanges(by) ? "has your changes" : "is from a data file"} (${again})`,
+      );
+    else if (store.hasChanges(set) && ruled(set))
+      lines.push(`  ${set}: has your changes, kept (${again})`);
+  }
+  return lines;
+}
+
+export { resolveMockRules, suggest, ruleValues, regenerationNotes };

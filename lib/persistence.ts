@@ -13,7 +13,10 @@ import type {
   PropertyValue,
   Row,
 } from "./model.ts";
+import { createHash } from "node:crypto";
 import type { Change, Store } from "./store.ts";
+import type { MockValue } from "./config.ts";
+import { regenerationNotes, ruleValues } from "./mock-rules.ts";
 import { ADMIN } from "./draft.ts";
 import { HttpError } from "./query.ts";
 import { propToInternal } from "./types.ts";
@@ -35,6 +38,13 @@ interface Shape {
     string,
     { identity: string[]; properties: Record<string, string> }
   >;
+  // Not the rows' shape, but saved with it: the generated sets as they were generated, so a
+  // start can tell the ones no write has changed since, and generate them again when their
+  // rules or the generator changed (see open). Their rows by fingerprint, and the mock rules.
+  mock?: {
+    rows: Record<string, string>;
+    rules: Record<string, Record<string, MockValue>>;
+  };
 }
 
 // What was saved: the rows of every set, and the shape they had (none from a backend that
@@ -217,7 +227,20 @@ function shapeOf(model: Model): Shape {
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 const sameShape = (a: Shape, b: Shape) =>
-  JSON.stringify(a) === JSON.stringify(b);
+  JSON.stringify(a.sets) === JSON.stringify(b.sets);
+
+// A set's rows, in a few characters: the same as long as they're the same, in the same order
+const fingerprint = (rows: readonly Row[]) =>
+  createHash("sha256").update(toJson(rows)).digest("base64url");
+
+// The store's generated sets, entity and link sets, that no write has changed, as Shape saves
+// them
+function mockOf(store: Store): Shape["mock"] {
+  const rows: Record<string, string> = {};
+  for (const set of [...store.generated, ...store.generatedLinks])
+    if (!store.hasChanges(set)) rows[set] = fingerprint(store.rows(set));
+  return { rows, rules: ruleValues(store.mockRules) };
+}
 
 // Rows saved with shape `was`, adapted to the model's: a property that's gone is dropped, a
 // new one gets its empty value, one whose type changed is converted (or emptied when its value
@@ -309,6 +332,9 @@ function adapt(
 // first. From then on every change has to be in a transaction, for persistence to see it. An
 // error is a 503 for every request (see Queue): answering from a state that isn't saved would
 // lose what they change.
+// The saved generated sets no write has changed are generated again, and replaced when their
+// rows come out different: the mock rules, --mock-rows or the generator changed (see
+// Store.regenerate). The ones with writes are kept.
 // reset: the seeded state replaces the saved one, which isn't even read (a reset is what to do
 // when it can't be used).
 async function open(
@@ -334,30 +360,64 @@ async function open(
     saved = undefined;
   } else if (!saved)
     log(`Saved state: none in${where} yet, the rows above saved as the first`);
-  if (saved && (!saved.shape || sameShape(saved.shape, shape))) {
-    store.load(saved.state);
-    log(`Saved state: loaded from${where} (the rows above are not used)`);
-  } else {
-    if (saved) {
-      let adapted: ReturnType<typeof adapt>;
+  // What has to be saved whole, if anything: the first state, a reset, an adapted or a
+  // regenerated one
+  let replace = saved ? undefined : reset ? "reset" : "first";
+  if (saved) {
+    let adapted: ReturnType<typeof adapt> | undefined;
+    if (saved.shape && !sameShape(saved.shape, shape))
       try {
-        adapted = adapt(model, saved.state, saved.shape!);
+        adapted = adapt(model, saved.state, saved.shape);
       } catch (e) {
         throw new HttpError(
           503,
           `The saved state could not be used: ${(e as Error).message}`,
         );
       }
-      store.load(adapted.state);
-      log(`Saved state: loaded from${where} (the rows above are not used)`);
+    // A generated set is as generated when its saved rows are (told before adapt changes
+    // them), or isn't saved yet: it keeps the rows just generated. A state saved without
+    // fingerprints can't tell: every set is taken as changed.
+    const savedMock = saved.shape?.mock;
+    const changed = [...store.generated, ...store.generatedLinks].filter(
+      (set) =>
+        set in saved.state &&
+        (!savedMock || savedMock.rows[set] !== fingerprint(saved.state[set])),
+    );
+    store.load(adapted?.state ?? saved.state);
+    store.assumeChanged(changed);
+    log(`Saved state: loaded from${where} (the rows above are not used)`);
+    if (adapted) {
       log("The metadata changed since the state was saved:");
       for (const note of adapted.notes) log(`  ${note}`);
+      replace = "adapted";
     }
+    const result = store.regenerate();
+    // A kept set is listed when its rules changed
+    const ruled = (set: string) =>
+      !!savedMock &&
+      JSON.stringify(savedMock.rules[set]) !==
+        JSON.stringify(ruleValues(store.mockRules)[set]);
+    const lines = regenerationNotes(
+      store,
+      result,
+      ruled,
+      "--persist-reset to regenerate it",
+    );
+    if (lines.length) {
+      log("The mock rules or the generator changed since the state was saved:");
+      for (const line of lines) log(line);
+    }
+    if (result.regenerated.length) replace ??= "regenerated";
+  }
+  if (replace)
     try {
-      await persistence.replace(everything(model, store.sets()), shape);
+      await persistence.replace(everything(model, store.sets()), {
+        ...shape,
+        mock: mockOf(store),
+      });
     } catch (e) {
-      // Servers starting at once on nothing saved: the one that saved first seeded it for all
-      if (e instanceof StaleError && !saved && !reset) {
+      // Servers starting at once: the one that saved first did it for all
+      if (e instanceof StaleError && !reset) {
         await catchUp(persistence, store);
         log(`Saved state: loaded from${where}, saved first by another server`);
         store.transactionsOnly = true;
@@ -365,10 +425,9 @@ async function open(
       }
       throw new HttpError(
         503,
-        `The ${saved ? "adapted" : reset ? "reset" : "first"} state could not be saved: ${(e as Error).message}`,
+        `The ${replace} state could not be saved: ${(e as Error).message}`,
       );
     }
-  }
   store.transactionsOnly = true;
 }
 

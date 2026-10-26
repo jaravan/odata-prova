@@ -185,7 +185,7 @@ describe("adapting saved rows", () => {
     assert.ok(
       logs.includes("  OldSet: no longer in the metadata, 1 row dropped"),
     );
-    assert.deepEqual(db.shape, shape);
+    assert.deepEqual(db.shape?.sets, shape.sets);
     assert.equal(db.state().OldSet, undefined);
   });
 
