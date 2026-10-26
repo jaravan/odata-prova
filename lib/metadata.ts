@@ -3,7 +3,7 @@
 // operations for the other protocol, and emit-v2.ts and emit-v4.ts write the Model out as
 // the other protocol's $metadata.
 
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type {
   ComplexType,
   Container,
@@ -79,15 +79,26 @@ function parseMetadata(
   { joins = "guess" }: { joins?: JoinMode } = {},
 ): Model {
   // removeNSPrefix would turn sap:label into label; keep the SAP attributes recognisable.
-  const doc: Xml = parser.parse(
-    xml.replace(/(\s)sap:([A-Za-z-]+=)/g, "$1sap__$2"),
-  );
+  // The parser reads what it can; where it can't, its own message doesn't say where.
+  let doc: Xml;
+  try {
+    doc = parser.parse(xml.replace(/(\s)sap:([A-Za-z-]+=)/g, "$1sap__$2"));
+  } catch (e) {
+    const valid = XMLValidator.validate(xml);
+    throw new Error(
+      valid === true
+        ? `metadata.xml can't be read: ${(e as Error).message}`
+        : `metadata.xml isn't well-formed XML, line ${valid.err.line}: ${valid.err.msg}`,
+      { cause: e },
+    );
+  }
   const edmx: Xml = doc.Edmx;
   if (!edmx) throw new Error("metadata.xml: no <edmx:Edmx> root element");
   const schemas: Xml[] = edmx.DataServices?.Schema;
   if (!schemas)
     throw new Error("metadata.xml: no <edmx:DataServices><Schema> found");
   const isV4 = String(edmx.Version || "").startsWith("4");
+  checkAttributes(schemas, isV4);
 
   // Collected first; the model is put together once there is a container
   const entityTypes: Model["entityTypes"] = {};
@@ -269,6 +280,26 @@ function parseMetadata(
   flattenInheritance(model.complexTypes, "ComplexType");
   flattenInheritance(model.entityTypes, "EntityType");
   resolvePropertyTypes(model);
+  // Inherited keys included: a key names a property, of a type a key can have
+  for (const type of Object.values(model.entityTypes))
+    for (const k of type.keys) {
+      const p = type.properties[k];
+      if (!p)
+        throw new Error(
+          `metadata.xml: EntityType ${type.name}: its key ${k} isn't one of its properties`,
+        );
+      if (
+        p.isCollection ||
+        p.complexType ||
+        (!p.enumType &&
+          !/^Edm\.(Binary|Boolean|Byte|Date|DateTimeOffset|Decimal|Double|Duration|Guid|Int16|Int32|Int64|SByte|Single|String|TimeOfDay)$/.test(
+            p.type,
+          ))
+      )
+        throw new Error(
+          `metadata.xml: EntityType ${type.name}: its key ${k} is ${p.isCollection ? "a collection" : p.complexType ? "a complex type" : p.type}, which a key can't be`,
+        );
+    }
   resolveOperationTypes(model);
   model.operationViews = {
     "2.0": isV4 ? v2ViewOfV4(model) : v2ViewOfV2(model),
@@ -279,6 +310,10 @@ function parseMetadata(
     if (!model.entityTypes[es.entityType])
       throw new Error(
         `EntitySet ${es.name}: unknown entity type ${es.entityType}`,
+      );
+    if (!model.entityTypes[es.entityType].keys.length)
+      throw new Error(
+        `metadata.xml: EntitySet ${es.name}: its type ${model.entityTypes[es.entityType].name} has no Key`,
       );
   }
 
@@ -295,6 +330,105 @@ function parseMetadata(
 
 const list = (x: Xml): Xml[] =>
   x === undefined ? [] : Array.isArray(x) ? x : [x];
+
+// Throws, naming the element, when one lacks an attribute the model can't do without: a
+// Property its Type, a navigation its target, a key its property's name
+function checkAttributes(schemas: Xml[], isV4: boolean): void {
+  const need = (el: Xml, attributes: string[], what: string) => {
+    for (const a of attributes)
+      if (typeof el?.[a] !== "string" || !el[a])
+        throw new Error(`metadata.xml: ${what} has no ${a}`);
+  };
+  const named = (kind: string, el: Xml) =>
+    typeof el?.Name === "string" && el.Name
+      ? `${kind} ${el.Name}`
+      : `a ${kind}`;
+  const params = (op: Xml, where: string) => {
+    for (const p of list(op.Parameter))
+      need(p, ["Name", "Type"], `${where}: ${named("Parameter", p)}`);
+  };
+  for (const schema of schemas) {
+    need(schema, ["Namespace"], "a Schema");
+    for (const kind of ["EntityType", "ComplexType"]) {
+      for (const t of list(schema[kind])) {
+        need(t, ["Name"], `a ${kind} of ${schema.Namespace}`);
+        const where = `${kind} ${t.Name}`;
+        for (const p of list(t.Property))
+          need(p, ["Name", "Type"], `${where}: ${named("Property", p)}`);
+        // A / goes between a property and its member, a navigation and the next
+        for (const p of [...list(t.Property), ...list(t.NavigationProperty)])
+          if (String(p.Name).includes("/"))
+            throw new Error(
+              `metadata.xml: ${where}: ${p.Name} isn't a name: a name has no /`,
+            );
+        for (const n of list(t.NavigationProperty))
+          need(
+            n,
+            isV4
+              ? ["Name", "Type"]
+              : ["Name", "Relationship", "FromRole", "ToRole"],
+            `${where}: ${named("NavigationProperty", n)}`,
+          );
+        for (const n of list(t.NavigationProperty))
+          for (const c of list(n.ReferentialConstraint))
+            need(
+              c,
+              ["Property", "ReferencedProperty"],
+              `${where}: NavigationProperty ${n.Name}: a ReferentialConstraint`,
+            );
+        for (const k of list(t.Key).flatMap((key) => list(key.PropertyRef)))
+          need(k, ["Name"], `${where}: a key's PropertyRef`);
+      }
+    }
+    for (const t of list(schema.EnumType)) {
+      need(t, ["Name"], `an EnumType of ${schema.Namespace}`);
+      for (const m of list(t.Member))
+        need(m, ["Name"], `EnumType ${t.Name}: a Member`);
+    }
+    for (const a of list(schema.Association)) {
+      need(a, ["Name"], `an Association of ${schema.Namespace}`);
+      const ends = list(a.End);
+      if (ends.length !== 2)
+        throw new Error(
+          `metadata.xml: Association ${a.Name} has ${ends.length} Ends, not 2`,
+        );
+      for (const e of ends)
+        need(e, ["Role", "Type"], `Association ${a.Name}: an End`);
+      for (const side of ["Principal", "Dependent"]) {
+        const c = list(a.ReferentialConstraint)[0];
+        if (!c) continue;
+        const what = `Association ${a.Name}: its ReferentialConstraint's ${side}`;
+        need(c[side], ["Role"], what);
+        for (const ref of list(c[side].PropertyRef))
+          need(ref, ["Name"], `${what}: a PropertyRef`);
+      }
+    }
+    for (const kind of ["Action", "Function"])
+      for (const o of list(schema[kind])) {
+        need(o, ["Name"], `an ${kind} of ${schema.Namespace}`);
+        params(o, `${kind} ${o.Name}`);
+      }
+    for (const c of list(schema.EntityContainer)) {
+      for (const es of list(c.EntitySet))
+        need(es, ["Name", "EntityType"], named("EntitySet", es));
+      for (const as of list(c.AssociationSet)) {
+        need(as, ["Name", "Association"], named("AssociationSet", as));
+        for (const e of list(as.End))
+          need(e, ["Role", "EntitySet"], `AssociationSet ${as.Name}: an End`);
+      }
+      for (const fi of list(c.FunctionImport)) {
+        need(
+          fi,
+          isV4 ? ["Name", "Function"] : ["Name"],
+          named("FunctionImport", fi),
+        );
+        params(fi, `FunctionImport ${fi.Name}`);
+      }
+      for (const ai of list(c.ActionImport))
+        need(ai, ["Name", "Action"], named("ActionImport", ai));
+    }
+  }
+}
 
 // The namespace of each alias in the document's <edmx:Include Alias> and <Schema Alias>
 function parseAliases(edmx: Xml, schemas: Xml[]): Record<string, string> {

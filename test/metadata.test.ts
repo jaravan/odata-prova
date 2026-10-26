@@ -283,3 +283,95 @@ describe("parseMetadata (what `cds compile --to edmx` actually emits)", () => {
     );
   });
 });
+
+describe("parseMetadata: a document it can't use, and what's wrong with it", () => {
+  const capXml = fs.readFileSync(
+    path.join(import.meta.dirname, "fixtures", "cap", "metadata.xml"),
+    "utf8",
+  );
+  // The document with one change, refused with message
+  const refused = (
+    xml: string,
+    from: string | RegExp,
+    to: string,
+    message: RegExp,
+  ) => {
+    const changed = xml.replace(from, to);
+    assert.notEqual(changed, xml, `${from} is in the document`);
+    assert.throws(() => parseMetadata(changed), message);
+  };
+
+  it("XML that isn't well-formed, with its line", () => {
+    assert.throws(
+      // Cut inside an attribute's value
+      () => parseMetadata(v4Xml.slice(0, v4Xml.indexOf('Type="Edm.Guid"') + 8)),
+      /metadata\.xml isn't well-formed XML, line 20: Attributes for 'Property' have open quote/,
+    );
+  });
+
+  it("an element without an attribute the model needs", () => {
+    refused(
+      v4Xml,
+      '<Property Name="OrderNo" Type="Edm.String"',
+      '<Property Name="OrderNo"',
+      /metadata\.xml: EntityType Orders: Property OrderNo has no Type/,
+    );
+    refused(
+      v4Xml,
+      '<PropertyRef Name="ID"/>',
+      "<PropertyRef/>",
+      /metadata\.xml: EntityType Orders: a key's PropertyRef has no Name/,
+    );
+    refused(
+      v4Xml,
+      ' EntityType="SalesSrv.Orders"',
+      "",
+      /metadata\.xml: EntitySet Orders has no EntityType/,
+    );
+    refused(
+      capXml,
+      / ReferencedProperty="[^"]*"/,
+      "",
+      /metadata\.xml: EntityType \w+: NavigationProperty \w+: a ReferentialConstraint has no ReferencedProperty/,
+    );
+  });
+
+  it("a key that names no property, or a property no key can be", () => {
+    refused(
+      v4Xml,
+      '<PropertyRef Name="ID"/>',
+      '<PropertyRef Name="Nope"/>',
+      /metadata\.xml: EntityType Orders: its key Nope isn't one of its properties/,
+    );
+    refused(
+      v4Xml,
+      '<Property Name="ID" Type="Edm.Guid"',
+      '<Property Name="ID" Type="Edm.GeographyPoint"',
+      /its key ID is Edm\.GeographyPoint, which a key can't be/,
+    );
+    refused(
+      v4Xml,
+      '<Property Name="ID" Type="Edm.Guid"',
+      '<Property Name="ID" Type="Edm.Nope"',
+      /its key ID is Edm\.Nope, which a key can't be/,
+    );
+  });
+
+  it("an entity set whose type has no key", () => {
+    refused(
+      v4Xml,
+      /<Key>\s*<PropertyRef Name="ID"\/>\s*<\/Key>/,
+      "",
+      /metadata\.xml: EntitySet Orders: its type Orders has no Key/,
+    );
+  });
+
+  it("a property named with a /, which goes between names in a path", () => {
+    refused(
+      v4Xml,
+      '<Property Name="OrderNo"',
+      '<Property Name="Order/No"',
+      /metadata\.xml: EntityType Orders: Order\/No isn't a name: a name has no \//,
+    );
+  });
+});
