@@ -14,11 +14,18 @@ interface Segment {
 
 // "PurchaseOrderSet('4500000001')/Items(PurchaseOrderId='4500000001',ItemPosition='0001')/$count"
 // -> [{ name: "PurchaseOrderSet", keyText: "'4500000001'" }, { name: "Items", keyText: "..." }, { name: "$count" }]
+// Every character is a segment's: one that isn't (Set(1)Nav, a stray parenthesis) is a 400,
+// not skipped, which would read another path than the one sent.
 function parseSegments(resourcePath: string): Segment[] {
   const segments: Segment[] = [];
-  const re = /([^/(]+)(?:\(((?:[^()']|'(?:[^']|'')*')*)\))?/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(resourcePath))) {
+  const re = /([^/()]+)(?:\(((?:[^()']|'(?:[^']|'')*')*)\))?(?:\/+|$)/y;
+  for (let at = 0; at < resourcePath.length; at = re.lastIndex) {
+    const m = re.exec(resourcePath);
+    if (!m)
+      throw new HttpError(
+        400,
+        `The resource path can't be read from "${resourcePath.slice(at)}": write Set(key)/Navigation`,
+      );
     segments.push({
       name: decodeUrl(m[1], decodeURIComponent),
       keyText: m[2],

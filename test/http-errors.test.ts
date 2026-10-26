@@ -37,6 +37,26 @@ describe("bad requests get an OData error, not an HTML page", () => {
     assert.match(r.body.error.message, /Malformed URL/);
   });
 
+  it("a path with characters no segment has -> 400, never read as another path", async () => {
+    for (const tail of [
+      "(",
+      "PurchaseOrderSet('4500000001')Items",
+      "PurchaseOrderSet(1)(2)",
+    ]) {
+      const r = await send("PUT", `${s.v4}/${tail}`, {});
+      assert.equal(r.status, 400, tail);
+      assert.match(
+        r.body.error.message,
+        /The resource path can't be read from/,
+      );
+    }
+    // Slashes in a row still read as one
+    assert.equal(
+      (await get(`${s.v4}/PurchaseOrderSet('4500000001')//Items`)).status,
+      200,
+    );
+  });
+
   it("a body that is not JSON -> 400, without a stack trace", async () => {
     const res = await fetch(`${s.v4}/PurchaseOrderSet`, {
       method: "POST",
@@ -107,5 +127,28 @@ describe("error codes", () => {
     assert.equal(code(duplicate), "DuplicateKey");
     const expired = await get(`${s.v4}/PurchaseOrderSet?$deltatoken=nope`);
     assert.equal(code(expired), "DeltaLinkExpired");
+  });
+});
+
+describe("a Location for a key no header can hold as it is", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("is percent-encoded, and leads to the entity", async () => {
+    for (const id of ["a\nb", "é ü"]) {
+      const r = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+        ...ORDER,
+        PurchaseOrderId: id,
+      });
+      assert.equal(r.status, 201);
+      const location = r.headers.get("location")!;
+      assert.match(location, /^[\x21-\x7E]+$/);
+      const back = await get(`${s.base}${location}`);
+      assert.equal(back.status, 200);
+      assert.equal(back.body.PurchaseOrderId, id);
+    }
   });
 });

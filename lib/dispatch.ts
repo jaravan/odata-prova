@@ -30,6 +30,15 @@ import type {
   Row,
 } from "./model.ts";
 
+// A URL as a header can hold it: a key's spaces, control and non-ASCII characters
+// percent-encoded, as UTF-8 bytes (a lone surrogate too, as U+FFFD)
+const headerUrl = (url: string) =>
+  url.replace(/[^\x21-\x7E]/gu, (c) =>
+    [...Buffer.from(c)]
+      .map((b) => `%${b.toString(16).toUpperCase().padStart(2, "0")}`)
+      .join(""),
+  );
+
 // The request as handle has read it
 interface Request {
   svc: ODataService;
@@ -413,7 +422,7 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
       // Through a link set: the new entity is linked to the one it's created under
       if (parent && "links" in parent.nav && parent.nav.links)
         addLink(svc.model, svc.store, parent.nav, parent.row, created);
-      const location = svc.entityUri(setName, type, created);
+      const location = headerUrl(svc.entityUri(setName, type, created));
       if (wantsMinimal)
         return {
           status: 204,
