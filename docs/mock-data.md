@@ -104,6 +104,7 @@ A key only takes a running number, so every row's key is different. A foreign ke
 - `"Set.Property"`: that entity set's property.
 - `"Property"`: that property in every entity set that has it.
 - `"Set.Address/City"` or `"Address/City"`: a member of a complex property.
+- A collection of values (`"Tags"`) gets two values, each by the rule; a collection of complex values takes rules for its members.
 
 Names match whatever their case. A rule sets its property only: with `"Currency": "EUR"`, the rows' cities and countries still vary, and an item still takes its order's company code.
 

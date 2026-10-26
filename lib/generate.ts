@@ -822,7 +822,12 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
 
 function propertyValue(c: Ctx, depth = 0): PropertyValue {
   const rule = c.rules[`${c.path}${c.prop.name}`];
-  if (rule) return ruleValue(c, rule.value);
+  if (rule && !c.prop.isCollection) return ruleValue(c, rule.value);
+  if (rule) {
+    // A collection of values: two, each by the rule
+    const each = { ...c, prop: { ...c.prop, isCollection: false } };
+    return [ruleValue(each, rule.value), ruleValue(each, rule.value)];
+  }
   if (!c.prop.isCollection) return elementValue(c, depth);
   return depth > 2 ? [] : [elementValue(c, depth), elementValue(c, depth)];
 }
@@ -1211,7 +1216,9 @@ function sourceOf(
   const rule = rules[set]?.[path];
   if (rule)
     return {
-      how: ruleHow(rule.value),
+      how: prop.isCollection
+        ? `two values, each ${ruleHow(rule.value)}`
+        : ruleHow(rule.value),
       rule,
       from: rule.builtin ? "built-in" : rule.file,
     };

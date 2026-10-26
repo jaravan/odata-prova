@@ -122,7 +122,7 @@ function explain(modelDir: string, rows: number, all: boolean): string {
     fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
   );
   const config = loadConfig(modelDir);
-  const rules = resolveMockRules(model, config.mock);
+  const rules = resolveMockRules(model, config.mock, rows);
   const store = new Store(model, modelDir, () => {}, {
     mockRows: rows,
     mockRules: rules,

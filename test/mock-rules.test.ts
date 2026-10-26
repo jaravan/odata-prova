@@ -149,6 +149,56 @@ describe("mock rules: mistakes, and how to fix them", () => {
     );
   });
 
+  it("a running number whose #s run out before the last row, for what it goes in", () => {
+    const northwind = model(path.join(FIXTURES, "real", "NorthwindV4"));
+    const rules = [rule("PurchaseOrderSet.Currency", "C#")];
+    assert.equal(
+      resolveMockRules(PO, rules, 9).PurchaseOrderSet.Currency.key,
+      "PurchaseOrderSet.Currency",
+    );
+    assert.deepEqual(
+      mistakes(() => resolveMockRules(PO, rules, 120)),
+      [
+        'mock "PurchaseOrderSet.Currency": "C#" runs out of #s before row 120 (--mock-rows), which gets C120, 4 long, and MaxLength is 3',
+      ],
+    );
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(northwind, [rule("Orders.OrderID", "21474836#")], 120),
+      ),
+      [
+        'mock "Orders.OrderID": "21474836#" runs out of #s before row 120 (--mock-rows), which gets 21474836120, and Edm.Int32 holds at most 2147483647',
+      ],
+    );
+  });
+
+  it("a range on a text whose values are longer than its MaxLength", () => {
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(PO, [
+          rule("PurchaseOrderSet.Currency", "1000..1999"),
+          rule("PurchaseOrderItemSet.Currency", "0.5..9.25"),
+        ]),
+      ),
+      [
+        'mock "PurchaseOrderSet.Currency": "1000..1999" gives values 4 long, MaxLength is 3',
+        'mock "PurchaseOrderItemSet.Currency": "0.5..9.25" gives values 4 long, MaxLength is 3',
+      ],
+    );
+  });
+
+  it("a rule on a collection of complex values, for a member instead", () => {
+    const trippin = model(path.join(FIXTURES, "real", "TripPin"));
+    assert.deepEqual(
+      mistakes(() =>
+        resolveMockRules(trippin, [rule("People.AddressInfo", ["Here"])]),
+      ),
+      [
+        'mock "People.AddressInfo": AddressInfo holds complex values: give a rule for a member instead, e.g. "AddressInfo/Address"',
+      ],
+    );
+  });
+
   it("a Property rule that fits none of the sets that have it, why for each", () => {
     assert.deepEqual(
       mistakes(() => resolveMockRules(PO, [rule("Currency", "EURO")])),
@@ -264,6 +314,19 @@ describe("mock rules: the generated rows follow them", () => {
     }
     for (const item of store.rows("PurchaseOrderItemSet"))
       assert.equal(item.Currency, "USD");
+  });
+
+  it("each value of a collection of values", () => {
+    const store = generate(path.join(FIXTURES, "real", "TripPin"), {
+      "People-Trips.Tags": ["business", "holiday"],
+    });
+    const trips = store.rows("People-Trips");
+    assert.ok(trips.length);
+    for (const t of trips) {
+      assert.equal((t.Tags as string[]).length, 2);
+      for (const tag of t.Tags as string[])
+        assert.ok(["business", "holiday"].includes(tag), tag);
+    }
   });
 
   it("a complex property's member, the rest of it as without the rule", () => {

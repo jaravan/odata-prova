@@ -44,7 +44,7 @@ function writeMockData(
     fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
   );
   // The rows the server would generate: by config.json's mock rules too, checked the same way
-  const mockRules = resolveMockRules(model, loadConfig(modelDir).mock);
+  const mockRules = resolveMockRules(model, loadConfig(modelDir).mock, rows);
   const store = new Store(model, modelDir, () => {}, {
     mockRows: rows,
     mockRules,

@@ -165,7 +165,7 @@ function createApp({
   const config = loadConfig(modelDir);
   const rules = operationRules(model, config);
   // Checked at startup, a mistake stopping it with how to fix it
-  const mockRules = resolveMockRules(model, config.mock);
+  const mockRules = resolveMockRules(model, config.mock, mockRows);
 
   // Instantiate storage
   const store = new Store(model, modelDir, log, { mockRows, mockRules });

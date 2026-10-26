@@ -44,23 +44,25 @@ describe("--explain", () => {
     }
   });
 
-  it("proposes a block that, pasted, is valid and leaves no filler values", () => {
-    const srv = model(NORTHWIND);
-    try {
-      const text = explain(srv, 20, false);
-      const block = text.slice(
-        text.indexOf('"mock"'),
-        text.lastIndexOf("}") + 1,
-      );
-      fs.writeFileSync(path.join(srv, "config.json"), `{ ${block} }`);
-      assert.equal(
-        explain(srv, 20, false),
-        "No property uses filler values. To see how every property is generated: --explain all",
-      );
-    } finally {
-      done(srv);
-    }
-  });
+  // TripPin: a collection of values (People-Trips.Tags) among the filler ones
+  for (const from of [NORTHWIND, path.join(FIXTURES, "real", "TripPin")])
+    it(`proposes a block that, pasted, is valid and leaves no filler values: ${path.basename(from)}`, () => {
+      const srv = model(from);
+      try {
+        const text = explain(srv, 20, false);
+        const block = text.slice(
+          text.indexOf('"mock"'),
+          text.lastIndexOf("}") + 1,
+        );
+        fs.writeFileSync(path.join(srv, "config.json"), `{ ${block} }`);
+        assert.equal(
+          explain(srv, 20, false),
+          "No property uses filler values. To see how every property is generated: --explain all",
+        );
+      } finally {
+        done(srv);
+      }
+    });
 
   it("all: every property, how it's made, where that's decided, and a sample", () => {
     const srv = model(PO_MODEL, {

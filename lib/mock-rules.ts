@@ -88,11 +88,13 @@ function suggest(name: string, names: string[]): string {
 const find = <T extends { name: string }>(items: T[], name: string) =>
   items.find((i) => i.name.toLowerCase() === name.toLowerCase());
 
-// Why the rule's value can't go into prop, or undefined when it can
+// Why the rule's value can't go into prop, or undefined when it can. rows: how many rows a
+// set gets, which a running number counts up to (0: not known)
 function misfit(
   rule: MockRule,
   prop: Property,
   isKey: boolean,
+  rows: number,
 ): string | undefined {
   const value = rule.value;
   const type = prop.elementType || prop.type;
@@ -101,30 +103,55 @@ function misfit(
     const width = Math.min(max > 0 ? max : 10, 10);
     return `a key needs a running number, so every row's is different: e.g. "${"#".repeat(width)}"`;
   }
-  if (prop.isCollection || prop.complexType)
-    return `${prop.name} holds ${prop.isCollection ? "a collection" : "a complex value"}: give a rule for a member instead, e.g. "${prop.name}/${Object.keys(prop.complexType?.properties ?? { Member: 0 })[0]}"`;
+  if (prop.complexType)
+    return `${prop.name} holds ${prop.isCollection ? "complex values" : "a complex value"}: give a rule for a member instead, e.g. "${prop.name}/${Object.keys(prop.complexType.properties)[0]}"`;
+  // A collection of values: each of them follows the rule
+  if (prop.isCollection) prop = { ...prop, isCollection: false };
 
   switch (value.kind) {
     case "count": {
       const written = `${value.prefix}${"#".repeat(value.width)}${value.suffix}`;
-      const length = written.length;
-      if (type === "Edm.String")
-        return max > 0 && length > max
-          ? `"${written}" is ${length} long, MaxLength is ${max}`
+      // The last row's, which has more digits than #s when they run out: "45##" at row 120
+      const last = `${value.prefix}${String(rows).padStart(value.width, "0")}${value.suffix}`;
+      const runsOut = `"${written}" runs out of #s before row ${rows} (--mock-rows), which gets ${last}`;
+      if (type === "Edm.String") {
+        if (max > 0 && written.length > max)
+          return `"${written}" is ${written.length} long, MaxLength is ${max}`;
+        return max > 0 && last.length > max
+          ? `${runsOut}, ${last.length} long, and MaxLength is ${max}`
           : undefined;
+      }
       if (!NUMBERS.includes(type))
         return `a running number is for text or number properties, ${prop.name} is ${type}`;
       if (!/^\d*$/.test(value.prefix + value.suffix))
         return `"${written}" has text around its #s, and ${prop.name} is a number (${type})`;
-      const top = Number(
-        `${value.prefix}${"9".repeat(value.width)}${value.suffix}`,
-      );
-      if (type in INT_MAX && top > INT_MAX[type])
+      if (!(type in INT_MAX)) return undefined;
+      if (
+        Number(`${value.prefix}${"9".repeat(value.width)}${value.suffix}`) >
+        INT_MAX[type]
+      )
         return `"${written}" can't fit ${type} (at most ${INT_MAX[type]})`;
-      return undefined;
+      return Number(last) > INT_MAX[type]
+        ? `${runsOut}, and ${type} holds at most ${INT_MAX[type]}`
+        : undefined;
     }
     case "range":
-      if (type === "Edm.String") return undefined;
+      if (type === "Edm.String") {
+        // Its longest value: either end, as numberIn writes it ("0.5..2.25": 2.25), or a date
+        const decimals = Math.max(
+          ...[value.min, value.max].map((s) => s.split(".")[1]?.length ?? 0),
+        );
+        const longest = Math.max(
+          ...[value.min, value.max].map((s) =>
+            value.type === "date"
+              ? s.length
+              : Number(s).toFixed(decimals).length,
+          ),
+        );
+        return max > 0 && longest > max
+          ? `"${value.min}..${value.max}" gives values ${longest} long, MaxLength is ${max}`
+          : undefined;
+      }
       if (value.type === "number" && !NUMBERS.includes(type))
         return `"${value.min}..${value.max}" is a range of numbers, ${prop.name} is ${type}`;
       if (value.type === "date" && !DATES.includes(type))
@@ -162,8 +189,13 @@ function misfit(
   }
 }
 
-// The rules, resolved per entity set; throws, listing every mistake in the model's own file
-function resolveMockRules(model: Model, ownRules: MockRule[]): MockRules {
+// The rules, resolved per entity set, for rows rows a set (0: not known); throws, listing
+// every mistake in the model's own file
+function resolveMockRules(
+  model: Model,
+  ownRules: MockRule[],
+  rows = 0,
+): MockRules {
   // The built-in ones first, so any other rule for the same property wins
   const rules = [...BUILTIN, ...ownRules];
   const sets = Object.values(model.entitySets);
@@ -264,7 +296,7 @@ function resolveMockRules(model: Model, ownRules: MockRule[]): MockRules {
       }
       const isKey = memberName === undefined && type.keys.includes(prop.name);
       if (rule.builtin && !idSized(rule, target)) continue;
-      const wrong = misfit(rule, target, isKey);
+      const wrong = misfit(rule, target, isKey, rows);
       if (wrong) {
         // A rule on every set skips a set it can't fit, unless it fits none (see below)
         if (rule.set) fail(wrong);
@@ -294,7 +326,7 @@ function resolveMockRules(model: Model, ownRules: MockRule[]): MockRules {
         !resolved[es.name]?.[k] &&
         !fkProps[es.name]?.has(k) &&
         idSized(rule, prop) &&
-        !misfit(rule, prop, true)
+        !misfit(rule, prop, true, rows)
       )
         (resolved[es.name] ??= {})[k] = rule;
     }
