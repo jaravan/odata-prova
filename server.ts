@@ -11,6 +11,8 @@ import type { Express } from "express";
 import { createApp, findModelDir, ETAG_MODES, JOIN_MODES } from "./lib/app.ts";
 import type { ETagMode, JoinMode } from "./lib/app.ts";
 import { isPostgresUrl } from "./lib/postgres.ts";
+import { writeMockData } from "./lib/mock-data.ts";
+import { explain, fillerCount } from "./lib/explain.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -29,6 +31,10 @@ Options (default):
                              (postgres://...), so writes survive a restart
                              (none: in memory only, reset at every start)
       --persist-reset        Start over: replace what was saved with the seed data
+      --explain [all]        Show the generated properties on filler values, and what to
+                             add to config.json, then exit; all: every property
+      --write-data           Write the generated rows to modelDir/data, to edit them, and
+                             exit (--mock-rows of each); existing files are kept
   -h, --help                 Show this help
   -v, --version              Show the version
 
@@ -51,11 +57,12 @@ const SETTINGS = {
 } as const;
 type Setting = keyof typeof SETTINGS;
 
-// --persist with no value is in memory only: last, or before another option, it gets an
-// empty one, as parseArgs would refuse it without
+// --persist with no value is in memory only, --explain with none is the short one: last, or
+// before another option, each gets an empty one, as parseArgs would refuse it without (and
+// would take "all" in --explain all for a second model folder, as a flag)
 function bareFlags(argv: string[]): string[] {
   return argv.flatMap((arg, i) =>
-    arg === "--persist" &&
+    (arg === "--persist" || arg === "--explain") &&
     (i === argv.length - 1 || argv[i + 1].startsWith("-"))
       ? [arg, ""]
       : [arg],
@@ -74,6 +81,8 @@ function readArgs() {
       ) as Record<Setting, { type: "string" }>),
       port: { type: "string", short: "p" },
       "persist-reset": { type: "boolean" },
+      "write-data": { type: "boolean" },
+      explain: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -203,6 +212,42 @@ function wholeNumber(name: Setting, fallback: number): number {
 // Rows generated for each entity set that has no seed file; 0 leaves those sets empty
 const MOCK_ROWS = wholeNumber("mock-rows", 20);
 
+// --explain: how the generated rows are made, and what to add to config.json, instead of
+// serving them; --explain all: every property
+const EXPLAIN = args.values.explain;
+if (EXPLAIN !== undefined) {
+  if (EXPLAIN !== "" && EXPLAIN !== "all")
+    exitWithError(
+      "bad --explain",
+      Object.assign(
+        new Error(`--explain takes nothing, or all, got '${EXPLAIN}'`),
+        { code: "ESETTING" },
+      ),
+    );
+  try {
+    console.log(explain(MODEL_DIR, MOCK_ROWS, EXPLAIN === "all"));
+  } catch (err) {
+    exitWithError("cannot explain the model", err);
+  }
+  process.exit(0);
+}
+
+// --write-data: the generated rows into data/, to edit them, instead of serving them
+if (args.values["write-data"]) {
+  if (!MOCK_ROWS)
+    badSetting("mock-rows", "is 0: --write-data would write nothing");
+  try {
+    const written = writeMockData(MODEL_DIR, MOCK_ROWS);
+    if (!written.length)
+      console.log("Every entity set already has a data file, nothing to write");
+    for (const { file, rows } of written)
+      console.log(`wrote ${file} (${rows} rows)`);
+  } catch (err) {
+    exitWithError("cannot write the data", err);
+  }
+  process.exit(0);
+}
+
 // The most rows a collection's response holds, with a next link to the rest; 0 sends every row
 const PAGE_SIZE = wholeNumber("page-size", 0);
 
@@ -245,8 +290,10 @@ if (!/^\d+$/.test(DELAY_TEXT))
       { code: "ESETTING" },
     ),
   );
+// Generated properties on filler values: one line says so, and how to see them
+let fillers = 0;
 try {
-  ({ app, ready, close } = createApp({
+  const built = createApp({
     modelDir: MODEL_DIR,
     v2Path: V2_PATH,
     v4Path: V4_PATH,
@@ -257,10 +304,16 @@ try {
     persist: PERSIST,
     persistReset: PERSIST_RESET,
     serviceName: SERVICE_NAME,
-  }));
+  });
+  ({ app, ready, close } = built);
+  if (MOCK_ROWS) fillers = fillerCount(built.model, built.store, MODEL_DIR);
 } catch (err) {
   exitWithError(`cannot load model from ${MODEL_DIR}`, err);
 }
+if (fillers)
+  console.log(
+    `  ${fillers === 1 ? "1 property uses" : `${fillers} properties use`} filler values: add --explain to see them, and what to put in config.json`,
+  );
 
 // The saved state, when there is persistence: requests can't be answered without it
 try {

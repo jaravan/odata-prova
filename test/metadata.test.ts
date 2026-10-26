@@ -142,6 +142,55 @@ describe("parseMetadata (V4 document, CAP style)", () => {
   });
 });
 
+describe("parseMetadata: the currency of an amount, the unit of a quantity", () => {
+  it("reads Measures.ISOCurrency and Measures.Unit, inline or in a block, with a Path", () => {
+    const model = parseMetadata(`<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Measures.V1.xml">
+    <edmx:Include Namespace="Org.OData.Measures.V1" Alias="Measures"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="S" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Item">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="NetPrice" Type="Edm.Decimal" Scale="2">
+          <Annotation Term="Measures.ISOCurrency" Path="Curr"/>
+        </Property>
+        <Property Name="Curr" Type="Edm.String" MaxLength="3"/>
+        <Property Name="Amount" Type="Edm.Decimal" Scale="2">
+          <Annotation Term="Measures.ISOCurrency" String="EUR"/>
+        </Property>
+        <Property Name="Qty" Type="Edm.Decimal" Scale="3"/>
+        <Property Name="Uom" Type="Edm.String" MaxLength="3"/>
+      </EntityType>
+      <EntityContainer Name="C"><EntitySet Name="Items" EntityType="S.Item"/></EntityContainer>
+      <Annotations Target="S.Item/Qty">
+        <Annotation Term="Measures.Unit"><Path>Uom</Path></Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`);
+    const p = model.entityTypes["S.Item"].properties;
+    assert.deepEqual(p.NetPrice.measure, { currency: "Curr" });
+    assert.deepEqual(p.Qty.measure, { unit: "Uom" });
+    // A fixed currency names no property
+    assert.equal(p.Amount.measure, undefined);
+  });
+
+  it("reads V2's sap:unit, a currency when the property it names is one", () => {
+    const model = parseMetadata(
+      fs.readFileSync(
+        path.join(PO_MODEL, "..", "SapAnnotationsV2", "metadata.xml"),
+        "utf8",
+      ),
+    );
+    const p = model.entityTypes["ZANNO_SRV.Product"].properties;
+    assert.deepEqual(p.Price.measure, { currency: "Currency" });
+    assert.deepEqual(p.Weight.measure, { unit: "WeightUnit" });
+  });
+});
+
 describe("EDMX round trips", () => {
   it("V2 -> emitV4 -> parse gives the same model (V4 has no Edm.DateTime, so v2Type is not compared)", () => {
     const original = parseMetadata(v2Xml);

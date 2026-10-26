@@ -261,7 +261,9 @@ function parseMetadata(
   };
 
   const qualify = termQualifier(model.aliases);
-  parseComputed(model, schemas, qualify); // before flattenInheritance: derived types share it
+  // Before flattenInheritance: derived types share them
+  parseComputed(model, schemas, qualify);
+  parseMeasures(model, schemas, qualify);
 
   parseOperations(model, schemas, isV4);
   flattenInheritance(model.complexTypes, "ComplexType");
@@ -340,6 +342,53 @@ function parseComputed(model: Model, schemas: Xml[], qualify: Qualify): void {
       if (p && !rest.length && computed(block.Annotation)) p.computed = true;
     }
   }
+}
+
+// Which property holds an amount's currency or a quantity's unit, into p.measure: V4's
+// Measures.ISOCurrency and Measures.Unit with a Path (inline, or in an <Annotations> block
+// targeting "Ns.Type/Prop"), and V2's sap:unit, which names the property either way: it's a
+// currency when that property says so (sap:semantics="currency-code") or is named like one.
+// The mock data generator reads them (see generate.ts).
+function parseMeasures(model: Model, schemas: Xml[], qualify: Qualify): void {
+  const TERMS: Record<string, "currency" | "unit"> = {
+    "Org.OData.Measures.V1.ISOCurrency": "currency",
+    "Org.OData.Measures.V1.Unit": "unit",
+  };
+  const read = (p: Property | undefined, annotations: Xml) => {
+    for (const a of list(annotations)) {
+      const kind = TERMS[qualify(a.Term)];
+      // A Path, as an attribute or an element; a String (a fixed currency) names no property
+      if (p && kind && !a.Qualifier && typeof a.Path === "string")
+        (p.measure ??= {})[kind] = a.Path;
+    }
+  };
+  const types = { ...model.entityTypes, ...model.complexTypes };
+  for (const schema of schemas) {
+    for (const t of [
+      ...(schema.EntityType || []),
+      ...(schema.ComplexType || []),
+    ])
+      for (const p of t.Property || [])
+        read(
+          types[`${schema.Namespace}.${t.Name}`]?.properties[p.Name],
+          p.Annotation,
+        );
+    for (const block of list(schema.Annotations)) {
+      const [typeName, propName, ...rest] = String(block.Target).split("/");
+      if (!rest.length)
+        read(types[qualify(typeName)]?.properties[propName], block.Annotation);
+    }
+  }
+  for (const t of Object.values(types))
+    for (const p of Object.values(t.properties)) {
+      const target = p.sap.unit && t.properties[p.sap.unit];
+      if (!target || p.measure) continue;
+      const currency =
+        target.sap.semantics === "currency-code" ||
+        (target.sap.semantics !== "unit-of-measure" &&
+          /currency|waers|curr|cuky/i.test(target.name));
+      p.measure = { [currency ? "currency" : "unit"]: target.name };
+    }
 }
 
 // A derived type (BaseType) gets its base's key, properties and navigations copied in, so

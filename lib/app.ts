@@ -18,6 +18,8 @@ import {
 import { SqlitePersistence } from "./sqlite.ts";
 import { PostgresPersistence, isPostgresUrl } from "./postgres.ts";
 import type { Protocol, Rules } from "./protocol.ts";
+import { configError, loadConfig, type Config } from "./config.ts";
+import { resolveMockRules } from "./mock-rules.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
 import { ETAG_MODES } from "./etag.ts";
@@ -55,21 +57,13 @@ function findModelDir(dir: string): string {
   );
 }
 
-// Optional <modelDir>/config.json: { "operations": { "<Name>": { "set": { "<Prop>": value } } } }
-// sets properties on the entity an operation acts on (Approve sets Status to Approved).
+// config.json's operations (see config.ts): { "<Name>": { "set": { "<Prop>": value } } } sets
+// properties on the entity an operation acts on (Approve sets Status to Approved).
 // Validated at startup, so a typo fails there instead of never applying.
-function operationRules(model: Model, modelDir: string): Rules {
-  const file = path.join(modelDir, "config.json");
-  if (!fs.existsSync(file)) return {};
-  let config: { operations?: Rules };
-  try {
-    config = JSON.parse(fs.readFileSync(file, "utf8")) as typeof config;
-  } catch (e) {
-    throw new Error(`${file}: ${(e as Error).message}`, { cause: e });
-  }
-  const rules = config.operations || {};
+function operationRules(model: Model, config: Config): Rules {
+  const rules = config.operations;
   const views = Object.values(model.operationViews);
-  for (const [name, rule] of Object.entries(rules)) {
+  for (const [name, { file, ...rule }] of Object.entries(rules)) {
     // The entity type the operation acts on, from whichever protocol has it
     const type = views
       .flatMap((v) => [...v.bound, ...Object.values(v.imports)])
@@ -77,16 +71,18 @@ function operationRules(model: Model, modelDir: string): Rules {
       .map((op) => op.binding?.entityType || op.bindsTo?.type)
       .find(Boolean);
     if (!type)
-      throw new Error(
+      throw configError(
         `${file}: operations.${name}: no operation of that name acts on an entity`,
       );
     for (const prop of Object.keys(rule.set || {}))
       if (!type.properties[prop])
-        throw new Error(
+        throw configError(
           `${file}: operations.${name}.set: ${type.name} has no property ${prop}`,
         );
   }
-  return rules;
+  return Object.fromEntries(
+    Object.entries(rules).map(([name, { set }]) => [name, { set }]),
+  );
 }
 
 function escapeRegex(s: string): string {
@@ -166,10 +162,13 @@ function createApp({
     log(
       `  draft-enabled: ${drafts.map((es) => (es.draft?.root ? `${es.name} (root)` : es.name)).join(", ")}`,
     );
-  const rules = operationRules(model, modelDir);
+  const config = loadConfig(modelDir);
+  const rules = operationRules(model, config);
+  // Checked at startup, a mistake stopping it with how to fix it
+  const mockRules = resolveMockRules(model, config.mock, mockRows);
 
   // Instantiate storage
-  const store = new Store(model, modelDir, log, { mockRows });
+  const store = new Store(model, modelDir, log, { mockRows, mockRules });
 
   // Whichever flavour the model was written in is served verbatim on that protocol's
   // $metadata; the other one is generated from the model.

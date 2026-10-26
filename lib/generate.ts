@@ -4,13 +4,21 @@
 // every restart (and every CI run) sees the same rows. What makes it usable, not just random:
 //   - values fit their property: MaxLength, Precision and Scale, enum members, complex types
 //   - property names pick plausible values: *Currency -> EUR, *Email -> an address, ...
+//   - the values that go together agree: a row's city, postal code, region, country,
+//     currency, language and company code come from one location, its product and unit
+//     from one product (see Anchors)
 //   - foreign keys hold the keys of real rows, so navigation and $expand return something.
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
-//     up per parent: items 0001, 0002 of one order, 0001 of the next.
+//     up per parent: items 00010, 00020 of one order, 00010 of the next (an item number
+//     counts by 10, as SAP's do; see isItemNumber).
+//   - items agree with their header: they take its currency, company code and plant, and
+//     its total is the sum of theirs, when it's clear which properties those are (see
+//     itemsAgree)
 //
 // Values are produced in the store's internal representation (see types.ts).
 
 import type {
+  EntityType,
   LinkSet,
   Model,
   PrimitiveValue,
@@ -18,17 +26,68 @@ import type {
   PropertyValue,
   Row,
 } from "./model.ts";
+import type { MockRule, MockValue } from "./config.ts";
+import type { MockRules } from "./mock-rules.ts";
+import { propToInternal } from "./types.ts";
 
 // A seeded random number generator, uniform in [0, 1)
 type Rng = () => number;
 
-// What a value is generated for: the property, the set's generator, the row's number (1..)
-// and the entity or complex type's name
+// What a value is generated for: the property, the set's generator, the row's number (1..),
+// the entity or complex type's name and what the metadata says its properties are, the row's
+// anchors, and the set's mock rules (see mock-rules.ts), with path, the complex property the
+// value is inside ("Address/"), "" at the top
 interface Ctx {
   prop: Property;
   rng: Rng;
   index: number;
   typeName: string;
+  measures: Measures;
+  anchors: Anchors;
+  rules: Record<string, MockRule>;
+  path: string;
+}
+
+// A type's properties that the metadata marks as the currency of an amount, the unit of a
+// quantity, or a quantity (see measure in model.ts); sap:semantics marks a currency or unit
+// code on its own
+interface Measures {
+  currencies: Set<string>;
+  units: Set<string>;
+  quantities: Set<string>;
+}
+
+// A place, and what goes with it. postal is the place's format: # is a random digit, @ a
+// random letter. Company codes in the style of SAP Best Practices (1010 Germany, 1710 United
+// States); language is SAP's language key.
+interface Location {
+  city: string;
+  postal: string;
+  region: string;
+  regionName: string;
+  country: string;
+  countryName: string;
+  currency: string;
+  language: string;
+  companyCode: string;
+}
+
+// A product, and its unit of measure. price is the usual range of its unit price; integral
+// units are counted (5 PC), the others measured (41.650 L).
+interface Product {
+  name: string;
+  unit: string;
+  price: [number, number];
+  integral: boolean;
+}
+
+// A row's location, product and date, each picked when a property first asks for it, so
+// every location-like and product-like property of the row (complex members included)
+// agrees, and its dates are in order (see DATE_ROLES). The date is in ms.
+interface Anchors {
+  location(): Location;
+  product(): Product;
+  date(): number;
 }
 
 // "props of set hold principalProps of principal" (see foreignKeys)
@@ -40,6 +99,7 @@ interface ForeignKey {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+const QUARTER_HOUR = 15 * 60 * 1000;
 // Dates fall in 2025, not "the last year", so the data does not change over time
 const DATE_FROM = Date.UTC(2025, 0, 1);
 
@@ -55,17 +115,181 @@ const COMPANIES = [
   "Hooli Electronics",
   "Vandelay Imports",
 ];
-const PRODUCTS = [
-  "Steel Bracket",
-  "Aluminum Housing",
-  "Copper Wire",
-  "Hex Bolt M8",
-  "Rubber Gasket",
-  "Circuit Board",
-  "Hydraulic Pump",
-  "Ball Bearing",
-  "LED Panel",
-  "Safety Valve",
+const DE = {
+  country: "DE",
+  countryName: "Germany",
+  currency: "EUR",
+  language: "DE",
+  companyCode: "1010",
+};
+const US = {
+  country: "US",
+  countryName: "United States",
+  currency: "USD",
+  language: "EN",
+  companyCode: "1710",
+};
+const GB = {
+  country: "GB",
+  countryName: "United Kingdom",
+  currency: "GBP",
+  language: "EN",
+  companyCode: "1110",
+};
+const FR = {
+  country: "FR",
+  countryName: "France",
+  currency: "EUR",
+  language: "FR",
+  companyCode: "1210",
+};
+const LOCATIONS: Location[] = [
+  {
+    ...DE,
+    city: "Walldorf",
+    postal: "69###",
+    region: "BW",
+    regionName: "Baden-Württemberg",
+  },
+  {
+    ...DE,
+    city: "Berlin",
+    postal: "10###",
+    region: "BE",
+    regionName: "Berlin",
+  },
+  {
+    ...DE,
+    city: "Munich",
+    postal: "80###",
+    region: "BY",
+    regionName: "Bavaria",
+  },
+  {
+    ...DE,
+    city: "Hamburg",
+    postal: "20###",
+    region: "HH",
+    regionName: "Hamburg",
+  },
+  {
+    ...US,
+    city: "Palo Alto",
+    postal: "943##",
+    region: "CA",
+    regionName: "California",
+  },
+  {
+    ...US,
+    city: "New York",
+    postal: "100##",
+    region: "NY",
+    regionName: "New York",
+  },
+  {
+    ...US,
+    city: "Chicago",
+    postal: "606##",
+    region: "IL",
+    regionName: "Illinois",
+  },
+  {
+    ...GB,
+    city: "London",
+    postal: "EC#A #@@",
+    region: "ENG",
+    regionName: "England",
+  },
+  {
+    ...GB,
+    city: "Manchester",
+    postal: "M# #@@",
+    region: "ENG",
+    regionName: "England",
+  },
+  {
+    ...FR,
+    city: "Paris",
+    postal: "750##",
+    region: "IDF",
+    regionName: "Île-de-France",
+  },
+  {
+    ...FR,
+    city: "Lyon",
+    postal: "690##",
+    region: "ARA",
+    regionName: "Auvergne-Rhône-Alpes",
+  },
+  {
+    city: "Madrid",
+    postal: "280##",
+    region: "MD",
+    regionName: "Madrid",
+    country: "ES",
+    countryName: "Spain",
+    currency: "EUR",
+    language: "ES",
+    companyCode: "1310",
+  },
+  {
+    city: "Milan",
+    postal: "201##",
+    region: "MI",
+    regionName: "Lombardy",
+    country: "IT",
+    countryName: "Italy",
+    currency: "EUR",
+    language: "IT",
+    companyCode: "1410",
+  },
+  {
+    city: "Amsterdam",
+    postal: "10## @@",
+    region: "NH",
+    regionName: "North Holland",
+    country: "NL",
+    countryName: "Netherlands",
+    currency: "EUR",
+    language: "NL",
+    companyCode: "1510",
+  },
+  {
+    city: "Zurich",
+    postal: "80##",
+    region: "ZH",
+    regionName: "Zurich",
+    country: "CH",
+    countryName: "Switzerland",
+    currency: "CHF",
+    language: "DE",
+    companyCode: "1610",
+  },
+  {
+    city: "Tokyo",
+    postal: "1##-####",
+    region: "13",
+    regionName: "Tokyo",
+    country: "JP",
+    countryName: "Japan",
+    currency: "JPY",
+    language: "JA",
+    companyCode: "1810",
+  },
+];
+const PRODUCTS: Product[] = [
+  { name: "Steel Bracket", unit: "PC", price: [2, 20], integral: true },
+  { name: "Aluminum Housing", unit: "PC", price: [15, 80], integral: true },
+  { name: "Copper Wire", unit: "M", price: [0.5, 4], integral: false },
+  { name: "Hex Bolt M8", unit: "PC", price: [0.1, 2], integral: true },
+  { name: "Rubber Gasket", unit: "PC", price: [0.5, 5], integral: true },
+  { name: "Circuit Board", unit: "EA", price: [20, 150], integral: true },
+  { name: "Hydraulic Pump", unit: "EA", price: [300, 2500], integral: true },
+  { name: "Ball Bearing", unit: "PC", price: [3, 40], integral: true },
+  { name: "LED Panel", unit: "EA", price: [40, 300], integral: true },
+  { name: "Safety Valve", unit: "EA", price: [50, 400], integral: true },
+  { name: "Hydraulic Oil", unit: "L", price: [3, 15], integral: false },
+  { name: "Steel Sheet", unit: "KG", price: [1, 6], integral: false },
 ];
 const FIRST_NAMES = [
   "Anna",
@@ -91,28 +315,6 @@ const LAST_NAMES = [
   "Tanaka",
   "Silva",
 ];
-const CITIES = [
-  "Berlin",
-  "London",
-  "Paris",
-  "Madrid",
-  "Rome",
-  "Vienna",
-  "Amsterdam",
-  "Stockholm",
-  "Warsaw",
-  "Lisbon",
-];
-const COUNTRIES: [string, string][] = [
-  ["DE", "Germany"],
-  ["GB", "United Kingdom"],
-  ["FR", "France"],
-  ["ES", "Spain"],
-  ["IT", "Italy"],
-  ["US", "United States"],
-  ["JP", "Japan"],
-  ["NL", "Netherlands"],
-];
 const STREETS = [
   "Main Street",
   "Market Square",
@@ -120,10 +322,7 @@ const STREETS = [
   "Park Avenue",
   "Harbour Lane",
 ];
-const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "JPY"];
 const STATUSES = ["Open", "In Process", "Approved", "Completed", "Cancelled"];
-const UNITS = ["EA", "PC", "KG", "L", "M"];
-const LANGUAGES = ["EN", "DE", "FR", "ES"];
 const JOB_TITLES = [
   "Sales Manager",
   "Buyer",
@@ -132,7 +331,6 @@ const JOB_TITLES = [
   "Sales Representative",
   "Owner",
 ];
-const REGIONS = ["North", "South", "East", "West", "Central"];
 const WORDS = [
   "standard",
   "delivery",
@@ -175,6 +373,43 @@ function random(seed: string): Rng {
 const int = (rng: Rng, n: number) => Math.floor(rng() * n); // 0 .. n-1
 const pick = <T>(rng: Rng, list: T[]): T => list[int(rng, list.length)];
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
+
+const measuresOfType = new WeakMap<Record<string, Property>, Measures>();
+function measuresOf(properties: Record<string, Property>): Measures {
+  let m = measuresOfType.get(properties);
+  if (m) return m;
+  m = { currencies: new Set(), units: new Set(), quantities: new Set() };
+  for (const p of Object.values(properties)) {
+    if (p.measure?.currency) m.currencies.add(p.measure.currency);
+    if (p.measure?.unit) {
+      m.units.add(p.measure.unit);
+      m.quantities.add(p.name);
+    }
+    if (p.sap.semantics === "currency-code") m.currencies.add(p.name);
+    if (p.sap.semantics === "unit-of-measure") m.units.add(p.name);
+  }
+  measuresOfType.set(properties, m);
+  return m;
+}
+
+// A new row's anchors: nothing is picked until a property asks. The date grows with the row,
+// row index of count, across the year, a few days either way: documents made later have
+// higher numbers, as an SAP number range assigns them.
+function anchors(rng: Rng, index: number, count: number): Anchors {
+  let location: Location | undefined;
+  let product: Product | undefined;
+  let date: number | undefined;
+  return {
+    location: () => (location ??= pick(rng, LOCATIONS)),
+    product: () => (product ??= pick(rng, PRODUCTS)),
+    date: () =>
+      (date ??=
+        DATE_FROM +
+        (Math.floor(((index - 1) / Math.max(count, 1)) * 330) + int(rng, 7)) *
+          DAY +
+        int(rng, 24 * 4) * QUARTER_HOUR),
+  };
+}
 
 // --- Foreign keys -------------------------------------------------------------------------
 
@@ -252,6 +487,31 @@ function fit(s: string, maxLength: string | undefined): string {
   return max > 0 && s.length > max ? s.slice(0, max) : s;
 }
 
+// A label made of a name and the row's number ("Category 3"), or digits as long as the
+// property, when the label wouldn't fit whole: Extension, MaxLength 4, is 4521, not "Exte"
+function labelOr(c: Ctx, name: string): string {
+  const s = `${humanize(name)} ${c.index}`;
+  const max = Number(c.prop.maxLength);
+  if (!(max > 0 && s.length > max)) return s;
+  const width = Math.min(max, 10);
+  return pad(int(c.rng, 10 ** width), width);
+}
+
+// A postal code of the row's location, in its country's format: 69190, EC1A 4BX, 1012 KX
+function postalCode(c: Ctx): string {
+  return c.anchors
+    .location()
+    .postal.replace(/[#@]/g, (ch) =>
+      ch === "#"
+        ? String(int(c.rng, 10))
+        : String.fromCharCode(65 + int(c.rng, 26)),
+    );
+}
+
+// A code (at most 3 long: DE, BW) or a name (Germany), whichever the property can hold
+const codeOrName = (c: Ctx, code: string, name: string) =>
+  Number(c.prop.maxLength) <= 3 ? code : name;
+
 function uuid(rng: Rng): string {
   const hex = Array.from({ length: 32 }, () => int(rng, 16).toString(16));
   hex[12] = "4";
@@ -260,50 +520,129 @@ function uuid(rng: Rng): string {
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
 }
 
-// A string that suits the property's name. Checked in order: the specific names come before
-// the generic ones (CurrencyCode is a currency, not a code; CompanyCode is a code).
-const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
+// How a value is made, as --explain says it (see sourceOf): filler, a stand-in a rule would
+// do better (the property's name and a number, random digits)
+interface How {
+  how: string;
+  filler?: boolean;
+}
+
+// A string that suits the property's name, and how it's made. Checked in order: the specific
+// names come before the generic ones (CurrencyCode is a currency, not a code; CompanyCode is a
+// code).
+const STRING_RULES: [RegExp, (c: Ctx) => string, How][] = [
   [
     /e-?mail/,
     (c) =>
       `${pick(c.rng, FIRST_NAMES)}.${pick(c.rng, LAST_NAMES)}@example.com`.toLowerCase(),
+    { how: "an email address" },
   ],
   [
     /phone|mobile|fax|telephone|^tel/,
     (c) => `+1 555 01${pad(int(c.rng, 100), 2)}`,
+    { how: "a phone number" },
   ],
-  [/url|website|homepage/, (c) => `https://example.com/${c.index}`],
-  [/currency|waers/, (c) => pick(c.rng, CURRENCIES)],
+  [
+    /url|website|homepage/,
+    (c) => `https://example.com/${c.index}`,
+    { how: "a web address" },
+  ],
+  [
+    /photo|image|picture|path/,
+    (c) => `/images/${c.index}.jpg`,
+    { how: "an image path" },
+  ],
+  [
+    /courtesy|salutation|anrede/,
+    (c) => pick(c.rng, ["Mr.", "Ms.", "Dr."]),
+    { how: "a courtesy title" },
+  ],
+  [
+    /currency|waers/,
+    (c) => c.anchors.location().currency,
+    { how: "follows the row's place" },
+  ],
   [
     /country|land1/,
-    (c) => pick(c.rng, COUNTRIES)[Number(c.prop.maxLength) <= 3 ? 0 : 1],
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.country, l.countryName);
+    },
+    { how: "follows the row's place" },
   ],
-  [/city|town|ort01/, (c) => pick(c.rng, CITIES)],
-  [/postal|zip|postcode/, (c) => String(10000 + int(c.rng, 90000))],
-  [/street|address/, (c) => `${1 + int(c.rng, 200)} ${pick(c.rng, STREETS)}`],
-  [/region|state/, (c) => pick(c.rng, REGIONS)],
-  [/language|langu/, (c) => pick(c.rng, LANGUAGES)],
-  [/status/, (c) => pick(c.rng, STATUSES)],
-  [/unit|uom|meins/, (c) => pick(c.rng, UNITS)],
-  [/first ?name|given ?name/, (c) => pick(c.rng, FIRST_NAMES)],
-  [/last ?name|surname|family ?name/, (c) => pick(c.rng, LAST_NAMES)],
+  [
+    /city|town|ort01/,
+    (c) => c.anchors.location().city,
+    { how: "follows the row's place" },
+  ],
+  [/postal|zip|postcode|pstlz/, postalCode, { how: "follows the row's place" }],
+  [
+    /street|address/,
+    (c) => `${1 + int(c.rng, 200)} ${pick(c.rng, STREETS)}`,
+    { how: "a street" },
+  ],
+  [
+    /region|state/,
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.region, l.regionName);
+    },
+    { how: "follows the row's place" },
+  ],
+  [
+    /language|langu|spras/,
+    (c) => c.anchors.location().language,
+    { how: "follows the row's place" },
+  ],
+  [
+    /companycode|bukrs/,
+    (c) => c.anchors.location().companyCode,
+    { how: "follows the row's place" },
+  ],
+  [/status/, (c) => pick(c.rng, STATUSES), { how: "a status" }],
+  [
+    /unit|uom|meins/,
+    (c) => c.anchors.product().unit,
+    { how: "follows the row's product" },
+  ],
+  [
+    /first ?name|given ?name/,
+    (c) => pick(c.rng, FIRST_NAMES),
+    { how: "a first name" },
+  ],
+  [
+    /last ?name|surname|family ?name/,
+    (c) => pick(c.rng, LAST_NAMES),
+    { how: "a last name" },
+  ],
   [
     /(code|id|number|no|nr)$/,
     (c) => {
       const width = Math.min(Number(c.prop.maxLength) || 6, 10);
       return pad(int(c.rng, 10 ** width), width);
     },
+    { how: "random digits", filler: true },
   ],
-  [/^title$|(contact|job)title$/, (c) => pick(c.rng, JOB_TITLES)],
+  [
+    /^title$|(contact|job)title$/,
+    (c) => pick(c.rng, JOB_TITLES),
+    { how: "a job title" },
+  ],
   [
     /contact|person|employee|user|owner|manager|by$/,
     (c) => `${pick(c.rng, FIRST_NAMES)} ${pick(c.rng, LAST_NAMES)}`,
+    { how: "a person's name" },
   ],
   [
-    /company|supplier|vendor|customer|partner|manufacturer|shipper/,
+    /company|supplier|vendor|customer|partner|manufacturer|shipper|shipname/,
     (c) => pick(c.rng, COMPANIES),
+    { how: "a company's name" },
   ],
-  [/product|material|article/, (c) => pick(c.rng, PRODUCTS)],
+  [
+    /product|material|article/,
+    (c) => c.anchors.product().name,
+    { how: "follows the row's product" },
+  ],
   [
     /desc|text|note|comment|remark|memo/,
     (c) => {
@@ -314,23 +653,32 @@ const STRING_RULES: [RegExp, (c: Ctx) => string][] = [
       ).join(" ");
       return words[0].toUpperCase() + words.slice(1);
     },
+    { how: "a few words" },
   ],
-  // "CategoryName" -> "Category 3"; a plain "Name" is named after its entity type
-  [
-    /name$|title$/,
-    (c) => {
-      const base = c.prop.name.replace(/(Name|Title)$/i, "");
-      return `${humanize(base || c.typeName)} ${c.index}`;
-    },
-  ],
+  [/name$|title$/, nameRule, { how: "its name and a number", filler: true }],
 ];
 
+// "CategoryName" -> "Category 3"; a plain "Name" is named after its entity type
+function nameRule(c: Ctx): string {
+  const base = c.prop.name.replace(/(Name|Title)$/i, "");
+  return labelOr(c, base || c.typeName);
+}
+
 function stringValue(c: Ctx): string {
+  // What the metadata says comes before what the name suggests
+  if (c.measures.currencies.has(c.prop.name))
+    return fit(c.anchors.location().currency, c.prop.maxLength);
+  if (c.measures.units.has(c.prop.name))
+    return fit(c.anchors.product().unit, c.prop.maxLength);
   const name = c.prop.name.toLowerCase();
   const rule = STRING_RULES.find(([re]) => re.test(name));
-  const s = rule ? rule[1](c) : `${humanize(c.prop.name)} ${c.index}`;
-  return fit(s, c.prop.maxLength);
+  return fit(rule ? rule[1](c) : labelOr(c, c.prop.name), c.prop.maxLength);
 }
+
+// A quantity: one the metadata gives a unit, or one named like it
+const isQuantity = (c: Ctx) =>
+  c.measures.quantities.has(c.prop.name) ||
+  /quantity|qty|menge/.test(c.prop.name.toLowerCase());
 
 function numberRange(name: string): [number, number] {
   if (
@@ -364,20 +712,54 @@ function decimalScale(prop: Property): number {
 
 function decimalValue(c: Ctx): string {
   const scale = decimalScale(c.prop);
-  let [min, max] = numberRange(c.prop.name.toLowerCase());
+  // A price is the row's product's: a bolt costs cents, a pump thousands
+  let [min, max] = /price/i.test(c.prop.name)
+    ? c.anchors.product().price
+    : numberRange(c.prop.name.toLowerCase());
   if (/^\d+$/.test(c.prop.precision ?? "")) {
     const top = 10 ** (Number(c.prop.precision) - scale) - 1;
     max = Math.min(max, top);
     min = Math.min(min, max);
   }
+  // Pieces are counted: 5.000 PC, where litres are measured: 41.650 L
+  if (isQuantity(c) && c.anchors.product().integral)
+    return (min + int(c.rng, Math.floor(max - min) + 1)).toFixed(scale);
   return (min + c.rng() * (max - min)).toFixed(scale);
 }
 
+// A date's role, from its name, in order: the first that matches. A document is created,
+// ordered or posted on the row's date; it's changed, shipped or due after it; an open
+// validity ends on 9999-12-31, as SAP writes "no end".
+const DATE_ROLES: [RegExp, (c: Ctx) => number, How][] = [
+  [
+    /validto|validityend|validuntil/,
+    () => Date.UTC(9999, 11, 31),
+    { how: "9999-12-31, open" },
+  ],
+  [
+    /birth/,
+    (c) => Date.UTC(1960, 0, 1) + int(c.rng, 40 * 365) * DAY,
+    { how: "a birth date" },
+  ],
+  [
+    /creat|order|document|posting|start|begin|validfrom/,
+    (c) => c.anchors.date(),
+    { how: "the row's date" },
+  ],
+  [
+    /chang|modif|required|requested|delivery|due|ship|end/,
+    (c) => c.anchors.date() + (1 + int(c.rng, 30)) * DAY,
+    { how: "after the row's date" },
+  ],
+];
+
 function dateTimeValue(c: Ctx): Date {
-  if (/birth/.test(c.prop.name.toLowerCase()))
-    return new Date(Date.UTC(1960, 0, 1) + int(c.rng, 40 * 365) * DAY);
+  const name = c.prop.name.toLowerCase();
+  const role = DATE_ROLES.find(([re]) => re.test(name));
   return new Date(
-    DATE_FROM + int(c.rng, 365) * DAY + int(c.rng, 24 * 4) * 15 * 60 * 1000,
+    role
+      ? role[1](c)
+      : DATE_FROM + int(c.rng, 365) * DAY + int(c.rng, 24 * 4) * QUARTER_HOUR,
   );
 }
 
@@ -423,7 +805,13 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
     const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
       out[p.name] = propertyValue(
-        { ...c, prop: p, typeName: prop.complexType.name },
+        {
+          ...c,
+          prop: p,
+          typeName: prop.complexType.name,
+          measures: measuresOf(prop.complexType.properties),
+          path: `${c.path}${prop.name}/`,
+        },
         depth + 1,
       );
     return out;
@@ -433,9 +821,94 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
 }
 
 function propertyValue(c: Ctx, depth = 0): PropertyValue {
+  const rule = c.rules[`${c.path}${c.prop.name}`];
+  if (rule && !c.prop.isCollection) return ruleValue(c, rule.value);
+  if (rule) {
+    // A collection of values: two, each by the rule
+    const each = { ...c, prop: { ...c.prop, isCollection: false } };
+    return [ruleValue(each, rule.value), ruleValue(each, rule.value)];
+  }
   if (!c.prop.isCollection) return elementValue(c, depth);
   return depth > 2 ? [] : [elementValue(c, depth), elementValue(c, depth)];
 }
+
+// The value a mock rule gives (see config.ts), in the store's form of the property's type.
+// seq numbers a running number: the row's, or for a key, its number among its parent's.
+function ruleValue(c: Ctx, value: MockValue, seq = c.index): PropertyValue {
+  switch (value.kind) {
+    case "count":
+      return propToInternal(
+        `${value.prefix}${pad(seq, value.width)}${value.suffix}`,
+        c.prop,
+      );
+    case "range":
+      return value.type === "number"
+        ? numberIn(c, value.min, value.max)
+        : dateIn(c, value.min, value.max);
+    case "constant":
+      return propToInternal(value.value, c.prop);
+    case "list":
+      return propToInternal(pick(c.rng, value.values), c.prop);
+  }
+}
+
+// A number from min to max, with the property's decimals: its Scale, none for an integer, or
+// for a text the most either end was written with ("0.5..2.25": 2). A quantity of a counted
+// unit is whole, as without a rule (see decimalValue).
+function numberIn(c: Ctx, min: string, max: string): PropertyValue {
+  const type = c.prop.elementType || c.prop.type;
+  const [low, high] = [Number(min), Number(max)];
+  const decimals =
+    type === "Edm.Decimal"
+      ? decimalScale(c.prop)
+      : type === "Edm.Double" || type === "Edm.Single"
+        ? 2
+        : type === "Edm.String"
+          ? Math.max(...[min, max].map((s) => s.split(".")[1]?.length ?? 0))
+          : 0;
+  const whole = !decimals || (isQuantity(c) && c.anchors.product().integral);
+  const n = whole
+    ? Math.ceil(low) + int(c.rng, Math.floor(high) - Math.ceil(low) + 1)
+    : low + c.rng() * (high - low);
+  return propToInternal(n.toFixed(decimals), c.prop);
+}
+
+// A day from min to max (YYYY-MM-DD), with a time of day when the property has one
+function dateIn(c: Ctx, min: string, max: string): PropertyValue {
+  const [low, high] = [Date.parse(min), Date.parse(max)];
+  const day = low + int(c.rng, Math.round((high - low) / DAY) + 1) * DAY;
+  const type = c.prop.elementType || c.prop.type;
+  const date = new Date(
+    type === "Edm.DateTimeOffset"
+      ? day + int(c.rng, 24 * 4) * QUARTER_HOUR
+      : day,
+  ).toISOString();
+  return propToInternal(
+    type === "Edm.DateTimeOffset" ? date : date.slice(0, 10),
+    c.prop,
+  );
+}
+
+// What a key value is made for: the key alone, numbered seq, no row around it yet
+function keyCtx(prop: Property, rng: Rng, seq: number): Ctx {
+  return {
+    prop,
+    rng,
+    index: seq,
+    typeName: "",
+    measures: measuresOf({}),
+    anchors: anchors(rng, seq, seq),
+    rules: {},
+    path: "",
+  };
+}
+
+// An item's number under its parent, as SAP keys a document's items (EBELP, POSNR): a short
+// string, which counts by 10, 00010, 00020, so items can be put in between
+const isItemNumber = (prop: Property) =>
+  prop.type === "Edm.String" &&
+  [5, 6].includes(Number(prop.maxLength)) &&
+  /item|position|posnr|ebelp/i.test(prop.name);
 
 // A key value that is unique by construction: seq counts up per set (or per parent, when
 // the key also holds a foreign key).
@@ -466,7 +939,7 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
       return max > 0 && max <= 12 ? pad(seq, max) : String(seq);
     }
     default:
-      return primitiveValue({ prop, rng, index: seq, typeName: "" }, prop.type);
+      return primitiveValue(keyCtx(prop, rng, seq), prop.type);
   }
 }
 
@@ -481,6 +954,7 @@ function generateData(
   data: Record<string, Row[]>,
   sets: string[],
   rows: number,
+  rules: MockRules = {},
 ): Record<string, Row[]> {
   const fks = foreignKeys(model);
   const all = { ...data };
@@ -510,8 +984,20 @@ function generateData(
       const parent = JSON.stringify(type.keys.map((k) => row[k]));
       const seq = (seqs.get(parent) || 0) + 1;
       seqs.set(parent, seq);
-      for (const k of type.keys)
-        if (!(k in row)) row[k] = keyValue(type.properties[k], seq, rng);
+      for (const k of type.keys) {
+        if (k in row) continue;
+        const prop = type.properties[k];
+        // A rule's running number (see mock-rules.ts: a key takes no other), as written:
+        // "####0" counts by 10 itself
+        const rule = rules[set]?.[k];
+        row[k] = rule
+          ? ruleValue(keyCtx(prop, rng, seq), rule.value, seq)
+          : keyValue(
+              prop,
+              keyFks.length && isItemNumber(prop) ? seq * 10 : seq,
+              rng,
+            );
+      }
       const key = JSON.stringify(type.keys.map((k) => row[k]));
       if (seen.has(key)) continue;
       seen.add(key);
@@ -524,6 +1010,7 @@ function generateData(
   for (const set of sets) {
     const type = typeOf(set);
     all[set].forEach((row, i) => {
+      const rowAnchors = anchors(rngs[set], i + 1, all[set].length);
       for (const prop of Object.values(type.properties)) {
         if (prop.name in row) continue;
         row[prop.name] = propertyValue({
@@ -531,6 +1018,10 @@ function generateData(
           rng: rngs[set],
           index: i + 1,
           typeName: type.name,
+          measures: measuresOf(type.properties),
+          anchors: rowAnchors,
+          rules: rules[set] ?? {},
+          path: "",
         });
       }
     });
@@ -551,7 +1042,301 @@ function generateData(
       copyForeignKey(row, fk, pick(rngs[fk.set], all[fk.principal]));
   }
 
+  // Last, items agree with their header
+  for (const fk of fks)
+    if (isKeyPart(model, fk) && sets.includes(fk.set))
+      itemsAgree(model, all, fk, sets.includes(fk.principal), rules);
+
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
+}
+
+// --- Headers and items --------------------------------------------------------------------
+
+const NUMBER_TYPES = ["Edm.Decimal", "Edm.Double", "Edm.Single"];
+const isNumber = (p: Property) => NUMBER_TYPES.includes(p.type);
+
+// The one property of props that matches, or undefined when none or several do
+function only(
+  props: Property[],
+  test: (p: Property) => boolean,
+): Property | undefined {
+  const found = props.filter(test);
+  return found.length === 1 ? found[0] : undefined;
+}
+
+// What an item adds to its header's total: its price times its quantity, or its amount;
+// undefined when its type doesn't say which properties those are, unambiguously
+function lineValue(item: EntityType): ((row: Row) => number) | undefined {
+  const props = Object.values(item.properties).filter(
+    (p) => !item.keys.includes(p.name),
+  );
+  const measures = measuresOf(item.properties);
+  const price = only(props, (p) => isNumber(p) && /price/i.test(p.name));
+  const quantity = only(
+    props,
+    (p) =>
+      isNumber(p) &&
+      (measures.quantities.has(p.name) || /quantity|qty|menge/i.test(p.name)),
+  );
+  if (price && quantity)
+    return (row) => Number(row[price.name]) * Number(row[quantity.name]);
+  const amount = only(
+    props,
+    (p) => isNumber(p) && /amount|value|total/i.test(p.name),
+  );
+  if (amount) return (row) => Number(row[amount.name]);
+}
+
+// A header's total: its one amount named like a total (TotalAmount, NetValue, GrossAmount)
+function headerTotal(header: EntityType): Property | undefined {
+  return only(
+    Object.values(header.properties),
+    (p) => isNumber(p) && /^(total|net|gross).*(amount|value)$/i.test(p.name),
+  );
+}
+
+// The properties an item takes from its header, as an SAP document's items have them: its
+// currency, company code and plant. The ones both have, that the metadata marks as a
+// currency or that are named like one of those, and that no mock rule sets.
+function fromHeader(
+  header: EntityType,
+  item: EntityType,
+  fk: ForeignKey,
+  rules: MockRules,
+): Property[] {
+  const measures = measuresOf(item.properties);
+  return Object.values(item.properties).filter(
+    (p) =>
+      p.name in header.properties &&
+      !fk.props.includes(p.name) &&
+      !rules[fk.set]?.[p.name] &&
+      (measures.currencies.has(p.name) ||
+        (p.type === "Edm.String" &&
+          /currency|waers|companycode|bukrs|plant|werks/i.test(p.name))),
+  );
+}
+
+// A sum, in the store's form of the property's type; undefined when it doesn't fit the
+// property's Precision
+function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
+  if (prop.type !== "Edm.Decimal") return Math.round(sum * 100) / 100;
+  const scale = decimalScale(prop);
+  const text = sum.toFixed(scale);
+  if (
+    /^\d+$/.test(prop.precision ?? "") &&
+    text.replace(/\D/g, "").replace(/^0+(?=\d)/, "").length >
+      Number(prop.precision)
+  )
+    return undefined;
+  return text;
+}
+
+// The items of a header (fk: their foreign key, part of their key) agree with it: they take
+// its currency, company code and plant (see fromHeader), and, when the header was generated
+// too (generated, its total can be changed), its total is the sum of theirs. Only when it's
+// clear which properties those are (see lineValue, headerTotal); a header with no items
+// keeps its total. A property a mock rule sets keeps the rule's value.
+function itemsAgree(
+  model: Model,
+  all: Record<string, Row[]>,
+  fk: ForeignKey,
+  headerGenerated: boolean,
+  rules: MockRules,
+): void {
+  const typeOf = (set: string) =>
+    model.entityTypes[model.entitySets[set].entityType];
+  const header = typeOf(fk.principal);
+  const item = typeOf(fk.set);
+  const inherited = fromHeader(header, item, fk, rules);
+  const line = lineValue(item);
+  let total = headerGenerated ? headerTotal(header) : undefined;
+  // A property a mock rule sets keeps the rule's value
+  if (total && rules[fk.principal]?.[total.name]) total = undefined;
+  const keyOf = (row: Row, props: string[]) =>
+    JSON.stringify(props.map((p) => row[p]));
+  const headers = new Map(
+    (all[fk.principal] ?? []).map((h) => [keyOf(h, fk.principalProps), h]),
+  );
+  const sums = new Map<Row, number>();
+  for (const row of all[fk.set]) {
+    const h = headers.get(keyOf(row, fk.props));
+    if (!h) continue;
+    for (const p of inherited) row[p.name] = h[p.name];
+    if (line && total) sums.set(h, (sums.get(h) ?? 0) + line(row));
+  }
+  if (total)
+    for (const [h, sum] of sums) {
+      const value = totalValue(total, sum);
+      if (value !== undefined) h[total.name] = value;
+    }
+}
+
+// --- Where a value comes from -------------------------------------------------------------
+
+// Where a property's generated value comes from, for --explain: how it's made, and what
+// decided it: rule, the mock rule (from config.json, a file it extends, or built in), or
+// from, the metadata or the set a value is taken from
+interface Source extends How {
+  rule?: MockRule;
+  from?: string;
+}
+
+// A mock rule's value, as written: "45########", "100..500", "EUR", or a list's length
+function ruleHow(value: MockValue): string {
+  switch (value.kind) {
+    case "count":
+      return `"${value.prefix}${"#".repeat(value.width)}${value.suffix}"`;
+    case "range":
+      return `"${value.min}..${value.max}"`;
+    case "constant":
+      return JSON.stringify(value.value);
+    case "list":
+      return value.values.length === 1
+        ? JSON.stringify(value.values[0])
+        : `one of ${value.values.length} values`;
+  }
+}
+
+// Where the value of path ("Status", or "Address/City") of set's rows comes from, deciding as
+// generateData does, in the same order. rules: the resolved mock rules (see mock-rules.ts).
+function sourceOf(
+  model: Model,
+  rules: MockRules,
+  set: string,
+  path: string,
+): Source {
+  const typeOf = (name: string) =>
+    model.entityTypes[model.entitySets[name].entityType];
+  const type = typeOf(set);
+  const [name, member] = path.split("/");
+  const top = type.properties[name];
+  const props = member ? top.complexType!.properties : type.properties;
+  const prop = props[member ?? name];
+
+  const rule = rules[set]?.[path];
+  if (rule)
+    return {
+      how: prop.isCollection
+        ? `two values, each ${ruleHow(rule.value)}`
+        : ruleHow(rule.value),
+      rule,
+      from: rule.builtin ? "built-in" : rule.file,
+    };
+
+  if (!member) {
+    const fks = foreignKeys(model);
+    const fk = fks.find((f) => f.set === set && f.props.includes(name));
+    if (fk) return { how: `the row it points at`, from: fk.principal };
+    if (type.keys.includes(name)) {
+      const underParent = fks.some((f) => f.set === set && isKeyPart(model, f));
+      return {
+        how:
+          prop.type === "Edm.Guid"
+            ? "a GUID"
+            : underParent && isItemNumber(prop)
+              ? "a running number per parent, by 10"
+              : underParent
+                ? "a running number per parent"
+                : "a running number",
+      };
+    }
+    // An item's currency, company code and plant are its header's; a header's total,
+    // the sum of its items
+    for (const f of fks) {
+      if (!isKeyPart(model, f)) continue;
+      if (
+        f.set === set &&
+        fromHeader(typeOf(f.principal), type, f, rules).some(
+          (p) => p.name === name,
+        )
+      )
+        return { how: "its header's", from: f.principal };
+      if (
+        f.principal === set &&
+        headerTotal(type)?.name === name &&
+        lineValue(typeOf(f.set))
+      )
+        return { how: "the sum of its items", from: f.set };
+    }
+  }
+
+  // A collection holds two such values (see propertyValue)
+  const each = elementSource(
+    prop,
+    props,
+    member ? top.complexType!.name : type.name,
+  );
+  return prop.isCollection
+    ? { ...each, how: `two values, each ${each.how}` }
+    : each;
+}
+
+// Where one value of prop comes from, of props, its type's (typeName) properties, when no
+// rule, key or header decides it
+function elementSource(
+  prop: Property,
+  props: Record<string, Property>,
+  typeName: string,
+): Source {
+  if (prop.complexType) return { how: "member by member" };
+  if (prop.enumType) return { how: "one of its members" };
+  const measures = measuresOf(props);
+  if (measures.currencies.has(prop.name))
+    return { how: "follows the row's place", from: "metadata" };
+  if (measures.units.has(prop.name))
+    return { how: "follows the row's product", from: "metadata" };
+  const lower = prop.name.toLowerCase();
+  switch (prop.elementType || prop.type) {
+    case "Edm.String": {
+      const match = STRING_RULES.find(([re]) => re.test(lower));
+      if (match && match[1] !== nameRule) return match[2];
+      // A label, or digits when it doesn't fit (see labelOr)
+      const base = match
+        ? prop.name.replace(/(Name|Title)$/i, "") || typeName
+        : prop.name;
+      const max = Number(prop.maxLength);
+      return {
+        how:
+          max > 0 && `${humanize(base)} 1`.length > max
+            ? "random digits"
+            : "its name and a number",
+        filler: true,
+      };
+    }
+    case "Edm.Date":
+    case "Edm.DateTimeOffset":
+      return (
+        DATE_ROLES.find(([re]) => re.test(lower))?.[2] ?? {
+          how: "a date in 2025",
+        }
+      );
+    case "Edm.Decimal":
+    case "Edm.Double":
+    case "Edm.Single":
+      if (/price/.test(lower)) return { how: "the row's product's price" };
+      if (
+        measures.quantities.has(prop.name) ||
+        /quantity|qty|menge/.test(lower)
+      )
+        return { how: "a quantity, whole for counted units" };
+      return { how: "a number" };
+    case "Edm.Byte":
+    case "Edm.SByte":
+    case "Edm.Int16":
+    case "Edm.Int32":
+    case "Edm.Int64":
+      return { how: "a number" };
+    case "Edm.Boolean":
+      return { how: "true or false" };
+    case "Edm.Guid":
+      return { how: "a GUID" };
+    case "Edm.TimeOfDay":
+      return { how: "a time of day" };
+    case "Edm.Duration":
+      return { how: "a few hours" };
+    default:
+      return { how: "none, empty" };
+  }
 }
 
 // The rows of a link set without a data file (see linkSet in navigations.ts): each row of its
@@ -578,4 +1363,5 @@ function generateLinks(
   return links;
 }
 
-export { generateData, generateLinks };
+export { generateData, generateLinks, foreignKeys, sourceOf, humanize };
+export type { ForeignKey, Source };

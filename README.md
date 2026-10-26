@@ -66,14 +66,14 @@ MySrv/
   metadata.xml         # the service's $metadata, V2 or V4
   data/                # optional, one file per entity set (the others get mock data)
     MyEntitySet.csv    # header row, ; or , separated, quoted as spreadsheets write it (JSON also works)
-  config.json          # optional, what operations change (see docs/operations.md)
+  config.json          # optional, mock data rules and what operations change (see docs/mock-data.md, docs/operations.md)
 ```
 
 The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySrv/`.
 
 Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
 
-A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata. Their foreign keys point at real rows, so navigation and `$expand` work. To edit them, `odata-prova-mock-data` writes them to files, see [Mock data](docs/mock-data.md).
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. Something off? `npx odata-prova ./MySrv --explain` tells you what to add to `config.json`, and `--write-data` writes the rows to files to edit, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
@@ -113,6 +113,8 @@ npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 | `--page-size`     | `PAGE_SIZE`     | `0`                                            | The most rows a collection's response holds, with a next link to the rest - `0` sends every row, see [Server-driven paging](docs/odata-support.md#server-driven-paging)                                                                                     |
 | `--persist`       | `PERSIST`       | none: in memory only                           | A SQLite file, or a PostgreSQL database (`postgres://...`, which replicas can share), that keeps the data, so writes survive a restart - no value keeps it in memory, see [Keeping the data](#keeping-the-data)                                             |
 | `--persist-reset` | `PERSIST_RESET` | off                                            | With `--persist`: start over from the data files and mock rows, replacing what was saved (`PERSIST_RESET=1`)                                                                                                                                                |
+| `--explain`       |                 |                                                | Show the generated properties on filler values, and what to add to `config.json`, and exit - `--explain all` shows every property                                                                                                                           |
+| `--write-data`    |                 |                                                | Write the generated rows to `data/`, to edit them, and exit, see [Mock data](docs/mock-data.md#editing-the-generated-data)                                                                                                                                  |
 
 The image contains no model. Mount one as `/models/<ServiceName>`, and the server finds it. To mount several, set `MODEL_DIR` to the one to serve, e.g. `-v "$PWD/examples:/models:ro" -e MODEL_DIR=/models/Northwind`.
 
@@ -188,7 +190,7 @@ For quick UI work inside a single app, the fe-mockserver is still simpler.
 
 ## Documentation
 
-- [Mock data](docs/mock-data.md): how rows are generated, and editing them as files
+- [Mock data](docs/mock-data.md): how rows are generated, changing a column with `config.json`, and editing rows as files
 - [Supported OData features](docs/odata-support.md): types, query options, and what's rejected
 - [Actions and functions](docs/operations.md): how operations answer, the V2/V4 mapping, and `config.json` rules
 - [Architecture](docs/architecture.md): how it's built, using it in code, planned improvements, and the specs it follows
