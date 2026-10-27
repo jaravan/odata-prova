@@ -165,13 +165,15 @@ describe("mock data", () => {
   it("makes items agree with their header: its currency, and its total the sum of theirs", () => {
     const { store } = load(modelCopy(PO_MODEL), 40);
     const items = store.rows("PurchaseOrderItemSet");
-    let checked = 0;
     for (const order of store.rows("PurchaseOrderSet")) {
       const its = items.filter(
         (i) => i.PurchaseOrderId === order.PurchaseOrderId,
       );
-      if (!its.length) continue;
-      checked++;
+      // Every order has items: none shows a total with nothing behind it
+      assert.ok(
+        its.length > 0,
+        `${String(order.PurchaseOrderId)} has no items`,
+      );
       for (const i of its) assert.equal(i.Currency, order.Currency);
       const sum = its.reduce(
         (s, i) => s + Number(i.NetPrice) * Number(i.Quantity),
@@ -183,7 +185,6 @@ describe("mock data", () => {
         String(order.PurchaseOrderId),
       );
     }
-    assert.ok(checked > 5);
   });
 
   it("gives items their header's company code and plant too", () => {
@@ -378,12 +379,16 @@ describe("mock data: children of seeded parents", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
-  it("belong to the seeded rows, numbered per parent by 10, as SAP numbers items", () => {
+  it("belong to the seeded rows, 1 to 5 under each, numbered per parent by 10, as SAP numbers items", () => {
     const orders = new Set(
       s.store.rows("PurchaseOrderSet").map((o) => o.PurchaseOrderId),
     );
     const items = s.store.rows("PurchaseOrderItemSet");
-    assert.equal(items.length, 30);
+    // Every order has items, as no SAP document is without
+    for (const order of orders) {
+      const n = items.filter((i) => i.PurchaseOrderId === order).length;
+      assert.ok(n >= 1 && n <= 5, `${String(order)}: ${n} items`);
+    }
     // Each order's item positions
     const positions: Record<string, number[]> = {};
     for (const item of items) {

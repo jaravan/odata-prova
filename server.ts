@@ -23,7 +23,8 @@ Options (default):
       --service-name <name>  The name in the default paths (the model folder's)
       --v2-path <path>       V2 service root (/odata/v2/<name>), "" to switch V2 off
       --v4-path <path>       V4 service root (/odata/v4/<name>), "" to switch V4 off
-      --mock-rows <n>        Rows generated for each entity set without a data file (20)
+      --mock-rows <n>        Rows generated for each entity set without a data file (20);
+                             items, 1 to 5 under each parent
       --page-size <n>        The most rows in a response, with a link to the rest (0: all)
       --etags <mode>         lenient, strict or off (lenient)
       --joins <mode>         guess or strict (guess)

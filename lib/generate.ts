@@ -98,6 +98,8 @@ interface ForeignKey {
   principalProps: string[];
 }
 
+// The most rows generated under one parent (see generateData): an order's items
+const ITEMS_PER_PARENT = 5;
 const DAY = 24 * 60 * 60 * 1000;
 const QUARTER_HOUR = 15 * 60 * 1000;
 // Dates fall in 2025, not "the last year", so the data does not change over time
@@ -988,14 +990,31 @@ function generateData(
     const sole =
       keyFks.length === 1 &&
       type.keys.every((k) => keyFks[0].props.includes(k));
-    for (let i = 0; i < rows; i++) {
+    // A key that is its parent's and a number of its own (an order's items): 1 to 5 under each
+    // parent, rather than rows spread at random, which would leave some parents with none, as
+    // no SAP document is. The parent of each row, in order.
+    const under =
+      keyFks.length === 1 && !sole
+        ? all[keyFks[0].principal].flatMap((p) =>
+            Array<Row>(1 + int(rng, ITEMS_PER_PARENT)).fill(p),
+          )
+        : undefined;
+    const count = under
+      ? under.length
+      : sole
+        ? Math.min(rows, all[keyFks[0].principal].length)
+        : rows;
+    for (let i = 0; i < count; i++) {
       const row: Row = {};
-      if (sole && i >= all[keyFks[0].principal].length) break;
       for (const fk of keyFks)
         copyForeignKey(
           row,
           fk,
-          sole ? all[fk.principal][i] : pick(rng, all[fk.principal]),
+          under
+            ? under[i]
+            : sole
+              ? all[fk.principal][i]
+              : pick(rng, all[fk.principal]),
         );
       const parent = JSON.stringify(type.keys.map((k) => row[k]));
       const seq = (seqs.get(parent) || 0) + 1;
