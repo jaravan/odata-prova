@@ -73,7 +73,7 @@ The folder name becomes the service name: `/odata/v2/MySrv/` and `/odata/v4/MySr
 
 Your `metadata.xml` can be V2 or V4. The server generates the other version, annotations included: `sap:` attributes become [V4 annotations](docs/odata-support.md#sap-annotations-in-the-generated-v4-metadata), and V4 annotations are [written for UI5's V2 model](docs/odata-support.md#v4-annotations-in-the-generated-v2-metadata).
 
-A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. Something off? `npx odata-prova ./MySrv --explain` tells you what to add to `config.json`, and `--write-data` writes the rows to files to edit, see [Mock data](docs/mock-data.md).
+A data file is named after its entity set (or its entity type, or `<namespace>-<EntityType>`). An entity set without one gets 20 generated rows (an order's items: 1 to 5 per order) that fit the metadata and agree with each other: a row's city, country and currency, an order's items and its total. Their foreign keys point at real rows, so navigation and `$expand` work. Something off? `npx odata-prova ./MySrv --explain` tells you what to add to `config.json`, and `--write-data` writes the rows to files to edit, see [Mock data](docs/mock-data.md).
 
 ## Your app
 
@@ -107,7 +107,7 @@ npx odata-prova ./MySrv --port 4004 --mock-rows 50 --etags strict
 | `--service-name`  | `SERVICE_NAME`  | the model's folder | The name in the default paths                                                                                              |
 | `--v2-path`       | `V2_PATH`       | `/odata/v2/<name>` | V2 root, `""` turns V2 off                                                                                                 |
 | `--v4-path`       | `V4_PATH`       | `/odata/v4/<name>` | V4 root, `""` turns V4 off                                                                                                 |
-| `--mock-rows`     | `MOCK_ROWS`     | `20`               | Rows generated per set without a data file                                                                                 |
+| `--mock-rows`     | `MOCK_ROWS`     | `20`               | Rows generated per set without a data file; items 1 to 5 per parent                                                        |
 | `--etags`         | `ETAGS`         | `lenient`          | How [`If-Match`](docs/odata-support.md#etags) is checked: `lenient`, `strict` or `off`                                     |
 | `--joins`         | `JOINS`         | `guess`            | [Navigations without a constraint](docs/odata-support.md#navigations-without-a-referentialconstraint): `guess` or `strict` |
 | `--page-size`     | `PAGE_SIZE`     | `0`: every row     | Rows per response, with a [next link](docs/odata-support.md#server-driven-paging)                                          |
@@ -151,6 +151,7 @@ For quick UI work inside a single app, the fe-mockserver is still simpler.
 - [Mock data](docs/mock-data.md): how rows are generated, changing a column with `config.json`, and editing rows as files
 - [Supported OData features](docs/odata-support.md): types, query options, and what's rejected
 - [Keeping the data](docs/persistence.md): a SQLite file or PostgreSQL, Docker volumes, replicas
+- [Recipes](docs/recipes.md): curl, Docker, Docker Compose and CI commands
 - [Actions and functions](docs/operations.md): how operations answer, the V2/V4 mapping, and `config.json` rules
 - [Architecture](docs/architecture.md): how it's built, using it in code, planned improvements, and the specs it follows
 
