@@ -63,6 +63,47 @@ describe("containment", () => {
     assert.equal("Person_UserName" in trip, false);
   });
 
+  it("names its context by the path through the parent, not the server's own entity set", async () => {
+    const context = async (url: string) =>
+      (await get(`${s.v4}/${url}`)).body["@odata.context"];
+    const at = "/odata/v4/T/$metadata#";
+    // OData 4.01 Part 1, 10.1 (Example 12) and 10.3 (Example 14)
+    assert.equal(
+      await context("People('ann')/Trips"),
+      `${at}People('ann')/Trips`,
+    );
+    assert.equal(
+      await context("People('ann')/Trips?$select=Name"),
+      `${at}People('ann')/Trips(Name)`,
+    );
+    assert.equal(
+      await context("People('ann')/Trips(1)"),
+      `${at}People('ann')/Trips/$entity`,
+    );
+    assert.equal(
+      await context("People('ben')/Trips(1)/PlanItems"),
+      `${at}People('ben')/Trips(1)/PlanItems`,
+    );
+    assert.equal(
+      await context("People('ben')/Trips(1)/PlanItems(1)"),
+      `${at}People('ben')/Trips(1)/PlanItems/$entity`,
+    );
+    assert.equal(
+      await context("People('ann')/Trips?$apply=aggregate($count as N)"),
+      `${at}People('ann')/Trips(N)`,
+    );
+    // A created one too
+    const created = await send("POST", `${s.v4}/People('ann')/Trips`, {
+      TripId: 9,
+      Name: "Bergen",
+    });
+    assert.equal(created.status, 201);
+    assert.equal(
+      created.body["@odata.context"],
+      `${at}People('ann')/Trips/$entity`,
+    );
+  });
+
   it("isn't an entity set of the service, nor in V2", async () => {
     assert.equal((await get(`${s.v4}/People-Trips`)).status, 404);
     assert.deepEqual(

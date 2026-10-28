@@ -340,6 +340,28 @@ function optionsOf(node: QueryNode): [string, string][] {
   return out;
 }
 
+// What a context URL names setName's entities by: the set, or for a contained one, the path
+// through its parent (OData 4.01 Part 1, 10.1 and 10.3): People('x')/Trips, as the set it's in
+// is the server's own, in no $metadata. A collection's path comes with the request
+// (opts.containedPath); an entity's, from its URL without its key: People('x')/Trips(1001).
+function contextSet(
+  svc: ODataService,
+  setName: string,
+  opts: ResponseOptions | undefined,
+  entity?: { type: EntityType; row: Row },
+): string {
+  const contained = svc.model.entitySets[setName]?.contained;
+  if (!contained) return setName;
+  if (!entity) return opts?.containedPath ?? setName;
+  const uri = svc
+    .entityUri(setName, entity.type, entity.row)
+    .slice(svc.servicePath.length + 1);
+  const at = uri.lastIndexOf(`/${contained.navigation}(`);
+  return at === -1
+    ? setName
+    : uri.slice(0, at + contained.navigation.length + 1);
+}
+
 // The select-list of a context URL, as $select and $expand shape the response (OData 4.0
 // Part 1, 10.9): "(Name,Total,Category(Name))" for $select=Name,Total&$expand=Category(
 // $select=Name), with $compute's aliases among the names when they're selected. An expanded
@@ -433,7 +455,7 @@ const v4: Protocol = {
     node = expandAll(svc, type, node);
     checkSelect(svc, type, node);
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}`,
+      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}${selectList(node)}`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => serialize(svc, r, setName, type, node, opts));
@@ -502,7 +524,7 @@ const v4: Protocol = {
       selected(p.name),
     );
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}(${contextList(props.map((p) => p.name))})`,
+      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}(${contextList(props.map((p) => p.name))})`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => {
@@ -526,7 +548,7 @@ const v4: Protocol = {
     node = expandAll(svc, type, node);
     checkSelect(svc, type, node);
     const body = {
-      "@odata.context": `${svc.servicePath}/$metadata#${setName}${selectList(node)}/$entity`,
+      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts, { type, row })}${selectList(node)}/$entity`,
       ...serialize(svc, row, setName, type, node, opts),
     };
     const etag = svc.etag(setName, row);
