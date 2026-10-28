@@ -397,6 +397,14 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
               svc.deltaTokens.issue(setName, svc.store.rows(setName)),
             ),
           });
+      if (svc.model.entitySets[setName]?.contained && parentForCreate)
+        opts.containedPath = `${svc
+          .entityUri(
+            parentForCreate.setName,
+            parentForCreate.type,
+            parentForCreate.row,
+          )
+          .slice(svc.servicePath.length + 1)}/${parentForCreate.nav.name}`;
       const response = svc.collectionResponse(rows, setName, type, q, opts);
       const applied = [
         ...(pageSize.applied ? [`odata.maxpagesize=${pageSize.size}`] : []),

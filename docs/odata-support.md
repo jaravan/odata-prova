@@ -408,7 +408,7 @@ Each one is logged as `navigation with links of its own: Person.Friends in Peopl
 - Deleting an entity removes its links.
 - A failed `$batch` changeset takes them back.
 
-A containment navigation (`ContainsTarget`) whose target no entity set holds, such as TripPin's `Person.Trips`, gets an entity set of its own. It's named after the parent's set and the navigation (`People-Trips`, and `People-Trips-PlanItems` below it). It's in no service document or `$metadata`, and is reached only through its parent: `People('russellwhyte')/Trips(1001)/PlanItems`.
+A containment navigation (`ContainsTarget`) whose target no entity set holds, such as TripPin's `Person.Trips`, gets an entity set of its own. It's named after the parent's set and the navigation (`People-Trips`, and `People-Trips-PlanItems` below it). It's in no service document or `$metadata`, and is reached only through its parent: `People('russellwhyte')/Trips(1001)/PlanItems`. Responses name it that way too: their context URL is the path through the parent, `$metadata#People('russellwhyte')/Trips`, as the spec writes it for contained entities.
 
 A contained entity's key is unique only under its parent. So its rows keep their parent's keys in hidden columns, named after the parent's type (`Person_UserName`, then `Trip_TripId`), which a data file fills:
 

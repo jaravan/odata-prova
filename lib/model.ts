@@ -433,6 +433,9 @@ export interface ResponseOptions {
   // A V4 GET of an entity set that tracks changes (see delta.ts): its delta link, with a new
   // delta token
   deltaLink?(): string;
+  // A contained collection's path through its parent, for its context URL
+  // ($metadata#People('x')/Trips): the set it's in is the server's own, in no $metadata
+  containedPath?: string;
 }
 
 // What a service answers, for Express or for a $batch part
