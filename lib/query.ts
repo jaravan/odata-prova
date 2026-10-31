@@ -41,11 +41,17 @@ class HttpError extends Error {
   }
 }
 
+// A resource path decoded but for what a segment or a key needs to keep apart: decodeURI
+// leaves / , = ? # & encoded (%2F, ...), and %25 stays %25, so that SO%2F2025 in a key
+// isn't read as two segments, nor 50%25 decoded twice. Each segment's name and each key's
+// value is then decoded on its own (see resource-path.ts).
+const decodePath = (text: string) => decodeURI(text.replace(/%25/gi, "%2525"));
+
 // decodeURI and decodeURIComponent throw a URIError on a malformed escape (%E0%A4%A).
 // That is the client's mistake, so it is a 400.
 function decodeUrl(
   text: string,
-  decode: (text: string) => string = decodeURI,
+  decode: (text: string) => string = decodePath,
 ): string {
   try {
     return decode(text);

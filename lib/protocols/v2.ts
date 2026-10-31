@@ -75,7 +75,8 @@ function parseLiteral(text: string): Literal {
 function keyLiteral(value: PropertyValue, prop: Property): string {
   switch (prop.v2Type) {
     case "Edm.String":
-      return `'${String(value).replace(/'/g, "''")}'`;
+      // Percent-encoded, so that a / or a ? in it stays part of the key (see decodePath)
+      return `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`;
     case "Edm.Guid":
       return `guid'${value}'`;
     case "Edm.DateTime":

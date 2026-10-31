@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="K" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Doc">
+        <Key><PropertyRef Name="No"/></Key>
+        <Property Name="No" Type="Edm.String" Nullable="false"/>
+        <Property Name="Text" Type="Edm.String"/>
+        <NavigationProperty Name="Lines" Type="Collection(K.Line)" Partner="Doc"/>
+      </EntityType>
+      <EntityType Name="Line">
+        <Key><PropertyRef Name="No"/><PropertyRef Name="Pos"/></Key>
+        <Property Name="No" Type="Edm.String" Nullable="false"/>
+        <Property Name="Pos" Type="Edm.String" Nullable="false"/>
+        <NavigationProperty Name="Doc" Type="K.Doc" Partner="Lines">
+          <ReferentialConstraint Property="No" ReferencedProperty="No"/>
+        </NavigationProperty>
+      </EntityType>
+      <Function Name="FindDoc">
+        <Parameter Name="no" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="hint" Type="Edm.String"/>
+        <ReturnType Type="K.Doc"/>
+      </Function>
+      <EntityContainer Name="C">
+        <EntitySet Name="Docs" EntityType="K.Doc">
+          <NavigationPropertyBinding Path="Lines" Target="Lines"/>
+        </EntitySet>
+        <EntitySet Name="Lines" EntityType="K.Line">
+          <NavigationPropertyBinding Path="Doc" Target="Docs"/>
+        </EntitySet>
+        <FunctionImport Name="FindDoc" Function="K.FindDoc" EntitySet="Docs"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

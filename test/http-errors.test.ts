@@ -31,10 +31,10 @@ describe("bad requests get an OData error, not an HTML page", () => {
     assert.match(v2.body.error.message.value, /Malformed URL/);
   });
 
-  it("an escape that is only malformed once decoded (%25zz) -> 400", async () => {
+  it("a path is decoded once: %25zz is the text %zz, not a malformed escape", async () => {
     const r = await get(`${s.v4}/PurchaseOrderSet%25zz`);
-    assert.equal(r.status, 400);
-    assert.match(r.body.error.message, /Malformed URL/);
+    assert.equal(r.status, 404);
+    assert.match(r.body.error.message, /PurchaseOrderSet%zz/);
   });
 
   it("a path with characters no segment has -> 400, never read as another path", async () => {

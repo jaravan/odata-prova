@@ -6,6 +6,7 @@ A mock doesn't know what an operation does, so the server:
 
 - checks the method: `POST` for actions, `GET` for functions, `m:HttpMethod` for V2 function imports (`405` otherwise)
 - reads the parameters: from the JSON body (V4 actions), the path (V4 functions) or the query string (V2). It logs the call with them: `action ShareTrip on /odata/v4/TripPin/People('x') {"userName":"bob","tripId":1}`
+- checks a V4 function's parameters in the path: one it doesn't have is a `400` (`InvalidParameter`), and so is one left out that can't be null (`Nullable="false"`, `RequiredProperty`)
 - checks a V4 action's body as it checks an entity's: a parameter the action doesn't have, or a value of the wrong JSON type, is a `400`
 - applies the model's rule for it, if it has one (see [What an operation changes](#what-an-operation-changes))
 - answers with what the return type allows:

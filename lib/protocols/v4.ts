@@ -100,10 +100,11 @@ function parseLiteral(text: string): Literal {
   throw new HttpError(400, `Cannot parse literal: ${text}`);
 }
 
-// Internal -> key literal in a URL. Only strings are quoted in V4.
+// Internal -> key literal in a URL. Only strings are quoted in V4, and percent-encoded, so
+// that a / or a ? in one stays part of the key (see decodePath).
 function keyLiteral(value: PropertyValue, prop: Property): string {
   return prop.type === "Edm.String"
-    ? `'${String(value).replace(/'/g, "''")}'`
+    ? `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`
     : String(value);
 }
 

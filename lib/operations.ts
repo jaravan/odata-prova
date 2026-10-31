@@ -2,7 +2,7 @@
 // for it (config.json) and answers by its return type. Draft actions go to draft.ts.
 
 import { toInternal, propToInternal } from "./types.ts";
-import { HttpError, own, splitTopLevel } from "./query.ts";
+import { HttpError, decodeUrl, own, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { checkProperty } from "./writes.ts";
@@ -136,12 +136,29 @@ function operationParameters(
   let raw: Record<string, unknown> = query;
   if (svc.protocol.version === "4.0") {
     raw = {};
+    // As a key's: split on , and =, then each value decoded (see decodePath)
     for (const part of splitTopLevel(paramText || "", ",")) {
       const eq = part.indexOf("=");
       if (eq === -1)
         throw new HttpError(400, `Invalid parameter ${part} for ${op.name}`);
-      raw[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+      const name = decodeUrl(part.slice(0, eq).trim(), decodeURIComponent);
+      if (!op.parameters.some((p) => p.name === name))
+        throw new HttpError(
+          400,
+          `${op.name} has no parameter ${name}`,
+          "InvalidParameter",
+        );
+      raw[name] = decodeUrl(part.slice(eq + 1).trim(), decodeURIComponent);
     }
+    // A function's parameters are all in its path (OData 4.0 has no optional ones): one that
+    // can't be null can't be left out either
+    for (const p of op.parameters)
+      if (raw[p.name] === undefined && !p.nullable)
+        throw new HttpError(
+          400,
+          `${op.name} needs its parameter ${p.name}`,
+          "RequiredProperty",
+        );
   }
   for (const p of op.parameters) {
     // Text from the query string or the path (a repeated query parameter isn't supported)
