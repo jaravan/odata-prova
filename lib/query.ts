@@ -149,7 +149,16 @@ function splitTopLevel(text: string, sep: string): string[] {
 // A $format the server does not implement is rejected with 501 instead of silently
 // ignored: JSON coming back for $format=xml looks like a working response and is wrong.
 // query: the request's query string, parsed
-function rejectUnsupported(query: Record<string, unknown>): void {
+// known: the protocol's system query options. Any other option starting with $ is a 400, as
+// the spec asks: answering as if it weren't there would hide a typo ($TOP=1 answering every
+// row). Custom options (sap-client, search) have no $ and are left alone.
+function rejectUnsupported(
+  query: Record<string, unknown>,
+  known: ReadonlySet<string>,
+): void {
+  for (const name of Object.keys(query))
+    if (name.startsWith("$") && !known.has(name))
+      throw new HttpError(400, `Unknown system query option ${name}`);
   if (
     query.$format !== undefined &&
     !/^(json|application\/json)$/i.test(String(query.$format).trim())
@@ -163,10 +172,9 @@ function rejectUnsupported(query: Record<string, unknown>): void {
 
 function parseInt10(text: unknown, name: string): number | undefined {
   if (text === undefined || text === "") return undefined;
-  const n = parseInt(String(text), 10);
-  if (Number.isNaN(n) || n < 0)
+  if (!/^\d+$/.test(String(text)))
     throw new HttpError(400, `Invalid ${name}: ${text}`);
-  return n;
+  return Number(text);
 }
 
 export {

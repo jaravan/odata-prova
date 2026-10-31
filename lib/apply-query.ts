@@ -3,6 +3,7 @@
 
 import { toComparable } from "./types.ts";
 import { compileFilter } from "./filter.ts";
+import { search } from "./search.ts";
 import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
 import { HttpError, own } from "./query.ts";
 import type {
@@ -106,6 +107,7 @@ function applyQuery(
     try {
       predicate = compileFilter(opts.filter, svc.protocol);
     } catch (e) {
+      if (e instanceof HttpError) throw e;
       throw new HttpError(400, `Invalid $filter: ${(e as Error).message}`);
     }
     try {
@@ -118,17 +120,13 @@ function applyQuery(
     }
   }
 
-  if (opts.search) {
-    // Case-insensitive substring match over every string property; quotes optional.
-    const term = opts.search.replace(/^"(.*)"$/, "$1").toLowerCase();
+  // An empty one (a cleared search field) searches for nothing, and finds everything
+  if (opts.search?.trim()) {
+    // Terms matched in any case, in any string property (see search.ts)
     const stringProps = Object.values(entityType.properties)
       .filter((p) => p.type === "Edm.String")
       .map((p) => p.name);
-    results = results.filter((row) =>
-      stringProps.some(
-        (p) => row[p] !== null && String(row[p]).toLowerCase().includes(term),
-      ),
-    );
+    results = search(results, opts.search, stringProps);
   }
 
   const count = opts.count ? results.length : undefined;

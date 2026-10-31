@@ -264,7 +264,16 @@ function resolveNavigationsV4(model: Model, joins: JoinMode): void {
             (b) => b.path === nav.name,
           );
           if (binding) {
-            targetSet = binding.target;
+            // A set of the container, by its name or qualified with the container's
+            // (a.svc.C/Lines)
+            const target = binding.target.split("/").at(-1)!;
+            if (model.singletons?.includes(target))
+              throw new Error(
+                `${et.name}.${nav.name}: leads to Singleton ${target}, and singletons aren't supported`,
+              );
+            targetSet = model.entitySets[binding.target]
+              ? binding.target
+              : target;
             break;
           }
         }

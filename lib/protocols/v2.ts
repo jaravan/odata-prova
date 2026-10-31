@@ -124,11 +124,24 @@ function toWire(value: PropertyValue | undefined, prop: Property): unknown {
   }
 }
 
+const SYSTEM_OPTIONS = new Set([
+  "$filter",
+  "$orderby",
+  "$top",
+  "$skip",
+  "$skiptoken",
+  "$inlinecount",
+  "$select",
+  "$expand",
+  "$format",
+]);
+
 function parseQueryOptions(query: Record<string, unknown>): QueryNode {
-  rejectUnsupported(query);
+  // V4's, which V2 has no counterpart for: a 501 rather than an unknown option's 400
   for (const name of ["$apply", "$compute", "$deltatoken"])
     if (query[name] !== undefined)
       throw new HttpError(501, `${name} is not supported in OData V2`);
+  rejectUnsupported(query, SYSTEM_OPTIONS);
   // Query string values are text (a repeated option isn't supported)
   const q = query as Record<string, string | undefined>;
   const root = newNode();
@@ -144,7 +157,8 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     // SAP Gateway's delta token, quoted: !deltatoken='...' (see delta.ts)
     deltatoken: q["!deltatoken"]?.replace(/^'(.*)'$/, "$1"),
     count: q.$inlinecount === "allpages",
-    search: undefined,
+    // SAP Gateway's basic search, a custom option, which UI5's V2 model sends
+    search: q.search,
     select: root.select,
     expand: root.expand,
   };
@@ -253,7 +267,7 @@ const v2: Protocol = {
   parseQueryOptions,
   serviceDocument(svc) {
     const sets = Object.values(svc.model.entitySets)
-      .filter((es) => !es.contained)
+      .filter((es) => !es.contained && !es.unlisted)
       .map((es) => es.name);
     // The draft administrative data's, which only V2 has (see draftAdminSetV2 in draft.ts)
     const adminSet = svc.model.draftAdminSetV2?.name;

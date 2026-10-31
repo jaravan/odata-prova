@@ -81,6 +81,80 @@ describe("bad requests get an OData error, not an HTML page", () => {
   });
 });
 
+// The spec: a service fails a request with a system query option it doesn't know, rather
+// than answer as if it weren't there ($TOP=1 answering every row)
+describe("query options the server doesn't know are refused", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("an unknown or misspelt $ option -> 400 naming it, on both protocols", async () => {
+    for (const q of ["$foo=1", "$TOP=1", "$fliter=Status eq 'Open'"]) {
+      const v4 = await get(`${s.v4}/PurchaseOrderSet?${q}`);
+      assert.equal(v4.status, 400, q);
+      assert.match(v4.body.error.message, /Unknown system query option \$/);
+      const v2 = await get(`${s.v2}/PurchaseOrderSet?${q}`);
+      assert.equal(v2.status, 400, q);
+    }
+  });
+
+  it("the other protocol's option -> 400 ($count in V2, $inlinecount in V4)", async () => {
+    assert.equal(
+      (await get(`${s.v4}/PurchaseOrderSet?$inlinecount=allpages`)).status,
+      400,
+    );
+    assert.equal(
+      (await get(`${s.v2}/PurchaseOrderSet?$count=true`)).status,
+      400,
+    );
+  });
+
+  it("custom options, without a $, are left alone: sap-client, sap-language, search", async () => {
+    for (const base of [s.v4, s.v2])
+      assert.equal(
+        (
+          await get(
+            `${base}/PurchaseOrderSet?sap-client=100&sap-language=EN&saml2=disabled`,
+          )
+        ).status,
+        200,
+      );
+  });
+
+  it("a $top or $skip that isn't a whole number -> 400 (1.5, 2abc)", async () => {
+    for (const q of ["$top=1.5", "$top=2abc", "$skip=1e2", "$top= 1"]) {
+      const r = await get(`${s.v4}/PurchaseOrderSet?${q}`);
+      assert.equal(r.status, 400, q);
+    }
+  });
+});
+
+describe("/$value of an entity, which the server has no media for", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("-> 501, not the entity's JSON", async () => {
+    const r = await get(`${s.v4}/PurchaseOrderSet('4500000001')/$value`);
+    assert.equal(r.status, 501);
+    assert.match(r.body.error.message, /\$value/);
+    assert.equal(
+      (await get(`${s.v2}/PurchaseOrderSet('4500000001')/$value`)).status,
+      501,
+    );
+  });
+
+  it("a property's /$value still answers its raw value", async () => {
+    const r = await get(`${s.v4}/PurchaseOrderSet('4500000001')/Status/$value`);
+    assert.equal(r.status, 200);
+    assert.equal(typeof r.body, "string");
+  });
+});
+
 // Every error has a code a client can branch on: its status's, or a more specific one
 describe("error codes", () => {
   let s: TestServer;

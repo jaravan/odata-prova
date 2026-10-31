@@ -89,7 +89,7 @@ describe("values are checked against their Edm type", () => {
     assert.deepEqual([after.body.Total, after.body.Qty], ["100.50", 3]);
   });
 
-  it("accepts what the types allow: numbers as strings, exponents", async () => {
+  it("accepts what the types allow: numbers as strings, exponents (kept as the digits they stand for)", async () => {
     const r = await send("PATCH", `${s.v4}/${ORDER}`, {
       Closed: true,
       Qty: "7",
@@ -101,7 +101,7 @@ describe("values are checked against their Edm type", () => {
     });
     assert.deepEqual(
       [after.body.Total, after.body.Qty, after.body.Closed],
-      ["-1.5e2", 7, true],
+      ["-150", 7, true],
     );
   });
 });

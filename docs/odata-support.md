@@ -2,18 +2,26 @@
 
 ## Types
 
-All primitive Edm types, plus:
+All primitive Edm types, plus the ones below. Geography and geometry values aren't generated (they are `null`) and can't be filtered on, and `Edm.Stream` properties hold no content.
 
 - **Complex types**, nested and in collections. In V2 a complex value carries its type in `__metadata`, as SAP Gateway sends it.
 - **Enum types** (V4). V2 has no enums, so there they are `Edm.String` holding the member name.
 - **Collection-valued properties** (V4). V2 has none, so they are left out of the V2 service, with a `not in V2: ...` line in the startup log.
 - **Inheritance** (`BaseType`). Each derived type gets its base's key, properties and navigations, so the generated `$metadata` needs no `BaseType`.
+- **Type definitions** (V4 `TypeDefinition`). A property of one has its underlying type, with the definition's facets (`MaxLength`, `Precision`, `Scale`) where it sets none, which is also how the V2 `$metadata` writes it.
+- **Schema aliases** in type references (`T.Order` for `a.types.Order`, CAP's `SAP__self.`), and binding targets qualified with their container (`a.svc.C/Lines`).
+
+Singletons aren't served: the startup log lists each one (`not served: Singleton Me`), and a navigation bound to one is disabled, a `501` saying why.
 
 In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
 
-Writes are checked against the metadata. Each of these is a `400`:
+Writes and data files are checked against the metadata. Each of these is a `400` (`InvalidValue`), and a data file with one stops the start, naming it:
 
-- a value that doesn't fit its type
+- a value that doesn't fit its type:
+  - an integer outside its type's range: `Edm.Byte` 0 to 255, `Edm.SByte`, `Edm.Int16`, `Edm.Int32` and `Edm.Int64` theirs
+  - a decimal with more digits than its `Precision`, or more after the point than its `Scale` (`Scale="variable"`, or none: any, up to the `Precision`). One with an exponent is kept as the digits it stands for: `1.5e2` is `150`
+  - a date or time that isn't ISO 8601 (`2025-03-07`, `2025-03-07T10:00:00Z`, with an offset or without, which is UTC), or that isn't in the calendar (`2025-02-30`). A space for the `T`, and slashes in the date (`2025/03/07`), as spreadsheets write them, are read too, as are V2's `/Date(ms)/`. Nothing else is guessed at: `07.03.2025` and `03/07/2025` are refused rather than read in the server's timezone
+  - a time of day past `23:59:59`, a GUID that isn't `8-4-4-4-12` hex digits, a duration that isn't a day-time duration (`P1DT2H`, `PT0.5S`), or binary that isn't base64 or base64url
 - a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null
 - a value of the wrong JSON type: `123` for a string, `"true"` for a boolean (numbers may come as strings)
 - a string longer than its `MaxLength`
@@ -68,17 +76,37 @@ Two `sap:` attributes are written as well, where UI5 reads an attribute and not 
 
 ## Query options
 
-Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`/`$inlinecount`, `$search`, and `$batch` with atomic changesets all work, on both protocols. `$expand` takes nested V4 options too: `$expand=Items($select=Material;$top=2)`. In V4, `$expand=*` expands every navigation of the type, at any level (`Items($expand=*)`). A navigation also named on its own keeps its options (`*,Items($top=2)`), and one the server can't serve is left out.
+Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$count`/`$inlinecount`, `$search` (V2: `search=`, see below), and `$batch` with atomic changesets all work, on both protocols. `$expand` takes nested V4 options too: `$expand=Items($select=Material;$top=2)`. In V4, `$expand=*` expands every navigation of the type, at any level (`Items($expand=*)`). A navigation also named on its own keeps its options (`*,Items($top=2)`), and one the server can't serve is left out.
+
+A system query option the protocol doesn't have is a `400`: a misspelt `$fliter`, `$TOP` (they are case-sensitive in OData 4.0), or the other protocol's (`$count=true` in V2, `$inlinecount` in V4). Answering as if it weren't there would hide the mistake. Custom options, without a `$`, are left alone: `sap-client`, `sap-language`. `$top`, `$skip` and `$skiptoken` take a whole number, nothing else.
 
 A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`. They work over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nest, and take `$it` for the entity outside the lambda.
+
+`INF`, `-INF` and `NaN` are literals, as in the spec. `round` takes a midpoint away from zero (`round(-2.5)` is `-3`), and durations compare by their length (`duration'P1D' gt duration'PT1H'`). The spec's functions `cast`, `isof`, `fractionalseconds`, `totaloffsetminutes`, `totalseconds`, `mindatetime`, `maxdatetime` and `matchesPattern` are a `501`, and any other unknown function a `400`.
+
+Comparisons of decimals in `$filter` are a double's, so ones that differ only after the 15th significant digit compare equal. Sums and averages in `$apply` are exact.
 
 Arithmetic in `$filter` follows the spec's numeric promotion:
 
 - `div` of two integers rounds towards zero (`Quantity div 2`); `divby` doesn't.
 - An operation with a null is null, which no comparison matches.
 - A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
+
+### Search (`$search`)
+
+`$search` takes the spec's search expression: words and `"phrases"`, joined by `AND` (or just a space), `OR` and `NOT`, with parentheses. `NOT` binds tightest, then `AND`, then `OR`:
+
+```
+$search=open gmbh                    both words
+$search="steel ab"                   the phrase, as written
+$search=(acme OR nordic) NOT open
+```
+
+A word or phrase matches an entity when one of its string properties holds it, in any case. Fiori Elements sends a search field's words quoted, `"open" "gmbh"`, which is both. One the server can't read (an unclosed quote or parenthesis, an `AND` with nothing after it) is a `400`. An empty `$search` finds everything.
+
+V2 has no `$search`. SAP Gateway reads a basic search from the custom option `search=`, which UI5's V2 model sends for a list report's search field, and so does the V2 service here, the same way.
 
 ### Computed properties (`$compute`)
 
@@ -369,6 +397,8 @@ Rejected with `501 Not Implemented`:
 - any `$format` other than JSON
 - `$expand=*/$ref` and `$expand=*($levels=n)`: `$ref` and `$levels` in `$expand`
 - a `$batch` in OData 4.01's JSON format: send it as `multipart/mixed`, as UI5 does
+- the `/$value` of an entity (a media resource's content): only a property's `/$value` is served
+- the `$filter` functions listed under [Query options](#query-options)
 
 `If-None-Match` is ignored: a read always answers with the entity.
 

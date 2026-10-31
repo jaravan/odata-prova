@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+<edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml"><edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/></edmx:Reference>
+<edmx:DataServices>
+<Schema Namespace="a.types" Alias="T" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+  <TypeDefinition Name="Amount" UnderlyingType="Edm.Decimal" Precision="15" Scale="2"/>
+  <TypeDefinition Name="Code" UnderlyingType="Edm.String" MaxLength="4"/>
+  <EntityType Name="Base" Abstract="true"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType>
+  <EntityType Name="Order" BaseType="T.Base"><Property Name="Total" Type="T.Amount"/><Property Name="Code" Type="T.Code"/><Property Name="Doc" Type="Edm.Stream"/><Property Name="Any" Type="Edm.Untyped"/>
+    <NavigationProperty Name="Owner" Type="T.Settings"/>
+    <NavigationProperty Name="Lines" Type="Collection(T.Line)"/></EntityType>
+  <EntityType Name="Line"><Key><PropertyRef Name="ID"/><PropertyRef Name="LineNo"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="LineNo" Type="Edm.Int32" Nullable="false"/><Property Name="Codes" Type="Collection(T.Code)"/></EntityType>
+  <EntityType Name="Settings"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Theme" Type="Edm.String"/></EntityType>
+  <Function Name="Find"><Parameter Name="q" Type="Edm.String"/><ReturnType Type="Collection(a.types.Order)"/></Function>
+  <Function Name="Find"><Parameter Name="q" Type="Edm.String"/><Parameter Name="n" Type="Edm.Int32"/><ReturnType Type="Collection(a.types.Order)"/></Function>
+</Schema>
+<Schema Namespace="a.svc" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+  <EntityContainer Name="C">
+    <EntitySet Name="Orders" EntityType="T.Order"><NavigationPropertyBinding Path="Owner" Target="Me"/><NavigationPropertyBinding Path="Lines" Target="a.svc.C/Lines"/></EntitySet>
+    <EntitySet Name="Lines" EntityType="a.types.Line"/>
+    <EntitySet Name="Hidden" EntityType="a.types.Settings" IncludeInServiceDocument="false"/>
+    <Singleton Name="Me" Type="a.types.Settings"/>
+    <FunctionImport Name="Find" Function="a.types.Find" EntitySet="Orders"/>
+  </EntityContainer>
+</Schema>
+</edmx:DataServices></edmx:Edmx>

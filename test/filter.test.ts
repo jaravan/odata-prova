@@ -157,3 +157,28 @@ describe("$filter errors", () => {
     assert.equal(run(v4, Array(500).fill("Qty eq 7").join(" or ")), true);
   });
 });
+
+describe("$filter, as the spec defines it where JavaScript differs", () => {
+  it("round() takes a midpoint away from zero: round(-2.5) is -3", () => {
+    assert.equal(run(v4, "round(-2.5) eq -3"), true);
+    assert.equal(run(v4, "round(2.5) eq 3"), true);
+    assert.equal(run(v4, "round(-2.4) eq -2"), true);
+  });
+
+  it("durations compare by length, not as text: P1D is longer than PT1H", () => {
+    assert.equal(run(v4, "duration'P1D' gt duration'PT1H'"), true);
+    assert.equal(run(v4, "duration'PT90M' eq duration'PT1H30M'"), true);
+    assert.equal(run(v4, "duration'-PT1S' lt duration'PT0S'"), true);
+  });
+
+  it("INF, -INF and NaN are V4 literals", () => {
+    assert.equal(run(v4, "INF gt 1e308"), true);
+    assert.equal(run(v4, "-INF lt 0"), true);
+    assert.equal(run(v4, "NaN eq NaN"), false);
+  });
+
+  it("cast and isof -> an error saying they aren't supported, not 'Unknown property'", () => {
+    for (const f of ["cast(Qty,Edm.String) eq '7'", "isof(Name,Edm.String)"])
+      assert.throws(() => run(v4, f), /not supported/);
+  });
+});

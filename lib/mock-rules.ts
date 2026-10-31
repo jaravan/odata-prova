@@ -227,7 +227,17 @@ function misfit(
         try {
           internal = propToInternal(v, prop);
         } catch {
-          return `${JSON.stringify(v)} doesn't fit ${prop.name} (${type})`;
+          // A whole number out of its type's range, or a decimal with too many digits, says
+          // how far off it is
+          const wrong =
+            v !== null &&
+            NUMBERS.includes(type) &&
+            (type === "Edm.Decimal" || Number.isInteger(Number(v)))
+              ? numberMisfit(Number(v), prop, type)
+              : undefined;
+          return (
+            wrong ?? `${JSON.stringify(v)} doesn't fit ${prop.name} (${type})`
+          );
         }
         // "" is empty too, as in a data file
         if (internal === null && !prop.nullable)

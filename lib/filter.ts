@@ -8,7 +8,7 @@
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
 import type { Literal, Property, PropertyValue, Row } from "./model.ts";
-import { own } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { isNumericType, toComparable, toMillis } from "./types.ts";
 
 // What a protocol module supplies: how its literals are spelled
@@ -331,6 +331,16 @@ class Parser {
       return { lambda: t.value, path: t.path, variable, predicate };
     }
     if (t.kind === "func") {
+      // Before its arguments, which for cast and isof name a type, not a property: a
+      // function of the spec's the server doesn't have is a 501, any other name a 400
+      if (!own(FUNCTION_TYPES, t.value) && !ROUNDING.includes(t.value)) {
+        if (UNSUPPORTED_FUNCTIONS.includes(t.value))
+          throw new HttpError(
+            501,
+            `The $filter function ${t.value} is not supported`,
+          );
+        throw new Error(`Unsupported $filter function ${t.value}`);
+      }
       this.expect("(");
       const args: Node[] = [];
       if (this.peek() && this.peek()?.kind !== ")") {
@@ -616,7 +626,8 @@ function callFunction(name: string, args: Value[]): Value {
     case "now":
       return { value: new Date().toISOString(), type: "Edm.DateTimeOffset" };
     case "round":
-      return number(Math.round(N(0)));
+      // The spec rounds a midpoint away from zero, Math.round towards +Infinity (-2.5 -> -2)
+      return number(Math.sign(N(0)) * Math.round(Math.abs(N(0))));
     case "floor":
       return number(Math.floor(N(0)));
     case "ceiling":
@@ -651,6 +662,18 @@ function compileFilter(
 }
 
 // The Edm type each function gives; round, floor and ceiling give their argument's
+const ROUNDING = ["round", "floor", "ceiling"];
+// The spec's functions that aren't implemented (names are lower-cased when tokenized)
+const UNSUPPORTED_FUNCTIONS = [
+  "cast",
+  "isof",
+  "fractionalseconds",
+  "totaloffsetminutes",
+  "totalseconds",
+  "mindatetime",
+  "maxdatetime",
+  "matchespattern",
+];
 const FUNCTION_TYPES: Record<string, string> = {
   substringof: "Edm.Boolean",
   contains: "Edm.Boolean",
@@ -692,7 +715,7 @@ function expressionType(
   }
   if ("func" in node) {
     const args = node.args.map((a) => expressionType(a, typeOf));
-    if (["round", "floor", "ceiling"].includes(node.func))
+    if (ROUNDING.includes(node.func))
       return args[0] && isNumericType(args[0]) ? args[0] : "Edm.Double";
     const type = FUNCTION_TYPES[node.func];
     if (!type) throw new Error(`Unsupported function ${node.func}`);

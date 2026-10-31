@@ -91,8 +91,22 @@ function seedError(message: string): Error {
 }
 
 // A JSON data file's rows: a list of objects
+// A number that a double can't hold as written (9007199254740993, an Int64; 1.50, whose
+// zero a Decimal keeps) is read as its text, which the property's type then reads: the
+// source text is JSON.parse's third reviver argument (Node 21 and later)
+const keepDigits = ((
+  _key: string,
+  value: unknown,
+  context?: { source?: string },
+) =>
+  typeof value === "number" &&
+  context?.source !== undefined &&
+  context.source !== String(value)
+    ? context.source
+    : value) as (key: string, value: unknown) => unknown;
+
 function jsonRows(text: string): Record<string, unknown>[] {
-  const rows: unknown = JSON.parse(text);
+  const rows: unknown = JSON.parse(text, keepDigits);
   if (!Array.isArray(rows))
     throw new Error('a JSON data file is a list of rows: [{ "ID": 1 }, ...]');
   rows.forEach((row, i) => {

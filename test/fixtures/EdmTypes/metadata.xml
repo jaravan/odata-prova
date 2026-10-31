@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="E" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Value">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Big" Type="Edm.Int64"/>
+        <Property Name="Amount" Type="Edm.Decimal" Precision="30" Scale="variable"/>
+        <Property Name="Price" Type="Edm.Decimal" Precision="5" Scale="2"/>
+        <Property Name="Small" Type="Edm.Byte"/>
+        <Property Name="Day" Type="Edm.Date"/>
+        <Property Name="Took" Type="Edm.Duration"/>
+        <Property Name="V" Type="Edm.Double"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Values" EntityType="E.Value"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

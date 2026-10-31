@@ -49,6 +49,13 @@ function matchBareLiteral(
   let m: RegExpMatchArray | null;
   if ((m = text.match(GUID)))
     return { value: m[0], type: "Edm.Guid", length: m[0].length };
+  // INF and NaN, which a property can't be named after a literal of: a whole word only
+  if ((m = text.match(/^(INF|NaN)(?![\w./])/)))
+    return {
+      value: m[1] === "INF" ? Infinity : NaN,
+      type: "Edm.Double",
+      length: m[0].length,
+    };
   if ((m = text.match(DATETIMEOFFSET)))
     return {
       value: toInternal(m[0], "Edm.DateTimeOffset"),
@@ -114,9 +121,15 @@ function withPrecision(
   );
 }
 
+// A number JSON.stringify writes as the given text, every digit kept (Node 21 and later; not
+// in TypeScript's lib yet)
+const rawJSON = (text: string): unknown =>
+  (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(text);
+
 // Internal -> V4 JSON value: arrays for collections, objects for complex types (converted
 // field by field), member names for enums. Int64/Decimal go out as strings when the client
-// asked for IEEE754Compatible=true (UI5's V4 model always does), as numbers otherwise.
+// asked for IEEE754Compatible=true (UI5's V4 model always does), as numbers otherwise: their
+// stored digits, which a double would round (9007199254740993, 12345678901234567890.12).
 // Returns a JSON value.
 function toWire(
   value: PropertyValue | undefined,
@@ -145,7 +158,9 @@ function elementToWire(
   const type = prop.elementType || prop.type;
   if (specialFloat(value)) return specialFloat(value);
   if ((type === "Edm.Int64" || type === "Edm.Decimal") && !opts.ieee754)
-    return Number(value);
+    return /^-?\d+(\.\d+)?$/.test(String(value))
+      ? rawJSON(String(value))
+      : Number(value);
   if (type === "Edm.DateTimeOffset" || type === "Edm.TimeOfDay")
     return withPrecision(value, prop.precision);
   return value;
@@ -239,8 +254,25 @@ function applyNestedOptions(node: QueryNode, text: string): void {
   }
 }
 
+const SYSTEM_OPTIONS = new Set([
+  "$filter",
+  "$orderby",
+  "$top",
+  "$skip",
+  "$skiptoken",
+  "$count",
+  "$search",
+  "$select",
+  "$expand",
+  "$apply",
+  "$compute",
+  "$deltatoken",
+  "$format",
+  "$id",
+]);
+
 function parseQueryOptions(query: Record<string, unknown>): QueryNode {
-  rejectUnsupported(query);
+  rejectUnsupported(query, SYSTEM_OPTIONS);
   // Query string values are text (a repeated option isn't supported)
   const q = query as Record<string, string | undefined>;
   const root = newNode();
@@ -436,7 +468,7 @@ const v4: Protocol = {
     return json(200, {
       "@odata.context": `${svc.servicePath}/$metadata`,
       value: Object.values(svc.model.entitySets)
-        .filter((es) => !es.contained)
+        .filter((es) => !es.contained && !es.unlisted)
         .map(({ name }) => ({
           name,
           kind: "EntitySet",

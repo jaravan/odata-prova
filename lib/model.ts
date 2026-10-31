@@ -10,6 +10,8 @@ export interface Model {
   sourceVersion: ODataVersion;
   // Parts of the metadata the server skipped (see disableOnError), logged at startup
   warnings: string[];
+  // The container's singletons, which aren't served: a navigation bound to one is disabled
+  singletons?: string[];
   // All keyed by qualified name ("Namespace.Name"), entity sets by name
   entityTypes: Record<string, EntityType>;
   complexTypes: Record<string, ComplexType>;
@@ -231,6 +233,8 @@ export interface EntitySet {
   entityType: string;
   // V4 NavigationPropertyBinding
   bindings: { path: string; target: string }[];
+  // IncludeInServiceDocument="false": served, but not listed in the service document
+  unlisted?: boolean;
   draft?: DraftInfo;
   // The sap: attributes of a V2 document, without the prefix (creatable, searchable, ...)
   sap?: Record<string, string>;

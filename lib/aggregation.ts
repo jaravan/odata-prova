@@ -42,7 +42,7 @@ import type { Resolve } from "./filter.ts";
 import { HttpError, own } from "./query.ts";
 import { topLevels, relatives, traverse } from "./hierarchy.ts";
 import { applyCompute, typedExpression } from "./compute.ts";
-import { isNumericType, toComparable } from "./types.ts";
+import { distinctKey, isNumericType, toComparable } from "./types.ts";
 import { parseAggregates, IDENTIFIER } from "./apply-parse.ts";
 import {
   aggregated,
@@ -415,7 +415,7 @@ function holdsEntities(transformations: Transformation[]): boolean {
 function groupsOf(rows: readonly Row[], properties: string[]): Row[][] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
-    const k = JSON.stringify(properties.map((p) => row[p]));
+    const k = distinctKey(properties.map((p) => row[p]));
     const group = groups.get(k);
     if (group) group.push(row);
     else groups.set(k, [row]);

@@ -277,6 +277,14 @@ function handle(
     );
   }
 
+  // A property's /$value was answered above: this is an entity's or a collection's, a media
+  // resource's content, which the server has none of
+  if (wantValue)
+    throw new HttpError(
+      501,
+      "$value of an entity (its media content) is not supported; a property's /$value is",
+    );
+
   if (q.deltatoken !== undefined) {
     if (method !== "GET" || row !== undefined || segments.length !== 1)
       throw new HttpError(

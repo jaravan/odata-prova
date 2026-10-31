@@ -60,6 +60,8 @@ const parser = new XMLParser({
       "ActionImport",
       "FunctionImport",
       "Parameter",
+      "Singleton",
+      "TypeDefinition",
     ].includes(name),
 });
 
@@ -98,6 +100,7 @@ function parseMetadata(
   if (!schemas)
     throw new Error("metadata.xml: no <edmx:DataServices><Schema> found");
   const isV4 = String(edmx.Version || "").startsWith("4");
+  resolveTypeNames(schemas);
   checkAttributes(schemas, isV4);
 
   // Collected first; the model is put together once there is a container
@@ -108,6 +111,7 @@ function parseMetadata(
   const associations: Model["associations"] = {};
   const associationSets: Model["associationSets"] = [];
   let container: Container | undefined;
+  const singletons: string[] = [];
 
   for (const schema of schemas) {
     const ns = schema.Namespace;
@@ -224,9 +228,11 @@ function parseMetadata(
             path: b.Path,
             target: b.Target,
           })),
+          unlisted: es.IncludeInServiceDocument === "false" || undefined,
           sap: sapAttributes(es),
         };
       }
+      for (const single of c.Singleton || []) singletons.push(single.Name);
       for (const as of c.AssociationSet || []) {
         associationSets.push({
           name: as.Name,
@@ -245,7 +251,10 @@ function parseMetadata(
     sourceVersion: isV4 ? "4.0" : "2.0",
     // Parts of the metadata the server skipped (see disableOnError in navigations.ts),
     // logged at startup
-    warnings: [],
+    warnings: singletons.map(
+      (name) => `not served: Singleton ${name} (singletons aren't supported)`,
+    ),
+    singletons,
     entityTypes,
     complexTypes,
     enumTypes,
@@ -523,6 +532,65 @@ function parseMeasures(model: Model, schemas: Xml[], qualify: Qualify): void {
           /currency|waers|curr|cuky/i.test(target.name));
       p.measure = { [currency ? "currency" : "unit"]: target.name };
     }
+}
+
+// The attributes that name a type, an association, an action or a function
+const TYPE_ATTRIBUTES = [
+  "Type",
+  "BaseType",
+  "EntityType",
+  "ReturnType",
+  "UnderlyingType",
+  "Relationship",
+  "Association",
+  "Action",
+  "Function",
+  "sap__action-for",
+];
+// The facets a TypeDefinition passes on to the elements of its type that don't set their own
+const FACETS = ["MaxLength", "Precision", "Scale", "SRID", "Unicode"];
+
+// Type references by their namespace, on the parsed document before anything reads one:
+//   - a schema's alias replaced (T.Order is a.types.Order, as CAP's SAP__self.Order is)
+//   - a TypeDefinition replaced by its underlying type (T.Amount is Edm.Decimal), with its
+//     facets where the element has none of its own: the model, and the V2 metadata, which
+//     has no TypeDefinition, know only Edm types
+function resolveTypeNames(schemas: Xml[]): void {
+  const aliases = new Map<string, string>(
+    schemas
+      .filter((s) => s.Alias)
+      .map((s): [string, string] => [s.Alias, s.Namespace]),
+  );
+  const qualified = (name: string) =>
+    name.replace(
+      /^(Collection\()?([^.()]+)\.(?=[^()]+\)?$)/,
+      (all, collection = "", prefix: string) =>
+        aliases.has(prefix) ? `${collection}${aliases.get(prefix)}.` : all,
+    );
+  const definitions = new Map<string, Xml>();
+  for (const schema of schemas)
+    for (const td of schema.TypeDefinition || [])
+      definitions.set(`${schema.Namespace}.${td.Name}`, td);
+
+  const visit = (node: Xml): void => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== "object") return;
+    for (const attr of TYPE_ATTRIBUTES)
+      if (typeof node[attr] === "string") node[attr] = qualified(node[attr]);
+    if (typeof node.Type === "string") {
+      const m = node.Type.match(/^(Collection\()?(.+?)(\))?$/);
+      const td = definitions.get(m[2]);
+      if (td) {
+        node.Type = `${m[1] ?? ""}${qualified(td.UnderlyingType)}${m[3] ?? ""}`;
+        for (const facet of FACETS)
+          if (node[facet] === undefined && td[facet] !== undefined)
+            node[facet] = td[facet];
+      }
+    }
+    for (const [key, child] of Object.entries(node))
+      if (key !== "Annotation" && key !== "Annotations") visit(child);
+  };
+  visit(schemas);
 }
 
 // A derived type (BaseType) gets its base's key, properties and navigations copied in, so

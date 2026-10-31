@@ -701,3 +701,36 @@ describe("$apply on an operation", () => {
     );
   });
 });
+
+describe("$apply groupby over INF, -INF and NaN", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(
+      path.join(import.meta.dirname, "fixtures", "SpecialFloats"),
+    );
+  });
+  after(() => s.close());
+
+  it("a group each, as for any other value", async () => {
+    const r = await get(
+      `${s.v4}/Ms?$apply=groupby((V),aggregate($count as C))&$orderby=V`,
+    );
+    assert.equal(r.status, 200);
+    assert.deepEqual(
+      r.body.value.map((g: { V: unknown; C: unknown }) => [g.V, Number(g.C)]),
+      [
+        ["-INF", 1],
+        [1.5, 1],
+        ["INF", 1],
+        ["NaN", 1],
+      ],
+    );
+  });
+
+  it("countdistinct counts them as three values", async () => {
+    const r = await get(
+      `${s.v4}/Ms?$apply=aggregate(V with countdistinct as N)`,
+    );
+    assert.equal(Number(r.body.value[0].N), 4);
+  });
+});
