@@ -138,6 +138,28 @@ describe("$batch", () => {
     );
   });
 
+  it("a body holding the boundary's text is one part: a boundary starts a line", async () => {
+    // The helpers' outer boundary is batch_test, its changesets' changeset_<i>
+    const r = await batch(s.v4, [
+      [
+        {
+          method: "PATCH",
+          url: "PurchaseOrderSet('4500000001')",
+          body: { Supplier: "a --batch_test b --changeset_0 c" },
+        },
+      ],
+    ]);
+    const parts = batchResponses(r.text);
+    assert.deepEqual(
+      parts.map((p) => p.status),
+      [204],
+    );
+    const after = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$select=Supplier`,
+    );
+    assert.equal(after.body.Supplier, "a --batch_test b --changeset_0 c");
+  });
+
   it("rejects a $batch without a boundary", async () => {
     const res = await fetch(`${s.v4}/$batch`, {
       method: "POST",

@@ -25,12 +25,17 @@ interface ProcessedPart {
 }
 
 // Splits a multipart body on "--<boundary>", dropping the leading preamble and the
-// trailing "--" epilogue that follows the closing "--<boundary>--" delimiter.
+// trailing "--" epilogue that follows the closing "--<boundary>--" delimiter. A delimiter
+// starts a line (RFC 2046), so a body holding the boundary's text isn't split.
 function splitMultipart(
   bodyText: string,
   boundary: string | undefined,
 ): string[] {
-  const segments = bodyText.split(`--${boundary}`);
+  const escaped = String(boundary).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const delimiter = new RegExp(
+    `(?:^|\\r?\\n)--${escaped}(?:--)?[ \\t]*(?=\\r?\\n|$)`,
+  );
+  const segments = bodyText.split(delimiter);
   return segments
     .slice(1, -1)
     .map((s) => s.replace(/^\r?\n/, "").replace(/\r?\n$/, ""));
