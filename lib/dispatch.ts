@@ -4,7 +4,7 @@
 // ($ref and $links, see references.ts), a property, a collection, or an entity.
 
 import { specialFloat } from "./types.ts";
-import { HttpError, own } from "./query.ts";
+import { HttpError, newNode, own } from "./query.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
@@ -29,6 +29,45 @@ import type {
   ResponseOptions,
   Row,
 } from "./model.ts";
+
+// The navigations a deep insert's body created entities through, nested as in the body: its
+// response is expanded as deep (OData 4.01), so the client gets them as the server set them.
+// A navigation $expand names keeps its options; V2's links by reference ({ __metadata })
+// create nothing.
+function deepInsertExpand(
+  svc: ODataService,
+  type: EntityType,
+  body: unknown,
+  node: QueryNode,
+): QueryNode {
+  if (!body || typeof body !== "object") return node;
+  const fields = body as Record<string, unknown>;
+  const expand = { ...node.expand };
+  for (const nav of Object.values(type.navigations)) {
+    let value = fields[nav.name];
+    if (
+      value &&
+      typeof value === "object" &&
+      Array.isArray((value as { results?: unknown }).results)
+    )
+      value = (value as { results: unknown[] }).results;
+    const created = (
+      Array.isArray(value) ? (value as unknown[]) : [value]
+    ).filter(
+      (v): v is object =>
+        !!v &&
+        typeof v === "object" &&
+        Object.keys(v).some((k) => k !== "__metadata"),
+    );
+    if (!created.length || expand[nav.name]) continue;
+    const target = svc.model.entityTypes[nav.targetType];
+    expand[nav.name] = created.reduce<QueryNode>(
+      (n, v) => deepInsertExpand(svc, target, v, n),
+      newNode(),
+    );
+  }
+  return { ...node, expand };
+}
 
 // A URL as a header can hold it: a key's spaces, control and non-ASCII characters
 // percent-encoded, as UTF-8 bytes (a lone surrogate too, as U+FFFD)
@@ -452,7 +491,7 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
         created,
         setName,
         type,
-        q,
+        deepInsertExpand(svc, type, body, q),
         201,
         { Location: location },
         opts,

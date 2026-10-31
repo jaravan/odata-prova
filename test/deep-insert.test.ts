@@ -86,3 +86,45 @@ describe("a deep insert that fails", () => {
     );
   });
 });
+
+// OData 4.01: the response to a deep insert is expanded as deep as the request was, so a
+// client (UI5's V4 model) gets the related entities' keys and values as the server set them
+describe("a deep insert's response", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("V4: has the related entities it created", async () => {
+    const r = await send(
+      "POST",
+      `${s.v4}/PurchaseOrderSet`,
+      order("DI101", [item("0001"), item("0002")]),
+    );
+    assert.equal(r.status, 201);
+    assert.deepEqual(
+      r.body.Items.map((i: { ItemPosition: string }) => i.ItemPosition),
+      ["0001", "0002"],
+    );
+    assert.equal(r.body.Items[0].PurchaseOrderId, "DI101");
+  });
+
+  it("V2: the same, as { results }", async () => {
+    const r = await send(
+      "POST",
+      `${s.v2}/PurchaseOrderSet`,
+      order("DI102", { results: [item("0001")] }),
+    );
+    assert.equal(r.status, 201);
+    assert.equal(r.body.d.Items.results.length, 1);
+    assert.equal(r.body.d.Items.results[0].PurchaseOrderId, "DI102");
+  });
+
+  it("without related entities in the request: none expanded", async () => {
+    const { Items: _items, ...flat } = order("DI103", []);
+    const r = await send("POST", `${s.v4}/PurchaseOrderSet`, flat);
+    assert.equal(r.status, 201);
+    assert.equal("Items" in r.body, false);
+  });
+});

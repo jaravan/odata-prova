@@ -308,6 +308,14 @@ Limits:
 - A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
 - No validation besides required values on activation, no side effects, and no locks between users.
 
+## Keys in URLs
+
+A string key may hold any character, a URL's own included, percent-encoded as any value in a URL is: `Docs('SO%2F2025%2F1')` is the document `SO/2025/1`. The URIs the server writes, `Location`, V2's `__metadata.uri` and V4's `@odata.id`, encode them the same way, so they lead back to the entity.
+
+## Deep insert
+
+A create can hold related entities, nested under their navigation: an array for a collection (V2: `{"results": [...]}`), an object for a single-valued one. They are created with it, in one transaction: if one fails, nothing is kept. The response has them, as the server created them, expanded as deep as the request was.
+
 ## Links between entities
 
 A write can link an entity to existing ones, whatever the navigation joins on: a foreign key on either side, a key of its own or a link set (see [Navigations without a ReferentialConstraint](#navigations-without-a-referentialconstraint)).
