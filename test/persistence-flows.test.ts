@@ -14,6 +14,7 @@ import {
   ORDER,
   ITEM,
   PO_MODEL,
+  type TestServer,
 } from "./helpers.ts";
 import { MemoryPersistence } from "./memory-persistence.ts";
 import { createApp } from "../lib/app.ts";
@@ -432,6 +433,192 @@ for (const backend of BACKENDS) {
         fs.rmSync(dir, { recursive: true, force: true });
       }
     });
+  });
+
+  // What a value is exactly, which saving it as JSON or text must not change
+  describe(`persistence (${backend.name}): values come back exact after a restart`, () => {
+    const across = async (
+      model: string,
+      write: (s: TestServer) => Promise<void>,
+      read: (s: TestServer) => Promise<void>,
+    ) => {
+      const { db, reopen, done } = backend.open();
+      const first = await start(path.join(FIXTURES, model), {
+        persistence: db,
+      });
+      await first.ready;
+      await write(first);
+      await first.close();
+      const second = await start(path.join(FIXTURES, model), {
+        persistence: reopen(),
+      });
+      try {
+        await second.ready;
+        await read(second);
+      } finally {
+        await second.close();
+        done();
+      }
+    };
+
+    it("an empty string stays one, apart from null", () =>
+      across(
+        "Blanks",
+        async (s) => {
+          for (const body of [
+            { ID: "blank", Required: "", Text: "", Addr: { City: "" } },
+            { ID: "null", Required: "x", Text: null },
+          ])
+            assert.equal(
+              (await send("POST", `${s.v4}/Notes`, body)).status,
+              201,
+            );
+        },
+        async (s) => {
+          const { body } = await get(`${s.v4}/Notes('blank')`);
+          assert.equal(body.Required, "");
+          assert.equal(body.Text, "");
+          assert.equal(body.Addr.City, "");
+          const ids = async (filter: string) =>
+            (
+              await get(`${s.v4}/Notes?$select=ID&$filter=${filter}`)
+            ).body.value.map((r: { ID: string }) => r.ID);
+          assert.deepEqual(await ids("Text eq ''"), ["blank"]);
+          assert.deepEqual(await ids("Text eq null"), ["null"]);
+          assert.equal((await get(`${s.v4}/FromCsv('c1')`)).body.Text, null);
+          assert.equal((await get(`${s.v4}/FromJson('j1')`)).body.Text, "");
+        },
+      ));
+
+    it("Int64 and Decimal keep every digit", () =>
+      across(
+        "BigInts",
+        async (s) => {
+          const created = await fetch(`${s.v4}/Bigs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"ID":9007199254740995,"I64":9007199254740995,"Dec":12345678901234567890.12}',
+          });
+          assert.equal(created.status, 201);
+          const res = await send("PATCH", `${s.v4}/Bigs(9007199254740993)`, {
+            Name: "changed",
+          });
+          assert.equal(res.status, 204);
+        },
+        async (s) => {
+          const strings = { Accept: "application/json;IEEE754Compatible=true" };
+          const row = async (id: string) =>
+            (await get(`${s.v4}/Bigs(${id})`, strings)).body;
+          const { I64, Dec } = await row("9007199254740995");
+          assert.equal(I64, "9007199254740995");
+          assert.equal(Dec, "12345678901234567890.12");
+          assert.equal((await row("9007199254740993")).Name, "changed");
+          assert.equal((await row("9007199254740992")).Name, "even");
+          const { value } = (
+            await get(
+              `${s.v4}/Bigs?$filter=I64 gt 9007199254740992&$orderby=I64 desc&$select=ID`,
+              strings,
+            )
+          ).body;
+          assert.deepEqual(
+            value.map((r: { ID: string }) => r.ID),
+            ["9007199254740995", "9007199254740993"],
+          );
+        },
+      ));
+
+    it("enums, flags, complex values and collections", () =>
+      across(
+        "Shapes",
+        async (s) => {
+          const res = await send("POST", `${s.v4}/Items`, {
+            ID: 9,
+            Color: "Blue",
+            Perms: "Read,Admin",
+            Tod: "01:02:03",
+            Addr: { City: "Müller" },
+            Stops: [{ City: "日本" }],
+            Tags: ["", "x"],
+          });
+          assert.equal(res.status, 201);
+          const key = await send("POST", `${s.v4}/ByColors`, { ID: "Blue" });
+          assert.equal(key.status, 201);
+          await send("POST", `${s.v4}/Odds`, { ID: 1 });
+        },
+        async (s) => {
+          const { body } = await get(`${s.v4}/Items(9)`);
+          assert.equal(body.Perms, "Read,Admin");
+          assert.deepEqual(body.Tags, ["", "x"]);
+          assert.equal(body.Stops[0].City, "日本");
+          assert.equal((await get(`${s.v4}/Items(9)/Tags/$count`)).body, "2");
+          const ids = async (filter: string) =>
+            (
+              await get(
+                `${s.v4}/Items?$select=ID&$filter=${encodeURIComponent(filter)}`,
+              )
+            ).body.value.map((r: { ID: number }) => r.ID);
+          assert.deepEqual(await ids("Perms has Sh.Perm'Admin'"), [9]);
+          assert.deepEqual(await ids("hour(Tod) eq 1 and ID eq 9"), [9]);
+          assert.equal(
+            (await get(`${s.v4}/ByColors(Sh.Color'Blue')`)).status,
+            200,
+          );
+          assert.equal((await get(`${s.v4}/Odds(1)`)).body.constructor, null);
+        },
+      ));
+
+    it("keys that compare by value", () =>
+      across(
+        "ValueKeys",
+        async (s) => {
+          const guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+          for (const [set, ID] of [
+            ["Decs", "1.50"],
+            ["Ids", guid],
+            ["Stamps", "2025-01-01T10:00:00.123Z"],
+          ])
+            assert.equal(
+              (await send("POST", `${s.v4}/${set}`, { ID })).status,
+              201,
+            );
+        },
+        async (s) => {
+          const guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+          assert.equal((await get(`${s.v4}/Decs(1.5)`)).status, 200);
+          assert.equal((await get(`${s.v4}/Ids(${guid})`)).status, 200);
+          assert.equal(
+            (await get(`${s.v4}/Stamps(2025-01-01T10:00:00Z)`)).status,
+            200,
+          );
+          for (const [set, ID] of [
+            ["Decs", 1.5],
+            ["Ids", guid],
+          ])
+            assert.equal(
+              (await send("POST", `${s.v4}/${set}`, { ID })).status,
+              409,
+            );
+        },
+      ));
+
+    it("a text an ETag has to encode", () =>
+      across(
+        "ETagText",
+        async (s) => {
+          const res = await send("POST", `${s.v4}/Keyed`, { ID: "日本" });
+          assert.equal(res.status, 201);
+        },
+        async (s) => {
+          for (const url of [
+            `${s.v4}/Notes(1)`,
+            `${s.v4}/Keyed('${encodeURIComponent("日本")}')`,
+          ]) {
+            const res = await get(url);
+            assert.equal(res.status, 200, url);
+            assert.equal(res.headers.get("etag"), res.body["@odata.etag"]);
+          }
+        },
+      ));
   });
 
   describe(`persistence (${backend.name}): restarts`, () => {
