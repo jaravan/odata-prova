@@ -17,14 +17,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
-import { propToInternal } from "./types.ts";
+import { keyText, propToInternal } from "./types.ts";
 import { foreignKeys, generateData, generateLinks } from "./generate.ts";
 import type { MockRules } from "./mock-rules.ts";
 import { asActive } from "./draft.ts";
 
 // Quoting follows RFC 4180, as spreadsheets write it: a field in double quotes can hold the
 // separator, line breaks and "" for a quote. Unquoted fields are trimmed, blank lines skipped.
-function parseCsv(text: string): Record<string, string>[] {
+function parseCsv(text: string): Record<string, string | null>[] {
   text = text.replace(/^\uFEFF/, ""); // Excel starts a UTF-8 CSV with a byte order mark
   const sep = /^[^\r\n]*;/.test(text) ? ";" : ",";
   const records: string[][] = [];
@@ -79,8 +79,9 @@ function parseCsv(text: string): Record<string, string>[] {
   if (records.length === 0) return [];
   const [headers, ...rows] = records;
   return rows.map((cells) => {
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => (row[h] = cells[i] ?? ""));
+    // A cell left empty is no value: a CSV can't tell null from a blank
+    const row: Record<string, string | null> = {};
+    headers.forEach((h, i) => (row[h] = cells[i] || null));
     return row;
   });
 }
@@ -493,7 +494,7 @@ class Store {
 
   assertKeys(entityType: EntityType, row: Row, source: string): void {
     for (const k of entityType.keys) {
-      if (row[k] === null || row[k] === undefined) {
+      if (row[k] === null || row[k] === undefined || row[k] === "") {
         throw new Error(
           `${source}: row is missing key property ${k}: ${JSON.stringify(row)}`,
         );
@@ -571,8 +572,16 @@ class Store {
   // key: the type's keys, and a contained entity's parent's keys too (see keyOf in
   // service.ts)
   matchesKey(entityType: EntityType, row: Row, key: Key): boolean {
+    const same = (k: string) => {
+      const prop = entityType.properties[k];
+      // V2 writes a time to the millisecond, whatever its Precision
+      const fraction = this.model.sourceVersion === "2.0" ? "3" : undefined;
+      return (
+        keyText(row[k], prop, fraction) === keyText(key[k], prop, fraction)
+      );
+    };
     return (
-      entityType.keys.every((k) => String(row[k]) === String(key[k])) &&
+      entityType.keys.every(same) &&
       (entityType.parentKeys ?? []).every(
         (k) => !(k in key) || String(row[k]) === String(key[k]),
       )

@@ -7,6 +7,7 @@ import { HttpError } from "../lib/query.ts";
 
 // String keys with characters a URL reserves, as SAP document numbers have them (SO/2025/1)
 const MODEL = path.join(import.meta.dirname, "fixtures", "OddKeys");
+const VALUE_KEYS = path.join(import.meta.dirname, "fixtures", "ValueKeys");
 const KEYS = ["SO/2025/1", "a,b", "a=b", "#1", "?q", "&a", "50%", "it's"];
 
 // A key as a client writes it in a URL: quoted, a quote doubled, then percent-encoded
@@ -123,5 +124,106 @@ describe("parseSegments", () => {
       );
       assert.ok(performance.now() - started < 500, JSON.stringify(end));
     }
+  });
+});
+
+// A key's text isn't its value: a client writes 1.5 for 1.50, and either case of a GUID
+describe("keys that compare by value", () => {
+  let s: TestServer;
+  before(async () => (s = await start(VALUE_KEYS)));
+  after(() => s.close());
+
+  it("Edm.Decimal: trailing zeros don't matter", async () => {
+    assert.equal(
+      (await send("POST", `${s.v4}/Decs`, { ID: "1.50" })).status,
+      201,
+    );
+    assert.equal((await get(`${s.v4}/Decs(1.5)`)).status, 200);
+    assert.equal((await get(`${s.v4}/Decs(1.50)`)).status, 200);
+    assert.equal((await get(`${s.v4}/Decs(1.500)`)).status, 200);
+    assert.equal((await get(`${s.v2}/Decs(1.5M)`)).status, 200);
+    assert.equal((await get(`${s.v4}/Decs(1.51)`)).status, 404);
+  });
+
+  it("Edm.Decimal: the value keeps the digits it was written with", async () => {
+    const read = await fetch(`${s.v4}/Decs(1.5)`);
+    assert.match(await read.text(), /"ID":1\.50\b/);
+  });
+
+  it("Edm.Decimal: 1.5 is a duplicate of 1.50, 100 isn't of 1", async () => {
+    assert.equal((await send("POST", `${s.v4}/Decs`, { ID: 1.5 })).status, 409);
+    assert.equal((await send("POST", `${s.v4}/Decs`, { ID: "1" })).status, 201);
+    assert.equal(
+      (await send("POST", `${s.v4}/Decs`, { ID: "100" })).status,
+      201,
+    );
+    assert.equal(
+      (await send("POST", `${s.v4}/Decs`, { ID: "1.0" })).status,
+      409,
+    );
+    assert.equal(
+      (await send("POST", `${s.v4}/Decs`, { ID: "0.0" })).status,
+      201,
+    );
+    assert.equal((await send("POST", `${s.v4}/Decs`, { ID: "0" })).status, 409);
+  });
+
+  const UPPER = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const LOWER = UPPER.toLowerCase();
+
+  it("Edm.Guid: either case finds it, and a case isn't a new key", async () => {
+    const created = await send("POST", `${s.v4}/Ids`, {
+      ID: UPPER,
+      Other: UPPER,
+    });
+    assert.equal(created.status, 201);
+    assert.equal(
+      (await send("POST", `${s.v4}/Ids`, { ID: LOWER })).status,
+      409,
+    );
+    assert.equal((await get(`${s.v4}/Ids(${LOWER})`)).status, 200);
+    assert.equal((await get(`${s.v4}/Ids(${UPPER})`)).status, 200);
+    assert.equal((await get(`${s.v2}/Ids(guid'${LOWER}')`)).status, 200);
+  });
+
+  it("Edm.Guid: $filter, on a key and a property", async () => {
+    for (const filter of [
+      `ID eq ${LOWER}`,
+      `ID eq ${UPPER}`,
+      `Other eq ${LOWER}`,
+      `Other in (${LOWER})`,
+    ]) {
+      const res = await get(`${s.v4}/Ids?$filter=${filter}`);
+      assert.equal(res.status, 200, filter);
+      assert.equal(res.body.value.length, 1, filter);
+    }
+    const none = await get(`${s.v4}/Ids?$filter=ID ne ${LOWER}`);
+    assert.equal(none.body.value.length, 0);
+  });
+
+  it("a key built from a response finds the entity, its Precision cut the fraction", async () => {
+    const created = await send("POST", `${s.v4}/Stamps`, {
+      ID: "2025-01-01T10:00:00.123Z",
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.ID, "2025-01-01T10:00:00Z");
+    const read = await get(`${s.v4}/Stamps(${created.body.ID})`);
+    assert.equal(read.status, 200);
+    assert.equal(read.body.ID, "2025-01-01T10:00:00Z");
+    const exact = await get(`${s.v4}/Stamps(2025-01-01T10:00:00.123Z)`);
+    assert.equal(exact.status, 200);
+    const dup = await send("POST", `${s.v4}/Stamps`, {
+      ID: "2025-01-01T10:00:00Z",
+    });
+    assert.equal(dup.status, 409);
+  });
+
+  it("a Precision that keeps the fraction keeps entities apart", async () => {
+    for (const ID of ["2025-01-01T10:00:00.123Z", "2025-01-01T10:00:00.124Z"])
+      assert.equal((await send("POST", `${s.v4}/Fines`, { ID })).status, 201);
+    const read = await get(`${s.v4}/Fines(2025-01-01T10:00:00.124Z)`);
+    assert.equal(read.body.ID, "2025-01-01T10:00:00.124Z");
+    const offset = await get(`${s.v4}/Fines(2025-01-01T12:00:00.124%2B02:00)`);
+    assert.equal(offset.status, 200);
   });
 });

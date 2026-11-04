@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="B" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <ComplexType Name="Address">
+        <Property Name="City" Type="Edm.String"/>
+      </ComplexType>
+      <EntityType Name="Note">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.String" Nullable="false"/>
+        <Property Name="Required" Type="Edm.String" Nullable="false"/>
+        <Property Name="Text" Type="Edm.String"/>
+        <Property Name="Count" Type="Edm.Int32"/>
+        <Property Name="Day" Type="Edm.Date"/>
+        <Property Name="Addr" Type="B.Address"/>
+        <Property Name="Tags" Type="Collection(Edm.String)"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Notes" EntityType="B.Note"/>
+        <EntitySet Name="FromCsv" EntityType="B.Note"/>
+        <EntitySet Name="FromJson" EntityType="B.Note"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

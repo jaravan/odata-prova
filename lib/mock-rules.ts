@@ -239,8 +239,8 @@ function misfit(
             wrong ?? `${JSON.stringify(v)} doesn't fit ${prop.name} (${type})`
           );
         }
-        // "" is empty too, as in a data file
-        if (internal === null && !prop.nullable)
+        // "" too: in a rule, that's a value left out rather than a blank to generate
+        if ((internal === null || internal === "") && !prop.nullable)
           return `${prop.name} can't be empty (Nullable="false")`;
         const wrong =
           v !== null && NUMBERS.includes(type)

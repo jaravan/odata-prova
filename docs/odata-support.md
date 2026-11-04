@@ -32,6 +32,8 @@ Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Pr
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
 
+An empty string is a value of a string, as ABAP's blank is, and not null: it passes `Nullable="false"`, and `Text eq ''` doesn't match null. It isn't a key. A JSON data file keeps it too, but a CSV cell left empty is null, since a CSV can't tell them apart. For any other type `""` is null, as a client sends it for a cleared date or number.
+
 ## SAP annotations in the generated V4 metadata
 
 For a V2 `metadata.xml`, the V4 service's `$metadata` carries its `sap:` attributes as V4 annotations: the ones SAP names for them in [SAP Annotations for OData Version 2.0](https://sap.github.io/odata-vocabularies/docs/v2-annotations.html). So a Fiori Elements V4 app gets the same texts, units and restrictions as a V2 app:
@@ -94,6 +96,8 @@ Arithmetic in `$filter` follows the spec's numeric promotion:
 - `div` of two integers rounds towards zero (`Quantity div 2`); `divby` doesn't.
 - An operation with a null is null, which no comparison matches.
 - A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
+
+A property may be named like an operator or a literal (`Div`, `Or`, `True`, `Null`): `Div eq 5` reads the property, and `Add add 1` each as it should. Lower-case `true`, `false`, `null` and `not` are always the keyword.
 
 ### Search (`$search`)
 
@@ -312,6 +316,12 @@ Limits:
 ## Keys in URLs
 
 A string key may hold any character, a URL's own included, percent-encoded as any value in a URL is: `Docs('SO%2F2025%2F1')` is the document `SO/2025/1`. The URIs the server writes, `Location`, V2's `__metadata.uri` and V4's `@odata.id`, encode them the same way, so they lead back to the entity.
+
+A key compares by value. `Decs(1.5)` finds `1.50`, either case of a GUID finds the entity, and neither is a new key. A time is as exact as its `Precision`: without one, `2025-01-01T10:00:00.123Z` reads back as `2025-01-01T10:00:00Z` and that finds it, so two keys in the same second are the same key (a V2 document's times count to the millisecond).
+
+## Methods
+
+A `POST` with `X-HTTP-Method: PUT`, `PATCH`, `MERGE` or `DELETE` is that method, as UI5's V2 model sends a `MERGE` outside a `$batch`. Any other value is ignored.
 
 ## Deep insert
 

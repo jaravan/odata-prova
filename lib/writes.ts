@@ -251,7 +251,7 @@ function insertTree(
     ...presetValues,
   });
   for (const k of entityType.keys) {
-    if (row[k] === null)
+    if (row[k] === null || row[k] === "")
       throw new HttpError(
         400,
         `Key property ${k} is required`,

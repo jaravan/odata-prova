@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="V" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Dec">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Decimal" Precision="10" Scale="variable" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="Id">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="Other" Type="Edm.Guid"/>
+      </EntityType>
+      <EntityType Name="Stamp">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.DateTimeOffset" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="Fine">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.DateTimeOffset" Precision="3" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Decs" EntityType="V.Dec"/>
+        <EntitySet Name="Ids" EntityType="V.Id"/>
+        <EntitySet Name="Stamps" EntityType="V.Stamp"/>
+        <EntitySet Name="Fines" EntityType="V.Fine"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

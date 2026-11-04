@@ -103,6 +103,46 @@ function invalid(value: unknown, type: string): HttpError {
   return new HttpError(400, `Invalid ${type} value: ${value}`, "InvalidValue");
 }
 
+// Fractional seconds cut or padded to the property's Precision facet. Without a facet the
+// precision is 0 (CSDL), and strict clients such as UI5's V4 model reject any fraction.
+function withPrecision(
+  value: PropertyValue,
+  precision: string | undefined,
+): string {
+  const digits = Number(precision) || 0;
+  return String(value).replace(
+    /(:\d{2})(?:\.(\d+))?(?=Z|[+-]\d{2}:\d{2}|$)/,
+    (_: string, sec: string, frac: string = "") =>
+      digits ? `${sec}.${frac.padEnd(digits, "0").slice(0, digits)}` : sec,
+  );
+}
+
+// A key's value as text that two ways of writing it share, for finding an entity by its key.
+// 1.50 and 1.5 are one Decimal, a GUID's digits have either case, and a time is as fine as
+// its Precision, which is all a client gets to read and so to build a key from. fraction: the
+// digits of a time whose property has no Precision.
+function keyText(
+  value: unknown,
+  prop: Property,
+  fraction: string | undefined,
+): string {
+  const text = String(value);
+  switch (prop.type) {
+    case "Edm.Decimal": {
+      const short = text.includes(".") ? text.replace(/\.?0+$/, "") : text;
+      const plain = short.replace(/^(-?)0+(?=\d)/, "$1");
+      return plain === "-0" ? "0" : plain;
+    }
+    case "Edm.Guid":
+      return text.toLowerCase();
+    case "Edm.DateTimeOffset":
+    case "Edm.TimeOfDay":
+      return withPrecision(value as PropertyValue, prop.precision ?? fraction);
+    default:
+      return text;
+  }
+}
+
 // A JSON.parse reviver for a request's body: a number with more digits than a double holds
 // (9007199254740993, an Int64) is read as its text, which the property's type then reads.
 // The source text is the reviver's third argument (Node 21 and later).
@@ -118,8 +158,11 @@ const keepLongNumbers = ((
     : value) as (key: string, value: unknown) => unknown;
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
+// An empty string is a value of a string, which ABAP's blank is, and of nothing else: a client
+// sends one for a cleared date or number. (A CSV cell left empty is null: see parseCsv.)
 function toInternal(value: unknown, type: string): PrimitiveValue {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined) return null;
+  if (value === "" && type !== "Edm.String") return null;
   switch (type) {
     case "Edm.Boolean": {
       // Any case, since spreadsheets write TRUE and FALSE
@@ -255,7 +298,11 @@ function checkDecimalFacets(text: string, prop: Property): void {
 // can hold such a value as JSON. Bad input is a 400, since it comes from a request body.
 // No value is null, or an empty collection: OData never has a null collection.
 function propToInternal(value: unknown, prop: Property): PropertyValue {
-  if (value === null || value === undefined || value === "")
+  if (
+    value === null ||
+    value === undefined ||
+    (value === "" && prop.type !== "Edm.String")
+  )
     return prop.isCollection ? [] : null;
   if ((prop.isCollection || prop.complexType) && typeof value === "string") {
     try {
@@ -353,6 +400,8 @@ function toComparable(
   if (type === "Edm.Int64" && INT64.test(String(value)))
     return BigInt(String(value));
   if (type && isNumericType(type)) return Number(value);
+  // Hex digits, in either case
+  if (type === "Edm.Guid") return String(value).toLowerCase();
   if (type === "Edm.DateTimeOffset")
     return new Date(value as string | number).getTime();
   if (type === "Edm.Date") return String(value).slice(0, 10);
@@ -392,6 +441,8 @@ export {
   CANONICAL_TO_V2,
   toInternal,
   keepLongNumbers,
+  keyText,
+  withPrecision,
   propToInternal,
   toComparable,
   toMillis,

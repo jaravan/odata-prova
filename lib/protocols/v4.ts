@@ -13,7 +13,7 @@ import type {
 } from "../model.ts";
 import type { ODataService } from "../service.ts";
 import type { Protocol } from "../protocol.ts";
-import { toInternal, specialFloat } from "../types.ts";
+import { toInternal, specialFloat, withPrecision } from "../types.ts";
 import {
   HttpError,
   own,
@@ -109,20 +109,6 @@ function keyLiteral(value: PropertyValue, prop: Property): string {
   return prop.type === "Edm.String"
     ? `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`
     : String(value);
-}
-
-// Fractional seconds cut or padded to the property's Precision facet. Without a facet the
-// precision is 0 (CSDL), and strict clients such as UI5's V4 model reject any fraction.
-function withPrecision(
-  value: PropertyValue,
-  precision: string | undefined,
-): string {
-  const digits = Number(precision) || 0;
-  return String(value).replace(
-    /(:\d{2})(?:\.(\d+))?(?=Z|[+-]\d{2}:\d{2}|$)/,
-    (_: string, sec: string, frac: string = "") =>
-      digits ? `${sec}.${frac.padEnd(digits, "0").slice(0, digits)}` : sec,
-  );
 }
 
 // A number JSON.stringify writes as the given text, every digit kept (Node 21 and later; not
