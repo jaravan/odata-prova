@@ -74,7 +74,9 @@ function typedExpression(
   option: string,
 ): { type: string | null; value(row: Row): unknown } {
   try {
-    const compiled = compileExpression(text, svc.protocol);
+    const compiled = compileExpression(text, svc.protocol, (name) =>
+      Object.hasOwn(type.properties, name),
+    );
     const resolve = resolver(svc, type);
     return {
       type: compiled.type((path) => pathType(svc, type, path)),

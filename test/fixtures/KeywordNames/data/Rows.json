@@ -1,0 +1,4 @@
+[
+  { "ID": 1, "Div": 5, "Mod": 5, "Add": 5, "In": 5, "Or": 5, "Le": 5, "Not": true, "True": true, "False": true, "Null": "n" },
+  { "ID": 2, "Div": 6, "Mod": 6, "Add": 6, "In": 6, "Or": 6, "Le": 6, "Not": false, "True": false, "False": false, "Null": null }
+]

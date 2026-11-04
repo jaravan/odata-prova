@@ -105,7 +105,9 @@ function applyQuery(
   if (opts.filter) {
     let predicate: (row: Row, resolve: Resolve) => boolean;
     try {
-      predicate = compileFilter(opts.filter, svc.protocol);
+      predicate = compileFilter(opts.filter, svc.protocol, (name) =>
+        Object.hasOwn(entityType.properties, name),
+      );
     } catch (e) {
       if (e instanceof HttpError) throw e;
       throw new HttpError(400, `Invalid $filter: ${(e as Error).message}`);

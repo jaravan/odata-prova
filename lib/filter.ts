@@ -77,7 +77,18 @@ const KEYWORDS = new Set([
   "mod",
 ]);
 
-function tokenize(input: string, protocol: LiteralSyntax): Token[] {
+// What a word is, where a value can be, whatever a property is called. These four are always
+// the keyword, as the spec writes them.
+const RESERVED = new Set(["true", "false", "null", "not"]);
+
+// isProperty: whether the type being filtered has a property of that name, so that Div eq 5
+// and True eq true read the property. Where an operator can be it's the operator, so that
+// Add add 1 reads each as it should.
+function tokenize(
+  input: string,
+  protocol: LiteralSyntax,
+  isProperty?: (name: string) => boolean,
+): Token[] {
   const tokens: Token[] = [];
   let i = 0;
   while (i < input.length) {
@@ -163,7 +174,20 @@ function tokenize(input: string, protocol: LiteralSyntax): Token[] {
         continue;
       }
       const lower = w.toLowerCase();
-      if (KEYWORDS.has(lower)) tokens.push({ kind: "op", value: lower });
+      const previous = tokens.at(-1)?.kind;
+      const operandHere =
+        previous !== "literal" &&
+        previous !== "path" &&
+        previous !== ")" &&
+        previous !== "these";
+      if (
+        operandHere &&
+        !RESERVED.has(w) &&
+        input[i + w.length] !== "(" &&
+        isProperty?.(w)
+      )
+        tokens.push({ kind: "path", value: w });
+      else if (KEYWORDS.has(lower)) tokens.push({ kind: "op", value: lower });
       else if (lower === "true" || lower === "false")
         tokens.push({
           kind: "literal",
@@ -661,8 +685,11 @@ function bounded<T>(run: () => T): T {
 function compileFilter(
   text: string,
   protocol: LiteralSyntax,
+  isProperty?: (name: string) => boolean,
 ): (row: Row, resolve: Resolve) => boolean {
-  const ast = bounded(() => new Parser(tokenize(text, protocol)).parse());
+  const ast = bounded(() =>
+    new Parser(tokenize(text, protocol, isProperty)).parse(),
+  );
   return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
 }
 
@@ -740,11 +767,14 @@ function expressionType(
 function compileExpression(
   text: string,
   protocol: LiteralSyntax,
+  isProperty?: (name: string) => boolean,
 ): {
   evaluate(row: Row, resolve: Resolve): Value;
   type(typeOf: (path: string) => string): string | null;
 } {
-  const ast = bounded(() => new Parser(tokenize(text, protocol)).parse());
+  const ast = bounded(() =>
+    new Parser(tokenize(text, protocol, isProperty)).parse(),
+  );
   return {
     evaluate: (row, resolve) => bounded(() => evaluate(ast, row, resolve)),
     type: (typeOf) => bounded(() => expressionType(ast, typeOf)),

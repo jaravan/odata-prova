@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="K" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Row">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Div" Type="Edm.Int32"/>
+        <Property Name="Mod" Type="Edm.Int32"/>
+        <Property Name="Add" Type="Edm.Int32"/>
+        <Property Name="In" Type="Edm.Int32"/>
+        <Property Name="Or" Type="Edm.Int32"/>
+        <Property Name="Le" Type="Edm.Int32"/>
+        <Property Name="Not" Type="Edm.Boolean"/>
+        <Property Name="True" Type="Edm.Boolean"/>
+        <Property Name="False" Type="Edm.Boolean"/>
+        <Property Name="Null" Type="Edm.String"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Rows" EntityType="K.Row"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

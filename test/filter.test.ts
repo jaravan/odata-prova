@@ -1,5 +1,7 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { start, get, type TestServer } from "./helpers.ts";
 import { compileFilter, type LiteralSyntax } from "../lib/filter.ts";
 import type { Row } from "../lib/model.ts";
 import v2 from "../lib/protocols/v2.ts";
@@ -180,5 +182,72 @@ describe("$filter, as the spec defines it where JavaScript differs", () => {
   it("cast and isof -> an error saying they aren't supported, not 'Unknown property'", () => {
     for (const f of ["cast(Qty,Edm.String) eq '7'", "isof(Name,Edm.String)"])
       assert.throws(() => run(v4, f), /not supported/);
+  });
+});
+
+// A property may be named as an operator or a literal is. A word stands for an operator only
+// where an operator can be, and in Rows's metadata these are all properties
+describe("$filter on a property named like a keyword", () => {
+  let s: TestServer;
+  before(
+    async () =>
+      (s = await start(
+        path.join(import.meta.dirname, "fixtures", "KeywordNames"),
+      )),
+  );
+  after(() => s.close());
+
+  const ids = async (filter: string) => {
+    const res = await get(
+      `${s.v4}/Rows?$select=ID&$filter=${encodeURIComponent(filter)}`,
+    );
+    assert.equal(res.status, 200, `${filter}: ${JSON.stringify(res.body)}`);
+    return res.body.value.map((r: { ID: number }) => r.ID);
+  };
+
+  it("named like an operator", async () => {
+    for (const name of ["Div", "Mod", "Add", "In", "Or", "Le"])
+      assert.deepEqual(await ids(`${name} eq 5`), [1], name);
+  });
+
+  it("on either side, beside the operator of its name", async () => {
+    assert.deepEqual(await ids("5 eq Div"), [1]);
+    assert.deepEqual(await ids("Add add 1 eq 6"), [1]);
+    assert.deepEqual(await ids("Div div 5 eq 1 and Mod mod 5 eq 0"), [1]);
+    assert.deepEqual(await ids("Or eq 5 or Or eq 6"), [1, 2]);
+    assert.deepEqual(await ids("In in (5)"), [1]);
+    assert.deepEqual(await ids("Le le 5"), [1]);
+  });
+
+  it("named like a literal", async () => {
+    assert.deepEqual(await ids("True eq true"), [1]);
+    assert.deepEqual(await ids("True eq false"), [2]);
+    assert.deepEqual(await ids("False eq true"), [1]);
+    assert.deepEqual(await ids("Null eq 'n'"), [1]);
+    assert.deepEqual(await ids("Null eq null"), [2]);
+    assert.deepEqual(await ids("true eq True"), [1]);
+  });
+
+  it("named like not", async () => {
+    assert.deepEqual(await ids("Not eq true"), [1]);
+    assert.deepEqual(await ids("not Not"), [2]);
+  });
+
+  it("the keywords themselves still work", async () => {
+    assert.deepEqual(await ids("true"), [1, 2]);
+    assert.deepEqual(await ids("not (ID eq 1)"), [2]);
+    assert.deepEqual(await ids("ID eq 1 OR ID eq 2"), [1, 2]);
+  });
+
+  it("$compute and $apply read them too", async () => {
+    const computed = await get(
+      `${s.v4}/Rows?$compute=${encodeURIComponent("Add add 1 as Next")}&$select=ID,Next&$orderby=ID`,
+    );
+    assert.equal(computed.body.value[0].Next, 6);
+    const applied = await get(
+      `${s.v4}/Rows?$apply=${encodeURIComponent("filter(Div eq 5)")}`,
+    );
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.value.length, 1);
   });
 });
