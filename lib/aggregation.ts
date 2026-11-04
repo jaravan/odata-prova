@@ -345,7 +345,12 @@ function ranked(
     );
   const sign = t.method.startsWith("top") ? -1 : 1;
   const valued = rows
-    .map((row) => ({ row, value: toComparable(valueOf(row), valueType) }))
+    .map((row) => ({
+      row,
+      value: toComparable(valueOf(row), valueType),
+      // What it adds to a sum: the comparable form of a decimal is in smaller units
+      amount: Number(valueOf(row)),
+    }))
     .filter((r) => r.value !== null)
     .sort((a, b) => {
       const x = a.value!,
@@ -354,7 +359,7 @@ function ranked(
     });
   if (counting) return valued.slice(0, t.value).map((r) => r.row);
   const target = t.method.endsWith("percent")
-    ? (valued.reduce((s, r) => s + Number(r.value), 0) * t.value) / 100
+    ? (valued.reduce((s, r) => s + r.amount, 0) * t.value) / 100
     : t.value;
   // The fewest rows from the start whose values add up to the target: none for 0
   const kept: Row[] = [];
@@ -362,7 +367,7 @@ function ranked(
   for (const r of valued) {
     if (sum >= target) break;
     kept.push(r.row);
-    sum += Number(r.value);
+    sum += r.amount;
   }
   return kept;
 }

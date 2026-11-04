@@ -7,6 +7,7 @@ import {
   distinctKey,
   isIntegerType,
   isNumericType,
+  decimalText,
   toComparable,
 } from "./types.ts";
 import type {
@@ -342,16 +343,6 @@ function sumOfNumbers(values: PrimitiveValue[]): string {
 }
 
 // units of 10^-scale as a decimal string: 15015n with scale 2 is "150.15"
-function decimalText(units: bigint, scale: number): string {
-  const negative = units < 0n;
-  const digits = (negative ? -units : units)
-    .toString()
-    .padStart(scale + 1, "0");
-  const whole = digits.slice(0, digits.length - scale);
-  const fraction = scale ? `.${digits.slice(digits.length - scale)}` : "";
-  return `${negative ? "-" : ""}${whole}${fraction}`;
-}
-
 export type { Aggregated };
 export {
   parseCustomAggregates,

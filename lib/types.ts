@@ -110,6 +110,38 @@ function numberOf(value: unknown): number {
     : NaN;
 }
 
+// A decimal as a whole number of 10^-DECIMAL_DIGITS, which compares and adds exactly;
+// undefined for what isn't one (INF, or text that's no number)
+function decimalUnits(value: unknown): bigint | undefined {
+  let text: string;
+  try {
+    text = plainDecimal(value, "Edm.Decimal");
+  } catch {
+    return undefined;
+  }
+  const negative = text.startsWith("-");
+  const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+  const units = BigInt(whole + fraction.padEnd(DECIMAL_DIGITS, "0"));
+  return negative ? -units : units;
+}
+
+// A whole number of 10^-scale as a decimal's text
+function decimalText(units: bigint, scale: number): string {
+  const negative = units < 0n;
+  const digits = (negative ? -units : units)
+    .toString()
+    .padStart(scale + 1, "0");
+  const whole = digits.slice(0, digits.length - scale);
+  const fraction = scale ? `.${digits.slice(digits.length - scale)}` : "";
+  return `${negative ? "-" : ""}${whole}${fraction}`;
+}
+
+// A value as a join compares it: as text, a GUID's digits in either case
+function joinText(value: unknown): string {
+  const text = String(value);
+  return GUID.test(text) ? text.toLowerCase() : text;
+}
+
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
 // or as something the type can't hold.
 function invalid(value: unknown, type: string): HttpError {
@@ -429,6 +461,7 @@ function toComparable(
   // number exactly, so a literal of another numeric type compares with it too.
   if (type === "Edm.Int64" && INT64.test(String(value)))
     return BigInt(String(value));
+  if (type === "Edm.Decimal") return decimalUnits(value) ?? Number(value);
   if (type && isNumericType(type)) return Number(value);
   // Hex digits, in either case
   if (type === "Edm.Guid") return String(value).toLowerCase();
@@ -470,6 +503,11 @@ export {
   V2_TO_CANONICAL,
   CANONICAL_TO_V2,
   toInternal,
+  INT64,
+  DECIMAL_DIGITS,
+  decimalUnits,
+  decimalText,
+  joinText,
   enumNamed,
   enumValue,
   INTEGER_RANGES,

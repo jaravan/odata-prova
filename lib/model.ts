@@ -456,4 +456,6 @@ export interface Literal {
   type: string | null;
   // An enum's literal, NS.Color'Red': the type it names, for the model to check
   enumType?: string;
+  // A time property's value on V4: the digits of a second it's shown with, and so compared
+  fraction?: string;
 }

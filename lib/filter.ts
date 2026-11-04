@@ -11,21 +11,28 @@ import type {
   EntityType,
   Literal,
   Model,
+  PrimitiveValue,
   Property,
   PropertyValue,
   Row,
 } from "./model.ts";
 import { HttpError, own } from "./query.ts";
 import {
+  DECIMAL_DIGITS,
+  INT64,
+  decimalText,
+  decimalUnits,
   enumNamed,
   enumValue,
   isNumericType,
   toComparable,
   toMillis,
+  withPrecision,
 } from "./types.ts";
 
 // What a protocol module supplies: how its literals are spelled
 export interface LiteralSyntax {
+  version?: string;
   typedLiteralPrefixes: Set<string>;
   parseLiteral(text: string): Literal;
   // V4 only: GUIDs, dates and times written without a prefix
@@ -453,8 +460,7 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
     };
   if ("neg" in node) {
     const v = evaluate(node.expr, row, resolve);
-    const type = arithmeticType("sub", v.type, v.type);
-    return { value: v.value === null ? null : -num(v), type };
+    return arithmetic("sub", { value: 0, type: v.type }, v);
   }
   if ("func" in node)
     return callFunction(
@@ -529,19 +535,78 @@ function arithmeticType(
   return "Edm.Double";
 }
 
-// add, sub, mul, div, divby, mod. Null when either side is null. div of two integers rounds
-// towards zero (5 div 2 is 2), divby doesn't (5 divby 2 is 2.5), and dividing an integer or a
-// decimal by zero is an error. A decimal result is cut to 15 significant digits, which drops
-// the noise of binary floating point (0.1 add 0.2 is 0.3).
+// An integer result, every digit kept: an Int64 is text internally (see toInternal), and JS's
+// / and % on bigints round towards zero and keep the dividend's sign, as OData's do
+function integerArithmetic(
+  op: string,
+  a: bigint,
+  b: bigint,
+  type: string,
+): PrimitiveValue {
+  if ((op === "div" || op === "mod") && b === 0n)
+    throw new Error("Division by zero");
+  const value =
+    op === "add"
+      ? a + b
+      : op === "sub"
+        ? a - b
+        : op === "mul"
+          ? a * b
+          : op === "mod"
+            ? a % b
+            : a / b;
+  return type === "Edm.Int64" ? String(value) : Number(value);
+}
+
+// A decimal result of add, sub, mul or mod, as text without trailing zeros; undefined when an
+// operand isn't a decimal
+function decimalArithmetic(op: string, l: Value, r: Value): string | undefined {
+  const a = decimalUnits(l.value),
+    b = decimalUnits(r.value);
+  if (a === undefined || b === undefined) return undefined;
+  const value =
+    op === "add"
+      ? a + b
+      : op === "sub"
+        ? a - b
+        : op === "mul"
+          ? (a * b) / 10n ** BigInt(DECIMAL_DIGITS)
+          : a % b;
+  const text = decimalText(value, DECIMAL_DIGITS);
+  return text.replace(/\.?0+$/, "");
+}
+
+// add, sub, mul, div, divby, mod. Null when either side is null. Integers and decimals keep
+// every digit. div of two integers rounds towards zero (5 div 2 is 2), divby doesn't (5 divby
+// 2 is 2.5), and dividing an integer or a decimal by zero is an error. A quotient of decimals
+// has no end, so it's cut to 15 significant digits.
 function arithmetic(op: string, l: Value, r: Value): Value {
   const type = arithmeticType(op, l.type, r.type);
   if (l.value === null || l.value === undefined) return { value: null, type };
   if (r.value === null || r.value === undefined) return { value: null, type };
+  if (
+    INTEGER.test(type) &&
+    INT64.test(String(l.value)) &&
+    INT64.test(String(r.value))
+  )
+    return {
+      value: integerArithmetic(
+        op,
+        BigInt(String(l.value)),
+        BigInt(String(r.value)),
+        type,
+      ),
+      type,
+    };
   const a = num(l),
     b = num(r);
   const exact = INTEGER.test(type) || type === "Edm.Decimal";
   if ((op === "div" || op === "divby" || op === "mod") && b === 0 && exact)
     throw new Error("Division by zero");
+  if (type === "Edm.Decimal" && ["add", "sub", "mul", "mod"].includes(op)) {
+    const value = decimalArithmetic(op, l, r);
+    if (value !== undefined) return { value, type };
+  }
   let value: number;
   switch (op) {
     case "add":
@@ -627,13 +692,30 @@ function str(v: Value): string {
   return v.value === null || v.value === undefined ? "" : String(v.value);
 }
 
+// The type two sides compare in. Between numbers the widest, so that a Decimal keeps its
+// digits against an Int64 and a Double is compared as doubles, which it is
+function comparedAs(left: string | null, right: string | null): string | null {
+  if (left && right && isNumericType(left) && isNumericType(right)) {
+    const float = [left, right].find((t) => /Double|Single/.test(t));
+    return (
+      float ?? ([left, right].includes("Edm.Decimal") ? "Edm.Decimal" : left)
+    );
+  }
+  return left && left !== "Edm.String" ? left : right;
+}
+
 // Whichever side is an actual property sets the type - that's what lets us compare
 // a plain string literal against a Decimal or DateTime property, or a bare V4 date against
 // a full timestamp, without the caller having to know or care.
 function compare(l: Value, r: Value): number {
-  const type = l.type && l.type !== "Edm.String" ? l.type : r.type;
-  const a = toComparable(l.value, type);
-  const b = toComparable(r.value, type);
+  const type = comparedAs(l.type, r.type);
+  const fraction = l.fraction ?? r.fraction;
+  const shown = (value: unknown) =>
+    fraction === undefined || value === null || value === undefined
+      ? value
+      : withPrecision(value as PropertyValue, fraction);
+  const a = toComparable(shown(l.value), type);
+  const b = toComparable(shown(r.value), type);
   if (a === null || b === null) return a === b ? 0 : NaN;
   // Not a - b, which is NaN for INF and INF. NaN itself stays equal to nothing.
   if (
@@ -718,11 +800,14 @@ function callFunction(name: string, args: Value[]): Value {
     case "now":
       return { value: new Date().toISOString(), type: "Edm.DateTimeOffset" };
     case "round":
+      if (args[0].type === "Edm.Int64") return args[0];
       // The spec rounds a midpoint away from zero, Math.round towards +Infinity (-2.5 -> -2)
       return number(Math.sign(N(0)) * Math.round(Math.abs(N(0))));
     case "floor":
+      if (args[0].type === "Edm.Int64") return args[0];
       return number(Math.floor(N(0)));
     case "ceiling":
+      if (args[0].type === "Edm.Int64") return args[0];
       return number(Math.ceil(N(0)));
     default:
       throw new Error(`Unsupported $filter function ${name}`);

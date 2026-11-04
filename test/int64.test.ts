@@ -147,3 +147,164 @@ describe("Edm.Int64 beyond 2^53 stays exact", () => {
     assert.match(res.text, /"Name":"even"/);
   });
 });
+
+describe("arithmetic on Edm.Int64 is exact", () => {
+  let s: TestServer;
+  before(async () => (s = await start(MODEL)));
+  after(() => s.close());
+
+  const ids = async (filter: string, root = s.v4) => {
+    const res = await fetch(
+      `${root}/Bigs?$select=ID&$filter=${encodeURIComponent(filter)}`,
+      { headers: STRINGS },
+    );
+    assert.equal(res.status, 200, filter);
+    return [...(await res.text()).matchAll(/"ID":"(-?\d+)"/g)].map((m) => m[1]);
+  };
+
+  it("add, sub and mul", async () => {
+    assert.deepEqual(await ids(`I64 add 1 eq 9007199254740994`), [ODD]);
+    assert.deepEqual(await ids(`I64 sub 1 eq ${EVEN}`), [ODD]);
+    assert.deepEqual(await ids(`I64 mul 2 eq 18014398509481986`), [ODD]);
+  });
+
+  it("div rounds towards zero, mod keeps the dividend's sign", async () => {
+    assert.deepEqual(
+      await ids(`I64 div 2 eq 4503599627370496 and I64 gt ${EVEN}`),
+      [ODD],
+    );
+    assert.deepEqual(await ids(`I64 mod 10 eq 3`), [ODD]);
+    assert.deepEqual(await ids(`I64 mod 10 eq -3`), [NEGATIVE]);
+  });
+
+  it("two properties, and a negation", async () => {
+    assert.deepEqual(await ids(`I64 add I64 eq 18014398509481986`), [ODD]);
+    assert.deepEqual(await ids(`-I64 eq ${NEGATIVE}`), [ODD]);
+    assert.deepEqual(await ids(`-(I64 add 1) eq -9007199254740994`), [ODD]);
+  });
+
+  it("V2, with L", async () => {
+    assert.deepEqual(await ids(`I64 add 1L eq 9007199254740994L`, s.v2), [ODD]);
+  });
+
+  it("division by zero is still an error", async () => {
+    const res = await fetch(`${s.v4}/Bigs?$filter=I64 div 0 eq 1`);
+    assert.equal(res.status, 400);
+  });
+
+  it("round, floor and ceiling leave an integer as it is", async () => {
+    for (const fn of ["round", "floor", "ceiling"])
+      assert.deepEqual(await ids(`${fn}(I64) eq ${ODD}`), [ODD], fn);
+  });
+
+  it("$compute writes every digit", async () => {
+    const res = await fetch(
+      `${s.v4}/Bigs(${ODD})?$compute=${encodeURIComponent("I64 add 2 as Next")}&$select=Next`,
+      { headers: STRINGS },
+    );
+    assert.equal(
+      ((await res.json()) as { Next: string }).Next,
+      "9007199254740995",
+    );
+  });
+});
+
+describe("Edm.Decimal compares, and adds up, by every digit", () => {
+  let s: TestServer;
+  const A = "12345678901234567890.12";
+  const B = "12345678901234567890.13";
+  before(async () => {
+    s = await start(MODEL);
+    await fetch(`${s.v4}/Bigs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"ID":1,"Dec":${A}}`,
+    });
+    await fetch(`${s.v4}/Bigs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"ID":2,"Dec":${B}}`,
+    });
+    await send("POST", `${s.v4}/Bigs`, { ID: 3, Dec: "1.50" });
+    await send("POST", `${s.v4}/Bigs`, { ID: 4, Dec: "0.1" });
+  });
+  after(() => s.close());
+
+  const ids = async (filter: string, root = s.v4) => {
+    const res = await fetch(
+      `${root}/Bigs?$select=ID&$filter=${encodeURIComponent(filter)}`,
+      { headers: STRINGS },
+    );
+    assert.equal(res.status, 200, filter);
+    return [...(await res.text()).matchAll(/"ID":"?(-?\d+)"?/g)].map(
+      (m) => m[1],
+    );
+  };
+
+  it("eq, gt and lt tell apart what a double can't", async () => {
+    assert.deepEqual(await ids(`Dec eq ${A}`), ["1"]);
+    assert.deepEqual(await ids(`Dec gt ${A}`), ["2"]);
+    assert.deepEqual(await ids(`Dec lt ${B} and Dec gt 2`), ["1"]);
+    assert.deepEqual(await ids(`${B} eq Dec`), ["2"]);
+    assert.deepEqual(await ids(`Dec in (${B})`), ["2"]);
+  });
+
+  it("V2, with M", async () => {
+    assert.deepEqual(await ids(`Dec eq ${A}M`, s.v2), ["1"]);
+  });
+
+  it("trailing zeros don't matter", async () => {
+    assert.deepEqual(await ids("Dec eq 1.5"), ["3"]);
+    assert.deepEqual(await ids("Dec eq 1.500"), ["3"]);
+  });
+
+  it("a whole number, an Int64 and a double compare with it", async () => {
+    assert.deepEqual(await ids("Dec gt 1 and Dec lt 2"), ["3"]);
+    assert.deepEqual(await ids("Dec gt 1e0 and Dec lt 2e0"), ["3"]);
+    assert.deepEqual(await ids("I64 eq null and Dec lt 1"), ["4"]);
+    assert.deepEqual(await ids("Dec lt INF and Dec gt -INF and Dec lt 1"), [
+      "4",
+    ]);
+  });
+
+  it("$orderby, min and max read every digit", async () => {
+    assert.deepEqual((await ids("Dec gt 2")).length, 2);
+    const res = await fetch(
+      `${s.v4}/Bigs?$filter=Dec gt 2&$orderby=Dec desc&$select=ID`,
+      { headers: STRINGS },
+    );
+    const { value } = (await res.json()) as { value: { ID: string }[] };
+    assert.deepEqual(
+      value.map((r) => r.ID),
+      ["2", "1"],
+    );
+    const applied = await fetch(
+      `${s.v4}/Bigs?$apply=${encodeURIComponent("aggregate(Dec with max as M)")}`,
+      { headers: STRINGS },
+    );
+    const body = (await applied.json()) as { value: { M: string }[] };
+    assert.equal(body.value[0].M, B);
+  });
+
+  it("add, sub, mul and mod are exact", async () => {
+    assert.deepEqual(await ids(`Dec add 0.01 eq ${B}`), ["1"]);
+    assert.deepEqual(await ids(`Dec sub 0.01 eq ${A}`), ["2"]);
+    assert.deepEqual(await ids("Dec add 0.2 eq 0.3"), ["4"]);
+    assert.deepEqual(await ids("Dec mul 3 eq 0.3"), ["4"]);
+    assert.deepEqual(await ids("Dec mod 1 eq 0.5"), ["3"]);
+    assert.deepEqual(await ids(`-Dec eq -${A}`), ["1"]);
+  });
+
+  it("topsum still adds up real amounts", async () => {
+    const res = await fetch(
+      `${s.v4}/Bigs?$apply=${encodeURIComponent("filter(Dec lt 2)/topsum(1,Dec)")}&$select=ID`,
+      { headers: STRINGS },
+    );
+    assert.equal(res.status, 200);
+    const { value } = (await res.json()) as { value: { ID: string }[] };
+    assert.deepEqual(
+      value.map((r) => r.ID),
+      ["3"],
+    );
+  });
+});
