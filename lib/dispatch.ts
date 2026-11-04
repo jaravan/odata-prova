@@ -4,7 +4,7 @@
 // ($ref and $links, see references.ts), a property, a collection, or an entity.
 
 import { specialFloat } from "./types.ts";
-import { HttpError, newNode, own } from "./query.ts";
+import { HttpError, decodeUrl, newNode, own } from "./query.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
@@ -111,10 +111,11 @@ function handle(
   body: unknown,
   headers: RequestHeaders,
 ): ODataResponse {
-  if (!path.startsWith(svc.servicePath))
-    throw new HttpError(404, `Not found: ${path}`);
+  // Both decoded alike: a service path is encoded for the URLs it goes in
+  const root = decodeUrl(svc.servicePath);
+  if (!path.startsWith(root)) throw new HttpError(404, `Not found: ${path}`);
   const resourcePath = path
-    .slice(svc.servicePath.length)
+    .slice(root.length)
     .replace(/^\/+/, "")
     .replace(/\/+$/, "");
   const protocol = svc.protocol;

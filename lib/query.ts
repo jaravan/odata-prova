@@ -47,6 +47,13 @@ class HttpError extends Error {
 // value is then decoded on its own (see resource-path.ts).
 const decodePath = (text: string) => decodeURI(text.replace(/%25/gi, "%2525"));
 
+// A service path as a URL has it: a folder's name may hold a space, a Ü, a # or a %, as
+// /odata/v4/My Srv. One that is encoded already stays as it is.
+const serviceUrlPath = (text: string) =>
+  encodeURI(text)
+    .replace(/%25([0-9a-f]{2})/gi, "%$1")
+    .replace(/[#?]/g, encodeURIComponent);
+
 // decodeURI and decodeURIComponent throw a URIError on a malformed escape (%E0%A4%A).
 // That is the client's mistake, so it is a 400.
 function decodeUrl(
@@ -187,6 +194,7 @@ export {
   HttpError,
   errorCode,
   decodeUrl,
+  serviceUrlPath,
   own,
   newNode,
   addExpandPath,

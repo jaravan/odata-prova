@@ -56,8 +56,8 @@ function resolveReference(
       `A reference for ${nav.name} must be a URL, got ${JSON.stringify(url)}`,
     );
   let path = decodeUrl(url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, ""));
-  if (path.startsWith(`${svc.servicePath}/`))
-    path = path.slice(svc.servicePath.length + 1);
+  const root = decodeUrl(svc.servicePath);
+  if (path.startsWith(`${root}/`)) path = path.slice(root.length + 1);
   else if (path.startsWith("/"))
     throw invalid(`${url} is not an entity of this service`);
   const segments = parseSegments(path);

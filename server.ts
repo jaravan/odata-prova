@@ -13,6 +13,7 @@ import type { ETagMode, JoinMode } from "./lib/app.ts";
 import { isPostgresUrl } from "./lib/postgres.ts";
 import { writeMockData } from "./lib/mock-data.ts";
 import { explain, fillerCount } from "./lib/explain.ts";
+import { serviceUrlPath } from "./lib/query.ts";
 
 const USAGE = `Usage: odata-prova [modelDir] [options]
 
@@ -336,8 +337,14 @@ const server = app.listen(PORT, (err) => {
     );
   const { port } = server.address() as AddressInfo;
   console.log(`odata-prova listening on port ${port}`);
-  if (V2_PATH) console.log(`  V2: http://localhost:${port}${V2_PATH}/`);
-  if (V4_PATH) console.log(`  V4: http://localhost:${port}${V4_PATH}/`);
+  for (const [name, servicePath] of [
+    ["V2", V2_PATH],
+    ["V4", V4_PATH],
+  ])
+    if (servicePath)
+      console.log(
+        `  ${name}: http://localhost:${port}${serviceUrlPath(servicePath)}/`,
+      );
 });
 
 // See SHUTDOWN_DELAY

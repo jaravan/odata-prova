@@ -1,6 +1,6 @@
 // Builds the Express app: one model, one store, and a V2 and/or V4 service on top of it.
 import express from "express";
-import type { ErrorRequestHandler, Express, Response } from "express";
+import type { ErrorRequestHandler, Express, Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMetadata } from "./metadata.ts";
@@ -27,7 +27,7 @@ import { ETAG_MODES } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
 import { JOIN_MODES } from "./navigations.ts";
 import type { JoinMode } from "./navigations.ts";
-import { HttpError, decodeUrl } from "./query.ts";
+import { HttpError, decodeUrl, serviceUrlPath } from "./query.ts";
 import { keepLongNumbers } from "./types.ts";
 import v2 from "./protocols/v2.ts";
 import v4 from "./protocols/v4.ts";
@@ -87,9 +87,24 @@ function operationRules(model: Model, config: Config): Rules {
   );
 }
 
+// The method a request stands for. HEAD is GET without a body (Node drops the body itself):
+// UI5 sends HEAD to the service root, e.g. to fetch a CSRF token. A POST with X-HTTP-Method
+// is that method, sent by a client that can't send it as it is: UI5's V2 model does so for
+// a MERGE outside a $batch.
+function requestMethod(req: Request): string {
+  if (req.method === "HEAD") return "GET";
+  const tunnelled = req.get("x-http-method")?.trim().toUpperCase();
+  return req.method === "POST" && tunnelled && TUNNELLED.has(tunnelled)
+    ? tunnelled
+    : req.method;
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// The methods X-HTTP-Method can stand for (see requestMethod)
+const TUNNELLED = new Set(["PUT", "PATCH", "MERGE", "DELETE"]);
 
 export interface AppOptions {
   // The folder with metadata.xml, and data/ and config.json if any
@@ -218,7 +233,7 @@ function createApp({
         model,
         store,
         protocol: protocols[name],
-        servicePath: servicePath.replace(/\/+$/, ""),
+        servicePath: serviceUrlPath(servicePath.replace(/\/+$/, "")),
         metadataXml: metadata[name],
         log,
         rules,
@@ -341,9 +356,7 @@ function createApp({
           res,
           service.protocol,
           await service.dispatch(
-            // HEAD is GET without a body (Node drops the body itself). UI5 sends
-            // HEAD to the service root, e.g. to fetch a CSRF token.
-            req.method === "HEAD" ? "GET" : req.method,
+            requestMethod(req),
             decodeUrl(req.path),
             req.query,
             req.body,
