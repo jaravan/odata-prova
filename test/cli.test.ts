@@ -1,11 +1,11 @@
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
-import { PO_MODEL } from "./helpers.ts";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { PO_MODEL, literally } from "./helpers.ts";
 
 // The odata-prova command itself: its flags, and what it says when it can't start
 const SERVER = path.join(import.meta.dirname, "..", "server.ts");
@@ -18,10 +18,18 @@ const run = (args: string[], env: Record<string, string> = {}) =>
   });
 
 // Starts it: the port it listens on, what it has printed so far, and a way to stop it
+// A test that fails before it stops its server would leave it running, and the run waiting
+const running = new Set<ChildProcess>();
+after(() => {
+  for (const child of running) child.kill();
+});
+
 async function started(args: string[], env: Record<string, string> = {}) {
   const child = spawn(process.execPath, [SERVER, ...args], {
     env: { ...process.env, ...env },
   });
+  running.add(child);
+  child.once("exit", () => running.delete(child));
   let output = "";
   child.stdout.on("data", (d) => (output += d));
   child.stderr.on("data", (d) => (output += d));
@@ -258,7 +266,7 @@ describe("odata-prova --persist", () => {
       assert.match(
         first.output(),
         new RegExp(
-          `Saved state: none in ${file} yet, the rows above saved as the first`,
+          `Saved state: none in ${literally(file)} yet, the rows above saved as the first`,
         ),
       );
       assert.equal((await patch(first.port, "Kept")).status, 204);
@@ -270,7 +278,7 @@ describe("odata-prova --persist", () => {
         assert.match(
           second.output(),
           new RegExp(
-            `Saved state: loaded from ${file} \\(the rows above are not used\\)`,
+            `Saved state: loaded from ${literally(file)} \\(the rows above are not used\\)`,
           ),
         );
         assert.equal(await status(second.port), "Kept");
@@ -298,7 +306,7 @@ describe("odata-prova --persist", () => {
         assert.match(
           reset.output(),
           new RegExp(
-            `Saved state: reset in ${file}, the rows above saved over it`,
+            `Saved state: reset in ${literally(file)}, the rows above saved over it`,
           ),
         );
         assert.equal(await status(reset.port), seeded);

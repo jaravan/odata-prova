@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { start, send, ORDER, PO_MODEL } from "./helpers.ts";
+import { start, send, literally, ORDER, PO_MODEL } from "./helpers.ts";
 import { createApp } from "../lib/app.ts";
 import { SqlitePersistence } from "../lib/sqlite.ts";
 
@@ -192,7 +192,7 @@ describe("SqlitePersistence", () => {
     await assert.rejects(
       new SqlitePersistence(missing).load(),
       new RegExp(
-        `cannot open ${missing}: unable to open database file \\(does its folder exist, and can this process write to it\\?\\)`,
+        `cannot open ${literally(missing)}: unable to open database file \\(does its folder exist, and can this process write to it\\?\\)`,
       ),
     );
   });

@@ -63,6 +63,9 @@ async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
   };
 }
 
+// Text as a RegExp reads it literally: a Windows path's backslashes would be escapes
+const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 async function parse(res: Response): Promise<any> {
   const text = await res.text();
   const ct = res.headers.get("content-type") || "";
@@ -176,6 +179,7 @@ export {
   SALES_MODEL,
   ORDER,
   ITEM,
+  literally,
   start,
   get,
   send,
