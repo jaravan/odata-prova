@@ -98,6 +98,41 @@ describe("serviceUrlPath, as the server prints a service's URL", () => {
   });
 });
 
+describe("a percent-encoded service path, in either case of its hex digits", () => {
+  let s: TestServer;
+  const v4 = () => `${s.base}/odata/M%c3%bcller/v4`;
+  before(
+    async () =>
+      (s = await start(MODEL, {
+        v2Path: "/odata/Müller/v2",
+        v4Path: "/odata/Müller/v4",
+      })),
+  );
+  after(() => s.close());
+
+  it("answers", async () => {
+    assert.equal((await get(`${v4()}/Docs`)).status, 200);
+    assert.equal((await get(`${v4()}/$metadata`)).status, 200);
+  });
+
+  it("$batch", async () => {
+    const res = await batch(v4(), [{ method: "GET", url: "Docs('%231')" }]);
+    assert.equal(res.status, 200);
+    assert.equal(batchResponses(res.text)[0].status, 200);
+  });
+
+  it("an error is the right service's", async () => {
+    const res = await get(`${s.base}/odata/M%c3%bcller/v2/Nope`);
+    assert.equal(res.status, 404);
+    assert.ok(res.body.error.message.value, "V2's error format");
+  });
+
+  it("the rest of the path stays exact", async () => {
+    const res = await get(`${s.base}/odata/M%C3%BCLLER/v4/Docs`);
+    assert.equal(res.status, 404);
+  });
+});
+
 describe("service paths that can't work stop the start", () => {
   const mistake = (v2Path: string, v4Path: string, message: RegExp) =>
     assert.throws(

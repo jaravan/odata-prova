@@ -118,6 +118,15 @@ function checkServicePaths(
     );
 }
 
+// A service path as a request may write it: an escape's hex digits come in either case
+function pathPattern(servicePath: string): string {
+  return escapeRegex(servicePath).replace(/%[0-9A-F]{2}/g, (escape) =>
+    [...escape]
+      .map((c) => (c.toLowerCase() === c ? c : `[${c}${c.toLowerCase()}]`))
+      .join(""),
+  );
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -327,7 +336,7 @@ function createApp({
   // $batch bodies are multipart and must stay raw; everything else is JSON.
   for (const service of services) {
     app.post(
-      new RegExp(`^${escapeRegex(service.servicePath)}/\\$batch$`),
+      new RegExp(`^${pathPattern(service.servicePath)}/\\$batch$`),
       express.raw({ type: () => true, limit: "10mb" }),
       createBatchHandler(service),
     );
@@ -367,7 +376,7 @@ function createApp({
   // regex and let the service parse the rest of the path itself.
   for (const service of services) {
     app.all(
-      new RegExp(`^${escapeRegex(service.servicePath)}(/|$)`),
+      new RegExp(`^${pathPattern(service.servicePath)}(/|$)`),
       async (req, res) => {
         sendResult(
           res,
@@ -400,10 +409,8 @@ function createApp({
     const status = err instanceof HttpError || err.expose ? err.status : 500;
     if (status === 500) console.error(err);
     const service =
-      services.find(
-        (s) =>
-          req.path === s.servicePath ||
-          req.path.startsWith(`${s.servicePath}/`),
+      services.find((s) =>
+        new RegExp(`^${pathPattern(s.servicePath)}(/|$)`).test(req.path),
       ) || services[0];
     const protocol = service?.protocol || protocols.v4;
     const code = err instanceof HttpError ? err.code : undefined;
