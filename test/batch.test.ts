@@ -1,8 +1,10 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import {
   start,
   get,
+  send,
   batch,
   batchResponses,
   ORDER,
@@ -197,5 +199,96 @@ describe("a JSON $batch", () => {
     } finally {
       await s.close();
     }
+  });
+});
+
+describe("$batch: reading what was sent", () => {
+  let s: TestServer;
+  before(
+    async () =>
+      (s = await start(path.join(import.meta.dirname, "fixtures", "OddKeys"))),
+  );
+  after(() => s.close());
+
+  const raw = (body: string) =>
+    fetch(`${s.v4}/$batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed; boundary=b" },
+      body,
+    });
+  const part = (url: string) =>
+    `--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nGET ${url} HTTP/1.1\r\n\r\n\r\n`;
+
+  it("a ? in a query's value is part of it", async () => {
+    await send("POST", `${s.v4}/Docs`, { No: "q" });
+    const res = await batch(s.v4, [
+      { method: "GET", url: "Docs?$filter=No%20eq%20'%3Fq'" },
+      { method: "GET", url: "Docs?$filter=No%20eq%20'?q'&$select=No" },
+    ]);
+    const [encoded, plain] = batchResponses(res.text);
+    assert.equal(encoded.body.value.length, 1);
+    assert.deepEqual(
+      plain.body.value,
+      encoded.body.value.map((r: { No: string }) => ({ No: r.No })),
+    );
+  });
+
+  it("no closing delimiter is a 400, and nothing ran", async () => {
+    const res = await raw(
+      `--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nPOST Docs HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"No":"cut"}\r\n`,
+    );
+    assert.equal(res.status, 400);
+    assert.equal((await get(`${s.v4}/Docs('cut')`)).status, 404);
+  });
+
+  it("a changeset without one fails alone", async () => {
+    const res = await raw(
+      `--b\r\nContent-Type: multipart/mixed; boundary=cs\r\n\r\n--cs\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nPOST Docs HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"No":"cs"}\r\n--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nGET Docs('%231') HTTP/1.1\r\n\r\n\r\n--b--\r\n`,
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      batchResponses(await res.text()).map((r) => r.status),
+      [400, 200],
+    );
+    assert.equal((await get(`${s.v4}/Docs('cs')`)).status, 404);
+  });
+
+  it("every part runs when it does close", async () => {
+    const res = await raw(
+      `${part("Docs?$top=1")}${part("Docs?$top=1")}--b--\r\n`,
+    );
+    assert.equal(batchResponses(await res.text()).length, 2);
+  });
+
+  it("a Content-ID named like what objects inherit is no reference", async () => {
+    for (const name of ["__proto__", "constructor", "toString"]) {
+      const res = await batch(s.v4, [
+        [{ method: "PATCH", url: `$${name}`, body: { Text: "x" } }],
+      ]);
+      const [reply] = batchResponses(res.text);
+      assert.equal(reply.status, 400, name);
+      assert.equal(
+        reply.body.error.message,
+        `Unknown Content-ID reference $${name}`,
+      );
+    }
+  });
+
+  it("__proto__ can be a Content-ID", async () => {
+    const res = await batch(s.v4, [
+      [
+        {
+          method: "POST",
+          url: "Docs",
+          contentId: "__proto__",
+          body: { No: "p" },
+        },
+        { method: "PATCH", url: "$__proto__", body: { Text: "x" } },
+      ],
+    ]);
+    assert.deepEqual(
+      batchResponses(res.text).map((r) => r.status),
+      [201, 204],
+    );
   });
 });

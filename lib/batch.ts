@@ -5,7 +5,7 @@
 // and within one, `$<Content-ID>/Nav` can reference an entity a prior part just created.
 import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
-import { HttpError, decodeUrl } from "./query.ts";
+import { HttpError, decodeUrl, own } from "./query.ts";
 import { keepLongNumbers } from "./types.ts";
 import type { ODataService } from "./service.ts";
 import type { Protocol } from "./protocol.ts";
@@ -36,6 +36,16 @@ function splitMultipart(
   const delimiter = new RegExp(
     `(?:^|\\r?\\n)--${escaped}(?:--)?[ \\t]*(?=\\r?\\n|$)`,
   );
+  // Cut short: what's after the last delimiter may be half a request, so none of it runs
+  if (
+    !new RegExp(`(?:^|\\r?\\n)--${escaped}--[ \\t]*(?=\\r?\\n|$)`).test(
+      bodyText,
+    )
+  )
+    throw new HttpError(
+      400,
+      `The multipart body has no closing --${boundary}--`,
+    );
   const segments = bodyText.split(delimiter);
   return segments
     .slice(1, -1)
@@ -116,6 +126,26 @@ function renderHttpResponsePart(
   return `HTTP/1.1 ${result.status} ${STATUS_TEXT[result.status] || ""}\r\n${headers}\r\n${bodyText}`;
 }
 
+// A body with its @odata.bind links to $<content id> as the URLs of what those requests made
+function withContentIds(body: unknown, refs: Record<string, string>): unknown {
+  if (!body || typeof body !== "object") return body;
+  const resolve = (url: unknown) =>
+    (typeof url === "string" &&
+      url.startsWith("$") &&
+      own(refs, url.slice(1))) ||
+    url;
+  return Object.fromEntries(
+    Object.entries(body).map(([name, value]: [string, unknown]) => [
+      name,
+      !name.endsWith("@odata.bind")
+        ? value
+        : Array.isArray(value)
+          ? value.map(resolve)
+          : resolve(value),
+    ]),
+  );
+}
+
 function createBatchHandler(
   service: ODataService,
 ): (req: Request, res: Response) => Promise<void> {
@@ -129,19 +159,31 @@ function createBatchHandler(
     let url = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
-      const target = contentIdRefs[ref[1]];
+      const target = own(contentIdRefs, ref[1]);
       if (!target)
         return protocol.error(400, `Unknown Content-ID reference $${ref[1]}`);
       url = target + ref[2];
     }
     if (!url.startsWith("/")) url = `${service.servicePath}/${url}`;
-    const [pathOnly, queryString] = url.split("?");
-    const query = Object.fromEntries(new URLSearchParams(queryString || ""));
+    // Only the first ? starts the query: one in a value is the value's
+    const at = url.indexOf("?");
+    const pathOnly = at === -1 ? url : url.slice(0, at);
+    const params = new URLSearchParams(at === -1 ? "" : url.slice(at + 1));
+    // An option given twice is a list, as the Express parser's are (see rejectUnsupported)
+    const query = Object.fromEntries(
+      [...params.keys()].map((name) => {
+        const values = params.getAll(name);
+        return [name, values.length > 1 ? values : values[0]];
+      }),
+    );
 
     let parsedBody: unknown;
     if (bodyText) {
       try {
-        parsedBody = JSON.parse(bodyText, keepLongNumbers);
+        parsedBody = withContentIds(
+          JSON.parse(bodyText, keepLongNumbers),
+          contentIdRefs,
+        );
       } catch {
         parsedBody = undefined;
       }
@@ -174,12 +216,23 @@ function createBatchHandler(
 
     if (/multipart\/mixed/i.test(outerContentType)) {
       const innerBoundary = extractBoundary(outerContentType);
+      let members: string[];
+      try {
+        members = splitMultipart(remainder, innerBoundary);
+      } catch (e) {
+        const { status, message, code } = e as HttpError;
+        return {
+          changeset: true,
+          results: [{ result: protocol.error(status, message, code) }],
+        };
+      }
       const mark = store.begin();
-      const refs: Record<string, string> = {};
+      // No prototype: a Content-ID is any text, __proto__ included
+      const refs = Object.create(null) as Record<string, string>;
       const results: ProcessedPart["results"] = [];
       let failed = false;
       try {
-        for (const p of splitMultipart(remainder, innerBoundary)) {
+        for (const p of members) {
           // Each changeset member is itself an "application/http"-wrapped part, so its own
           // Content-Type/Content-ID header block has to be peeled off first.
           const [innerHead, innerRemainder] = splitOnceOnBlankLine(p);
