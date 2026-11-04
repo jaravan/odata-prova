@@ -84,14 +84,18 @@ function parseConcurrency(
 }
 /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
 
+// A value as it goes in an entity tag. The tag is a response header as well, which holds
+// neither a newline nor a character above U+00FF, and a client sends it back, so all but
+// printable ASCII is percent-encoded: a quote, which would end the tag, and the % that keeps
+// a value apart from the escape of another.
+const tagText = (value: PropertyValue) =>
+  String(value).replace(/[^\x20-\x7e]|["%]/gu, encodeURIComponent);
+
 // The entity's ETag, or undefined for an entity set without
 function etagOf(model: Model, setName: string, row: Row): string | undefined {
   const names = model.entitySets[setName]?.concurrency;
   if (!names) return undefined;
-  const values = names.map((n) =>
-    // No quote inside an entity tag
-    row[n] === null ? "" : String(row[n]).replace(/"/g, "%22"),
-  );
+  const values = names.map((n) => (row[n] === null ? "" : tagText(row[n])));
   return `W/"${values.join(",")}"`;
 }
 

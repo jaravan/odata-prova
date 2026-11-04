@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Alias="Core" Namespace="Org.OData.Core.V1"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="T" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EnumType Name="Color"><Member Name="Red" Value="1"/></EnumType>
+      <EntityType Name="Note">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="V" Type="Edm.String"/>
+      </EntityType>
+      <EntityType Name="Keyed">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.String" Nullable="false"/>
+        <Property Name="N" Type="Edm.String"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Notes" EntityType="T.Note"/>
+        <EntitySet Name="Keyed" EntityType="T.Keyed"/>
+      </EntityContainer>
+      <Annotations Target="T.C/Notes">
+        <Annotation Term="Core.OptimisticConcurrency"><Collection><PropertyPath>V</PropertyPath></Collection></Annotation>
+      </Annotations>
+      <Annotations Target="T.C/Keyed">
+        <Annotation Term="Core.OptimisticConcurrency"><Collection><PropertyPath>ID</PropertyPath></Collection></Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

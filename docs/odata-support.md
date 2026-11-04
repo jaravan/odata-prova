@@ -18,6 +18,7 @@ In a CSV data file, a complex or collection value goes in its cell as JSON. Filt
 Writes and data files are checked against the metadata. Each of these is a `400` (`InvalidValue`), and a data file with one stops the start, naming it:
 
 - a value that doesn't fit its type:
+  - a string with half a surrogate pair, which has no form in a URL or a header
   - an integer outside its type's range: `Edm.Byte` 0 to 255, `Edm.SByte`, `Edm.Int16`, `Edm.Int32` and `Edm.Int64` theirs
   - a decimal with more digits than its `Precision`, or more after the point than its `Scale` (`Scale="variable"`, or none: any, up to the `Precision`). One with an exponent is kept as the digits it stands for: `1.5e2` is `150`
   - a date or time that isn't ISO 8601 (`2025-03-07`, `2025-03-07T10:00:00Z`, with an offset or without, which is UTC), or that isn't in the calendar (`2025-02-30`). A space for the `T`, and slashes in the date (`2025/03/07`), as spreadsheets write them, are read too, as are V2's `/Date(ms)/`. Nothing else is guessed at: `07.03.2025` and `03/07/2025` are refused rather than read in the server's timezone
@@ -351,7 +352,7 @@ These are a `400` with the code `InvalidReference`, and nothing changes:
 
 An entity set has ETags when the metadata names the properties they're made of: `Core.OptimisticConcurrency` on the set (V4, as CAP writes it for `@odata.etag`), or `ConcurrencyMode="Fixed"` on properties of its type (V2, as SAP Gateway writes it). The other protocol's `$metadata` says the same in its own terms.
 
-- **Reading.** An entity's ETag is in the `ETag` header of a single-entity response, and in the payload as `@odata.etag` (V4) or `__metadata.etag` (V2), expanded entities included. It is those properties' values, e.g. `W/"2026-01-01T10:00:00.000Z"`.
+- **Reading.** An entity's ETag is in the `ETag` header of a single-entity response, and in the payload as `@odata.etag` (V4) or `__metadata.etag` (V2), expanded entities included. It is those properties' values, e.g. `W/"2026-01-01T10:00:00.000Z"`. All but printable ASCII in a value is percent-encoded, as are `"` and `%`, since a header can't hold a newline or `€`: send the tag back as it came.
 - **Writing.** A `PUT`, `PATCH`, `MERGE` or `DELETE`, or an action on the entity, sent with an `If-Match` that holds neither the entity's current ETag nor `*` is a `412`: the entity has changed since it was read, and nothing changes. A successful update answers with the new ETag.
 - **New values.** The server sets the ETag's properties on every create and change, as CAP does for a managed `modifiedAt` and RAP for its last-changed timestamp. So another client's ETag goes stale:
   - a timestamp moves to now

@@ -21,6 +21,7 @@ import {
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const V4_MODEL = path.join(FIXTURES, "ETagSrv");
 const V2_MODEL = path.join(FIXTURES, "ETagSrvV2");
+const TEXT_MODEL = path.join(FIXTURES, "ETagText");
 
 describe("ETags (Core.OptimisticConcurrency, V4 document, strict)", () => {
   let s: TestServer;
@@ -505,5 +506,61 @@ describe("ETag values: a write gives each of the ETag's properties a new one", (
   it("a type without a next value (a boolean, a time of day) keeps its value", () => {
     assert.equal(renewed("Edm.Boolean", true), true);
     assert.equal(renewed("Edm.TimeOfDay", "10:00:00"), "10:00:00");
+  });
+});
+
+// An ETag is also a response header, which holds neither a newline nor anything above U+00FF,
+// and a client sends it back as it received it
+describe("ETags of values a header can't hold", () => {
+  let s: TestServer;
+  before(async () => (s = await start(TEXT_MODEL)));
+  after(() => s.close());
+
+  it("each one reads, on both protocols, with the same ETag in header and body", async () => {
+    for (const id of [1, 2, 3, 4, 5, 6, 7]) {
+      const v4 = await get(`${s.v4}/Notes(${id})`);
+      assert.equal(v4.status, 200, String(id));
+      assert.equal(v4.headers.get("etag"), v4.body["@odata.etag"]);
+      assert.match(v4.headers.get("etag")!, /^W\/"[\x20-\x7e]*"$/);
+      const v2 = await get(`${s.v2}/Notes(${id})`);
+      assert.equal(v2.status, 200, String(id));
+      assert.equal(v2.headers.get("etag"), v2.body.d.__metadata.etag);
+    }
+  });
+
+  it("values stay apart: 10€ is not the text of its own escape", async () => {
+    const tags = await Promise.all(
+      [1, 6].map(async (id) => {
+        const res = await get(`${s.v4}/Notes(${id})`);
+        return res.headers.get("etag");
+      }),
+    );
+    assert.notEqual(tags[0], tags[1]);
+  });
+
+  it("the ETag a client got is one it can send back", async () => {
+    const { headers } = await get(`${s.v4}/Notes(2)`);
+    const stale = await send(
+      "PATCH",
+      `${s.v4}/Notes(2)`,
+      { V: "x" },
+      { "If-Match": 'W/"other"' },
+    );
+    assert.equal(stale.status, 412);
+    const fresh = await send(
+      "PATCH",
+      `${s.v4}/Notes(2)`,
+      { V: "x" },
+      { "If-Match": headers.get("etag")! },
+    );
+    assert.equal(fresh.status, 204);
+  });
+
+  it("a created entity whose key is in its ETag answers 201, and reads", async () => {
+    const created = await send("POST", `${s.v4}/Keyed`, { ID: "日本" });
+    assert.equal(created.status, 201);
+    const read = await get(`${s.v4}/Keyed('${encodeURIComponent("日本")}')`);
+    assert.equal(read.status, 200);
+    assert.equal(read.body.ID, "日本");
   });
 });
