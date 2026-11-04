@@ -9,6 +9,7 @@ import { HttpError } from "../lib/query.ts";
 const MODEL = path.join(import.meta.dirname, "fixtures", "OddKeys");
 const VALUE_KEYS = path.join(import.meta.dirname, "fixtures", "ValueKeys");
 const VALUE_KEYS_V2 = path.join(import.meta.dirname, "fixtures", "ValueKeysV2");
+const GUID_JOINS = path.join(import.meta.dirname, "fixtures", "GuidJoins");
 const KEYS = ["SO/2025/1", "a,b", "a=b", "#1", "?q", "&a", "50%", "it's"];
 
 // A key as a client writes it in a URL: quoted, a quote doubled, then percent-encoded
@@ -219,6 +220,28 @@ describe("keys that compare by value", () => {
     assert.equal(dup.status, 409);
   });
 
+  it("$filter finds a time by what a response shows, on V4", async () => {
+    const shown = "2025-02-02T10:00:00Z";
+    await send("POST", `${s.v4}/Stamps`, { ID: "2025-02-02T10:00:00.5Z" });
+    const eq = await get(`${s.v4}/Stamps?$filter=ID eq ${shown}`);
+    assert.deepEqual(
+      eq.body.value.map((r: { ID: string }) => r.ID),
+      [shown],
+    );
+    const gt = await get(`${s.v4}/Stamps?$filter=ID gt ${shown}`);
+    assert.equal(gt.body.value.length, 0);
+    const fine = await send("POST", `${s.v4}/Fines`, {
+      ID: "2025-02-02T10:00:00.5Z",
+    });
+    assert.equal(fine.status, 201);
+    const exact = await get(
+      `${s.v4}/Fines?$filter=ID eq 2025-02-02T10:00:00.500Z`,
+    );
+    assert.equal(exact.body.value.length, 1);
+    const other = await get(`${s.v4}/Fines?$filter=ID eq 2025-02-02T10:00:00Z`);
+    assert.equal(other.body.value.length, 0);
+  });
+
   it("a Precision that keeps the fraction keeps entities apart", async () => {
     for (const ID of ["2025-01-01T10:00:00.123Z", "2025-01-01T10:00:00.124Z"])
       assert.equal((await send("POST", `${s.v4}/Fines`, { ID })).status, 201);
@@ -272,5 +295,52 @@ describe("a time key of a V2 document", () => {
   it("V2 reads it by its datetime literal", async () => {
     const read = await get(`${s.v2}/Stamps(datetime'2025-01-01T10:00:00.123')`);
     assert.equal(read.status, 200);
+  });
+});
+
+// The two sides of a join may write a GUID in different cases: it's one value
+describe("a GUID foreign key, in another case than its parent's key", () => {
+  let s: TestServer;
+  const UPPER = "AAAAAAAA-0000-4000-8000-000000000001";
+  const LOWER = UPPER.toLowerCase();
+  before(async () => (s = await start(GUID_JOINS)));
+  after(() => s.close());
+
+  it("the parent's collection holds both", async () => {
+    const res = await get(`${s.v4}/Parents(${LOWER})/Kids/$count`);
+    assert.equal(res.body, "2");
+  });
+
+  it("$expand, both ways", async () => {
+    const { body } = await get(`${s.v4}/Parents?$expand=Kids`);
+    assert.equal(body.value[0].Kids.length, 2);
+    const kids = await get(`${s.v4}/Kids?$expand=Parent`);
+    for (const kid of kids.body.value) assert.equal(kid.Parent.Name, "upper");
+  });
+
+  it("a child's parent, and $filter through it", async () => {
+    assert.equal((await get(`${s.v4}/Kids(1)/Parent`)).body.Name, "upper");
+    const filtered = await get(`${s.v4}/Kids?$filter=Parent/Name eq 'upper'`);
+    assert.equal(filtered.body.value.length, 2);
+    const any = await get(`${s.v4}/Parents?$filter=Kids/any(k:k/ID eq 1)`);
+    assert.equal(any.body.value.length, 1);
+  });
+
+  it("the stored value keeps its case", async () => {
+    assert.equal((await get(`${s.v4}/Parents(${LOWER})`)).body.ID, UPPER);
+    assert.equal((await get(`${s.v4}/Kids(1)`)).body.ParentID, LOWER);
+  });
+
+  it("a key may hold a GUID in either case", async () => {
+    await send("POST", `${s.v4}/Lines`, { ParentID: UPPER, No: 1 });
+    const dup = await send("POST", `${s.v4}/Lines`, { ParentID: LOWER, No: 1 });
+    assert.equal(dup.status, 409);
+    const read = await get(`${s.v4}/Lines(ParentID=${LOWER},No=1)`);
+    assert.equal(read.status, 200);
+  });
+
+  it("$filter on the foreign key finds it in either case", async () => {
+    const { body } = await get(`${s.v4}/Kids?$filter=ParentID eq ${LOWER}`);
+    assert.equal(body.value.length, 2);
   });
 });

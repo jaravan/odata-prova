@@ -17,7 +17,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
-import { keyText, propToInternal } from "./types.ts";
+import { joinText, keyText, propToInternal } from "./types.ts";
 import { own } from "./query.ts";
 import { foreignKeys, generateData, generateLinks } from "./generate.ts";
 import type { MockRules } from "./mock-rules.ts";
@@ -149,9 +149,9 @@ type Change =
   | { op: "update"; set: string; row: Row; before: Row; absent: string[] }
   | { op: "remove"; set: string; row: Row; index: number };
 
-// The key of a lookup: values compared as strings, as navigations compare them
+// The key of a lookup: values compared as navigations compare them (see joinText)
 const valuesKey = (values: PropertyValue[]) =>
-  JSON.stringify(values.map((v) => String(v)));
+  JSON.stringify(values.map(joinText));
 
 // Undoes changes, last first, on data: the store's, or a copy of it (see Store.audit)
 function undo(data: Record<string, Row[]>, changes: Change[]): void {
@@ -580,7 +580,7 @@ class Store {
     return (
       entityType.keys.every(same) &&
       (entityType.parentKeys ?? []).every(
-        (k) => !(k in key) || String(row[k]) === String(key[k]),
+        (k) => !(k in key) || joinText(row[k]) === joinText(key[k]),
       )
     );
   }

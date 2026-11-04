@@ -90,7 +90,9 @@ A `$select` of something that is neither a property nor a navigation of the type
 
 `INF`, `-INF` and `NaN` are literals, as in the spec. `round` takes a midpoint away from zero (`round(-2.5)` is `-3`), and durations compare by their length (`duration'P1D' gt duration'PT1H'`). The spec's functions `cast`, `isof`, `fractionalseconds`, `totaloffsetminutes`, `totalseconds`, `mindatetime`, `maxdatetime` and `matchesPattern` are a `501`, and any other unknown function a `400`.
 
-Comparisons of decimals in `$filter` are a double's, so ones that differ only after the 15th significant digit compare equal. Sums and averages in `$apply` are exact.
+Integers and decimals in `$filter` and `$compute` keep every digit: comparisons, and `add`, `sub`, `mul` and `mod`. A quotient of decimals has no end, so `div` and `divby` give 15 significant digits. A `Double` on either side compares as a double. Sums and averages in `$apply` are exact.
+
+A time property compares as a response shows it: on V4, to its `Precision`, none if it has none. A GUID foreign key finds its parent in either case.
 
 Arithmetic in `$filter` follows the spec's numeric promotion:
 

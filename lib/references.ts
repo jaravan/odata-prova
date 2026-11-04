@@ -10,6 +10,7 @@
 import { HttpError, decodeUrl, own } from "./query.ts";
 import { parseSegments, parseKey } from "./resource-path.ts";
 import { renewETag } from "./etag.ts";
+import { joinText } from "./types.ts";
 import { addLink, removeLink } from "./links.ts";
 import type { LiteralSyntax } from "./filter.ts";
 import type { ODataService } from "./service.ts";
@@ -124,7 +125,10 @@ function link(
     // A foreign key in the entity's key (an item's order) is set when it's created, by
     // boundValues in writes.ts, and can't change after
     for (const [src, tgt] of nav.join)
-      if (type.keys.includes(src) && String(row[src]) !== String(target[tgt]))
+      if (
+        type.keys.includes(src) &&
+        joinText(row[src]) !== joinText(target[tgt])
+      )
         throw invalid(
           `${nav.name} links through ${type.name}'s key, which can't change`,
         );

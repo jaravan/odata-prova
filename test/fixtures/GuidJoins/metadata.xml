@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="G" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Parent">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <NavigationProperty Name="Kids" Type="Collection(G.Kid)" Partner="Parent"/>
+      </EntityType>
+      <EntityType Name="Kid">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="ParentID" Type="Edm.Guid"/>
+        <NavigationProperty Name="Parent" Type="G.Parent" Partner="Kids">
+          <ReferentialConstraint Property="ParentID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="Line">
+        <Key><PropertyRef Name="ParentID"/><PropertyRef Name="No"/></Key>
+        <Property Name="ParentID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="No" Type="Edm.Int32" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Parents" EntityType="G.Parent">
+          <NavigationPropertyBinding Path="Kids" Target="Kids"/>
+        </EntitySet>
+        <EntitySet Name="Kids" EntityType="G.Kid">
+          <NavigationPropertyBinding Path="Parent" Target="Parents"/>
+        </EntitySet>
+        <EntitySet Name="Lines" EntityType="G.Line"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

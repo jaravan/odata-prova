@@ -5,6 +5,7 @@
 
 import type { LinkEnd, Model, Navigation, Row } from "./model.ts";
 import type { Store } from "./store.ts";
+import { joinText } from "./types.ts";
 
 // The navigation's source end and target end
 function endsOf(model: Model, nav: Navigation): [LinkEnd, LinkEnd] {
@@ -13,7 +14,7 @@ function endsOf(model: Model, nav: Navigation): [LinkEnd, LinkEnd] {
 }
 
 const holds = (link: Row, end: LinkEnd, row: Row) =>
-  end.columns.every((c, i) => String(link[c]) === String(row[end.keys[i]]));
+  end.columns.every((c, i) => joinText(link[c]) === joinText(row[end.keys[i]]));
 
 // The target rows linked to row
 function linkedRows(

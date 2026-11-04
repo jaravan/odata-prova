@@ -11,6 +11,7 @@ import type {
   EntityType,
   Literal,
   Model,
+  Property,
   PropertyValue,
   QueryNode,
   Row,
@@ -54,17 +55,28 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
     }
     return { row: currentRow, type: currentType };
   };
+  // V4 writes a time to its Precision, so that's as fine as a client can ask for it. V2 writes
+  // it to the millisecond, whatever the Precision.
+  const valueOf = (row: Row, prop: Property): Literal =>
+    svc.protocol.version === "4.0" &&
+    ["Edm.DateTimeOffset", "Edm.TimeOfDay"].includes(prop.type)
+      ? {
+          value: row[prop.name],
+          type: prop.type,
+          fraction: prop.precision ?? "0",
+        }
+      : { value: row[prop.name], type: prop.type };
   const resolve = (row: Row, path: string): Literal => {
     // A path that is a property of its own: $apply's result for a groupby on a path
     const itself = own(entityType.properties, path.replace(/^\$it\//, ""));
-    if (itself) return { value: row[itself.name], type: itself.type };
+    if (itself) return valueOf(row, itself);
     const parts = path.replace(/^\$it\//, "").split("/");
     const at = walk(row, parts.slice(0, -1), path);
     if (!at) return { value: null, type: null };
     const prop = own(at.type.properties, parts[parts.length - 1]);
     if (!prop)
       throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
-    return { value: at.row[prop.name], type: prop.type };
+    return valueOf(at.row, prop);
   };
   resolve.collection = (row: Row, path: string): Collection => {
     const parts = path.replace(/^\$it\//, "").split("/");

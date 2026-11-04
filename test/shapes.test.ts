@@ -248,6 +248,13 @@ describe("$filter on enums and times of day", () => {
     assert.deepEqual(await ids("second(Tod) eq 3"), [2]);
   });
 
+  it("an Edm.TimeOfDay filters by what a response shows of it", async () => {
+    const shown = (await get(`${s.v4}/Items(2)`)).body.Tod;
+    assert.equal(shown, "01:02:03");
+    assert.deepEqual(await ids(`Tod eq ${shown}`), [2]);
+    assert.deepEqual(await ids(`Tod ne ${shown} and Tod ne null`), [1]);
+  });
+
   it("an enum literal, by namespace or alias", async () => {
     assert.deepEqual(await ids("Color eq Sh.Ns.Color'Red'"), [1]);
     assert.deepEqual(await ids("Color eq Sh.Color'Blue'"), [2]);

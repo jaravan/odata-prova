@@ -475,7 +475,8 @@ for (const backend of BACKENDS) {
             );
         },
         async (s) => {
-          const { body } = await get(`${s.v4}/Notes('blank')`);
+          const { status, body } = await get(`${s.v4}/Notes('blank')`);
+          assert.equal(status, 200, JSON.stringify(body));
           assert.equal(body.Required, "");
           assert.equal(body.Text, "");
           assert.equal(body.Addr.City, "");
