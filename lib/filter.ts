@@ -562,7 +562,12 @@ function compare(l: Value, r: Value): number {
   const a = toComparable(l.value, type);
   const b = toComparable(r.value, type);
   if (a === null || b === null) return a === b ? 0 : NaN;
-  if (typeof a === "number" && typeof b === "number") return a - b;
+  // Not a - b, which is NaN for INF and INF. NaN itself stays equal to nothing.
+  if (
+    (typeof a === "number" || typeof a === "bigint") &&
+    (typeof b === "number" || typeof b === "bigint")
+  )
+    return a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
   const sa = String(a),
     sb = String(b);
   return sa < sb ? -1 : sa > sb ? 1 : 0;

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="B" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Big">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int64" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <Property Name="I64" Type="Edm.Int64"/>
+        <Property Name="Dec" Type="Edm.Decimal" Precision="30" Scale="variable"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Bigs" EntityType="B.Big"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

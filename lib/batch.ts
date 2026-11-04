@@ -6,6 +6,7 @@
 import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
 import { HttpError, decodeUrl } from "./query.ts";
+import { keepLongNumbers } from "./types.ts";
 import type { ODataService } from "./service.ts";
 import type { Protocol } from "./protocol.ts";
 
@@ -140,7 +141,7 @@ function createBatchHandler(
     let parsedBody: unknown;
     if (bodyText) {
       try {
-        parsedBody = JSON.parse(bodyText);
+        parsedBody = JSON.parse(bodyText, keepLongNumbers);
       } catch {
         parsedBody = undefined;
       }

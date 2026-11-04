@@ -28,6 +28,7 @@ import type { ETagMode } from "./etag.ts";
 import { JOIN_MODES } from "./navigations.ts";
 import type { JoinMode } from "./navigations.ts";
 import { HttpError, decodeUrl } from "./query.ts";
+import { keepLongNumbers } from "./types.ts";
 import v2 from "./protocols/v2.ts";
 import v4 from "./protocols/v4.ts";
 
@@ -301,7 +302,11 @@ function createApp({
   }
 
   app.use(
-    express.json({ type: ["application/json", "text/plain"], limit: "10mb" }),
+    express.json({
+      type: ["application/json", "text/plain"],
+      limit: "10mb",
+      reviver: keepLongNumbers,
+    }),
   );
 
   function sendResult(

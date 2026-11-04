@@ -103,6 +103,20 @@ function invalid(value: unknown, type: string): HttpError {
   return new HttpError(400, `Invalid ${type} value: ${value}`, "InvalidValue");
 }
 
+// A JSON.parse reviver for a request's body: a number with more digits than a double holds
+// (9007199254740993, an Int64) is read as its text, which the property's type then reads.
+// The source text is the reviver's third argument (Node 21 and later).
+const keepLongNumbers = ((
+  _key: string,
+  value: unknown,
+  context?: { source?: string },
+) =>
+  typeof value === "number" &&
+  context?.source !== undefined &&
+  context.source.replace(/e.*$|[-.]/gi, "").replace(/^0+/, "").length > 15
+    ? context.source
+    : value) as (key: string, value: unknown) => unknown;
+
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
 function toInternal(value: unknown, type: string): PrimitiveValue {
   if (value === null || value === undefined || value === "") return null;
@@ -179,6 +193,10 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
         throw invalid(value, type);
       return s;
     }
+    case "Edm.String":
+      // Half a surrogate pair isn't text, and has no form in a URL or a header
+      if (/\p{Cs}/u.test(String(value))) throw invalid(value, type);
+      return String(value);
     default:
       return String(value);
   }
@@ -328,8 +346,12 @@ function toIsoDateTime(value: unknown, type: string): string {
 function toComparable(
   value: unknown,
   type: string | null | undefined,
-): PrimitiveValue {
+): PrimitiveValue | bigint {
   if (value === null || value === undefined) return null;
+  // Every digit, which a double would round from 2^53 on. < and > compare a bigint with a
+  // number exactly, so a literal of another numeric type compares with it too.
+  if (type === "Edm.Int64" && INT64.test(String(value)))
+    return BigInt(String(value));
   if (type && isNumericType(type)) return Number(value);
   if (type === "Edm.DateTimeOffset")
     return new Date(value as string | number).getTime();
@@ -369,6 +391,7 @@ export {
   V2_TO_CANONICAL,
   CANONICAL_TO_V2,
   toInternal,
+  keepLongNumbers,
   propToInternal,
   toComparable,
   toMillis,

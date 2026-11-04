@@ -55,6 +55,17 @@ describe("integer values are checked against their type's range", () => {
   });
 });
 
+describe("strings are text", () => {
+  it("half a surrogate pair -> 400: it can't be encoded, in a URL or a header", () => {
+    rejects("a\ud83d", "Edm.String");
+    rejects("\udc00b", "Edm.String");
+  });
+
+  it("a whole pair is one character", () => {
+    assert.equal(toInternal("😀", "Edm.String"), "😀");
+  });
+});
+
 describe("dates and times are ISO 8601, checked against the calendar", () => {
   it("a date that doesn't exist -> 400, not the next month", () => {
     rejects("2025-02-30", "Edm.Date");

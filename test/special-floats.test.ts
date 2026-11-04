@@ -29,6 +29,17 @@ describe("INF, -INF and NaN", () => {
       (m: M) => m.V,
     );
 
+  it("$filter: INF equals itself, NaN equals nothing", async () => {
+    const ids = async (filter: string) =>
+      (
+        await get(`${s.v4}/Ms?$select=ID&$filter=${encodeURIComponent(filter)}`)
+      ).body.value.map((m: { ID: number }) => m.ID);
+    assert.deepEqual(await ids("V eq INF"), [1]);
+    assert.deepEqual(await ids("V eq -INF"), [2]);
+    assert.deepEqual(await ids("V eq NaN"), []);
+    assert.deepEqual(await ids("V lt INF and V gt -INF"), [4]);
+  });
+
   it("are written as strings on V4 and V2", async () => {
     assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
     const v2 = await get(`${s.v2}/Ms?$orderby=ID`, {

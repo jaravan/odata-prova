@@ -91,7 +91,10 @@ function parseLiteral(text: string): Literal {
     return { value: bare.value, type: bare.type };
   // Numbers. Decimal/Int64 literals stay strings internally, so keep the text when it has a
   // fraction and let the comparison coerce. The property's type prevails
-  if (/^-?\d+$/.test(t)) return { value: Number(t), type: "Edm.Int32" };
+  if (/^-?\d+$/.test(t))
+    return Number.isSafeInteger(Number(t))
+      ? { value: Number(t), type: "Edm.Int32" }
+      : { value: t, type: "Edm.Int64" };
   if (/^-?\d+\.\d+$/.test(t)) return { value: t, type: "Edm.Decimal" };
   if (/^-?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(t))
     return { value: Number(t), type: "Edm.Double" };
