@@ -3,7 +3,7 @@ import express from "express";
 import type { ErrorRequestHandler, Express, Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { parseMetadata } from "./metadata.ts";
+import { parseMetadata, readMetadata } from "./metadata.ts";
 import { emitV2 } from "./emit-v2.ts";
 import { emitV4 } from "./emit-v4.ts";
 import { Store } from "./store.ts";
@@ -99,6 +99,25 @@ function requestMethod(req: Request): string {
     : req.method;
 }
 
+// A path no request can reach, or that takes another's requests, would only show as 404s
+function checkServicePaths(
+  v2Path: string | undefined,
+  v4Path: string | undefined,
+): void {
+  const paths = [v2Path, v4Path].filter(Boolean) as string[];
+  for (const p of paths)
+    if (!p.startsWith("/"))
+      throw configError(`A service path starts with /, got ${p}`);
+  if (paths.length < 2) return;
+  const [v2, v4] = paths.map((p) => p.replace(/\/+$/, ""));
+  if (v2 === v4)
+    throw configError(`V2 and V4 can't have the same path, ${v2Path}`);
+  if (v2.startsWith(`${v4}/`) || v4.startsWith(`${v2}/`))
+    throw configError(
+      `One service path can't be inside the other: ${v2Path} and ${v4Path}`,
+    );
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -168,10 +187,7 @@ function createApp({
   reloadRules?: () => Promise<void>;
 } {
   // Read input metadata file
-  const metadataXml = fs.readFileSync(
-    path.join(modelDir, "metadata.xml"),
-    "utf8",
-  );
+  const metadataXml = readMetadata(path.join(modelDir, "metadata.xml"));
 
   // Parse metadata file info
   const model = parseMetadata(metadataXml, { joins });
@@ -222,6 +238,7 @@ function createApp({
         }
       }),
   );
+  checkServicePaths(v2Path, v4Path);
   const services: ODataService[] = [];
   for (const [name, servicePath] of [
     ["v2", v2Path],

@@ -28,7 +28,7 @@ import type {
 } from "./model.ts";
 import type { MockRule, MockValue } from "./config.ts";
 import type { MockRules } from "./mock-rules.ts";
-import { propToInternal } from "./types.ts";
+import { INTEGER_RANGES, propToInternal } from "./types.ts";
 
 // A seeded random number generator, uniform in [0, 1)
 type Rng = () => number;
@@ -922,6 +922,8 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
     case "Edm.SByte":
     case "Edm.Int16":
     case "Edm.Int32":
+      // Past what the type holds there are no more keys, and so no more rows
+      return seq > INTEGER_RANGES[prop.type][1] ? null : seq;
     case "Edm.Double":
     case "Edm.Single":
       return seq;
@@ -943,6 +945,7 @@ function keyValue(prop: Property, seq: number, rng: Rng): PrimitiveValue {
     case "Edm.String": {
       // Short string keys are zero-padded the way SAP shows document numbers: 0000000001
       const max = Number(prop.maxLength);
+      if (String(seq).length > max) return null;
       return max > 0 && max <= 12 ? pad(seq, max) : String(seq);
     }
     default:

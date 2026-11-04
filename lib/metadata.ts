@@ -3,6 +3,7 @@
 // operations for the other protocol, and emit-v2.ts and emit-v4.ts write the Model out as
 // the other protocol's $metadata.
 
+import fs from "node:fs";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type {
   ComplexType,
@@ -76,6 +77,19 @@ export type Qualify = (name: string) => string;
 // --- Parsing ------------------------------------------------------------------------------
 
 // joins: how a navigation without a ReferentialConstraint is joined (see navigations.ts)
+// metadata.xml's text. It's read as UTF-8, or UTF-16 by its byte order mark: PowerShell 5.1's
+// > writes that. The declaration is then changed to what the text is served as.
+function readMetadata(file: string): string {
+  const bytes = fs.readFileSync(file);
+  const bigEndian = bytes[0] === 0xfe && bytes[1] === 0xff;
+  if (!bigEndian && !(bytes[0] === 0xff && bytes[1] === 0xfe))
+    return bytes.toString("utf8");
+  const text = (bigEndian ? Buffer.from(bytes).swap16() : bytes)
+    .subarray(2)
+    .toString("utf16le");
+  return text.replace(/^(<\?xml[^>]*encoding=["'])utf-16/i, "$1utf-8");
+}
+
 function parseMetadata(
   xml: string,
   { joins = "guess" }: { joins?: JoinMode } = {},
@@ -808,4 +822,4 @@ function extractBlocks(xml: string, tag: string): string[] {
   return xml.match(re) || [];
 }
 
-export { parseMetadata };
+export { parseMetadata, readMetadata };

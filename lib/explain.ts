@@ -6,10 +6,9 @@
 // property, how it's made, where that's decided, and a sample, and the rules of shared files
 // that this model doesn't use.
 
-import fs from "node:fs";
 import path from "node:path";
 import type { Model, Property, PropertyValue } from "./model.ts";
-import { parseMetadata } from "./metadata.ts";
+import { parseMetadata, readMetadata } from "./metadata.ts";
 import { loadConfig, type MockRule } from "./config.ts";
 import { resolveMockRules, type MockRules } from "./mock-rules.ts";
 import { sourceOf, humanize, type Source } from "./generate.ts";
@@ -120,7 +119,7 @@ function fillerCount(model: Model, store: Store, modelDir: string): number {
 // The --explain text for the model in modelDir, generating rows rows per set
 function explain(modelDir: string, rows: number, all: boolean): string {
   const model = parseMetadata(
-    fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
+    readMetadata(path.join(modelDir, "metadata.xml")),
   );
   const config = loadConfig(modelDir);
   const rules = resolveMockRules(model, config.mock, rows);

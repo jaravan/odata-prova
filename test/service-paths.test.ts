@@ -2,6 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { serviceUrlPath } from "../lib/query.ts";
+import { createApp } from "../lib/app.ts";
 import {
   start,
   get,
@@ -94,5 +95,39 @@ describe("serviceUrlPath, as the server prints a service's URL", () => {
   it("is one a client can use", () => {
     assert.equal(serviceUrlPath("/odata/v4/My Srv"), "/odata/v4/My%20Srv");
     assert.equal(serviceUrlPath("/odata/v4/Plain"), "/odata/v4/Plain");
+  });
+});
+
+describe("service paths that can't work stop the start", () => {
+  const mistake = (v2Path: string, v4Path: string, message: RegExp) =>
+    assert.throws(
+      () => createApp({ modelDir: MODEL, v2Path, v4Path, log() {} }),
+      message,
+    );
+
+  it("one without its leading /", () => {
+    mistake("/v2", "foo", /starts with \/, got foo/);
+  });
+
+  it("the same for both", () => {
+    mistake("/a", "/a", /same/);
+    mistake("/a", "/a/", /same/);
+  });
+
+  it("one inside the other, either way round", () => {
+    mistake("/a", "/a/b", /inside/);
+    mistake("/a/b", "/a", /inside/);
+  });
+
+  it("a shared beginning is fine", () => {
+    assert.ok(
+      createApp({ modelDir: MODEL, v2Path: "/a", v4Path: "/ab", log() {} }),
+    );
+  });
+
+  it("one turned off is fine", () => {
+    assert.ok(
+      createApp({ modelDir: MODEL, v2Path: "", v4Path: "/a", log() {} }),
+    );
   });
 });

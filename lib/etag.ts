@@ -29,7 +29,7 @@ import type {
   Row,
 } from "./model.ts";
 import type { RequestHeaders } from "./protocol.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import type { Store } from "./store.ts";
 
 const CONCURRENCY = "Org.OData.Core.V1.OptimisticConcurrency";
@@ -70,7 +70,7 @@ function parseConcurrency(
   for (const es of Object.values(model.entitySets)) {
     const et = model.entityTypes[es.entityType];
     const names =
-      declared[es.name] ??
+      own(declared, es.name) ??
       Object.values(et.properties)
         .filter((p) => p.concurrency)
         .map((p) => p.name);

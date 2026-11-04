@@ -1,6 +1,6 @@
 # Mock data
 
-Each entity set without a data file gets 20 generated rows, the same ones on every start. A set of items, whose key holds its parent's (an order's items), gets 1 to 5 rows under each parent instead, as no SAP document is without items ([lib/generate.ts](../lib/generate.ts)). It's decided per entity set: write files for some sets, and let the rest be generated.
+Each entity set without a data file gets 20 generated rows, the same ones on every start. A set of items, whose key holds its parent's (an order's items), gets 1 to 5 rows under each parent instead, as no SAP document is without items ([lib/generate.ts](../lib/generate.ts)). It's decided per entity set: write files for some sets, and let the rest be generated. A key the type can't hold more of ends the rows: an `Edm.Byte` key gets 255 at most, a `MaxLength="1"` one 9.
 
 The generated rows:
 

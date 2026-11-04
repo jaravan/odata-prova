@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { EntityType, PropertyValue, Row } from "./model.ts";
-import { parseMetadata } from "./metadata.ts";
+import { parseMetadata, readMetadata } from "./metadata.ts";
 import { Store } from "./store.ts";
 import { loadConfig } from "./config.ts";
 import { resolveMockRules } from "./mock-rules.ts";
@@ -41,7 +41,7 @@ function writeMockData(
   rows: number,
 ): { file: string; rows: number }[] {
   const model = parseMetadata(
-    fs.readFileSync(path.join(modelDir, "metadata.xml"), "utf8"),
+    readMetadata(path.join(modelDir, "metadata.xml")),
   );
   // The rows the server would generate: by config.json's mock rules too, checked the same way
   const mockRules = resolveMockRules(model, loadConfig(modelDir).mock, rows);
