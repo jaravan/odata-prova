@@ -354,6 +354,10 @@ class ODataService {
       this.store.rollback(mark);
       if (e instanceof HttpError)
         return this.protocol.error(e.status, e.message, e.code);
+      // A $search or a $apply nested thousands of levels deep, which a $batch can hold: the
+      // parsers recurse once per level, and that's the client's expression, not a bug here
+      if (e instanceof RangeError && /call stack/i.test(e.message))
+        return this.protocol.error(400, "The request is nested too deeply");
       console.error(e);
       return this.protocol.error(500, (e as Error).message);
     }

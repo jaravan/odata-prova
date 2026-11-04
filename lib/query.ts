@@ -172,9 +172,17 @@ function rejectUnsupported(
   for (const name of Object.keys(query))
     if (name.startsWith("$") && !known.has(name))
       throw new HttpError(400, `Unknown system query option ${name}`);
+  // Given twice the option is a list, which none of them means. A custom option is the
+  // operation's or nobody's, but for the one that's read as a query option.
+  for (const name of Object.keys(query))
+    if (
+      (name.startsWith("$") || name === "search") &&
+      typeof query[name] !== "string"
+    )
+      throw new HttpError(400, `${name} can only be given once`);
   if (
     query.$format !== undefined &&
-    !/^(json|application\/json)$/i.test(String(query.$format).trim())
+    !/^(json|application\/json(\s*;.*)?)$/i.test(String(query.$format).trim())
   ) {
     throw new HttpError(
       501,

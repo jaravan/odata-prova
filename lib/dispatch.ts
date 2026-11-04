@@ -25,6 +25,7 @@ import type {
   EntityType,
   ODataResponse,
   Property,
+  PropertyValue,
   QueryNode,
   ResponseOptions,
   Row,
@@ -120,7 +121,9 @@ function handle(
     .replace(/\/+$/, "");
   const protocol = svc.protocol;
   const opts: ResponseOptions = {
-    ieee754: /IEEE754Compatible=true/i.test(String(headers.accept || "")),
+    ieee754: /IEEE754Compatible=true/i.test(
+      `${String(headers.accept || "")} ${String(query.$format || "")}`,
+    ),
     prefer: String(headers.prefer || ""),
   };
   const pageSize = pageSizeFor(svc.pageSize, protocol.version, opts.prefer);
@@ -173,6 +176,10 @@ function handle(
     wantRefs = true;
     segments.splice(linksAt, 1);
   }
+
+  // /$count, /$value and /$ref alone: what's left names nothing
+  if (!segments.length)
+    throw new HttpError(404, `${resourcePath} needs a resource to apply to`);
 
   const request: Request = {
     svc,
@@ -282,7 +289,13 @@ function handle(
         );
       if (wantRefs)
         throw new HttpError(400, `${seg.name} is a property, not a navigation`);
-      return propertyRequest(request, { setName, type, row }, prop, wantValue);
+      return propertyRequest(
+        request,
+        { setName, type, row },
+        prop,
+        wantValue,
+        wantCount,
+      );
     }
     if (nav.draft === "admin" && method !== "GET")
       throw new HttpError(405, `${nav.name} is read-only`);
@@ -342,6 +355,8 @@ function handle(
   if (q.apply && (method !== "GET" || row !== undefined))
     throw new HttpError(400, "$apply applies to reading a collection only");
 
+  if (wantCount && row !== undefined)
+    throw new HttpError(400, "$count applies to a collection, not an entity");
   if (wantCount) return countRequest(request, { setName, type, rows });
 
   const at = { setName, type, rows, parent: parentForCreate };
@@ -370,12 +385,14 @@ function draftAdminRequest(request: Request): ODataResponse {
   return entityRequest(request, { setName: name, type, rows, row });
 }
 
-// A property of an entity: Set(key)/Prop, or its raw value with /$value
+// A property of an entity: Set(key)/Prop, its raw value with /$value, or a collection's size
+// with /$count
 function propertyRequest(
   request: Request,
   at: { setName: string; type: EntityType; row: Row },
   prop: Property,
   wantValue: boolean,
+  wantCount: boolean,
 ): ODataResponse {
   const { svc, method, q, opts } = request;
   const { setName, type, row } = at;
@@ -383,6 +400,20 @@ function propertyRequest(
   if (q.apply)
     throw new HttpError(400, "$apply applies to reading a collection only");
   const value = row[prop.name];
+  if (wantCount && !prop.isCollection)
+    throw new HttpError(
+      400,
+      `$count applies to a collection, not ${prop.name}`,
+    );
+  // V2 has no collection properties: its property() answers for that
+  if (wantCount && svc.protocol.version === "4.0")
+    return {
+      status: 200,
+      contentType: "text/plain",
+      body: String((value as PropertyValue[]).length),
+    };
+  if (wantValue && (prop.isCollection || prop.complexType))
+    throw new HttpError(400, `$value applies to a primitive, not ${prop.name}`);
   if (wantValue)
     return {
       status: 200,
