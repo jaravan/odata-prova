@@ -441,6 +441,14 @@ describe("a request nested past reason", () => {
     );
   });
 
+  it("$apply is a quick 400 too", async () => {
+    const { status, took } = await inBatch(
+      `Items?$apply=${"concat(".repeat(20000)}identity${")".repeat(20000)}`,
+    );
+    assert.equal(status, 400);
+    assert.ok(took < 1000, `${took}ms`);
+  });
+
   it("a long run of spaces in $expand doesn't hold the server", async () => {
     const spaces = "%20".repeat(100000);
     const { status, took } = await inBatch(`Items?$expand=Kids${spaces}x`);

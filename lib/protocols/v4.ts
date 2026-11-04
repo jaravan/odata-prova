@@ -32,9 +32,10 @@ import { expandLink } from "../paging.ts";
 
 const version = "4.0";
 const headers: Record<string, string> = { "OData-Version": "4.0" };
-// More than any response could use: each level of $expand reads the text of those below it,
-// so a body-sized one, which a $batch can hold, would take seconds and then the whole stack
-const MAX_EXPAND_NESTING = 1000;
+// More than any response could use: each level of $expand or $apply reads the text of those
+// below it, so a body-sized one, which a $batch can hold, would take seconds and then the
+// whole stack
+const MAX_NESTING = 1000;
 const typedLiteralPrefixes = new Set(["duration", "binary"]);
 
 const GUID =
@@ -286,8 +287,9 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   rejectUnsupported(query, SYSTEM_OPTIONS);
   // Query string values are text (a repeated option isn't supported)
   const q = query as Record<string, string | undefined>;
-  if (q.$expand && nesting(q.$expand) > MAX_EXPAND_NESTING)
-    throw new HttpError(400, "$expand is nested too deeply");
+  for (const name of ["$expand", "$apply"])
+    if (q[name] && nesting(q[name]) > MAX_NESTING)
+      throw new HttpError(400, `${name} is nested too deeply`);
   const root = newNode();
   parseExpand(q.$expand, root);
   if (q.$select)
