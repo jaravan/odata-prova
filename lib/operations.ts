@@ -91,10 +91,14 @@ function boundOperation(
     t = t.baseType ? svc.model.entityTypes[t.baseType] : undefined
   )
     types.add(t.fullName);
+  // A schema's alias stands for its namespace here too
+  const dot = name.lastIndexOf(".");
+  const namespace = own(svc.model.aliases, name.slice(0, Math.max(dot, 0)));
+  const qualified = namespace ? `${namespace}${name.slice(dot)}` : name;
   // A bound operation has a binding parameter (see parseOperations)
   return svc.operations.bound.find(
     (op) =>
-      (op.fullName === name || op.name === name) &&
+      (op.fullName === qualified || op.name === name) &&
       types.has(op.binding!.elementType) &&
       op.binding!.isCollection === onCollection,
   );

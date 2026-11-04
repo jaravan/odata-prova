@@ -17,8 +17,13 @@
 //   Date                          "YYYY-MM-DD"
 //   TimeOfDay                     "HH:MM:SS[.fff]"
 
-import type { PrimitiveValue, Property, PropertyValue } from "./model.ts";
-import { HttpError } from "./query.ts";
+import type {
+  EnumType,
+  PrimitiveValue,
+  Property,
+  PropertyValue,
+} from "./model.ts";
+import { HttpError, own } from "./query.ts";
 
 const V2_DATE = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/;
 const V2_TIME = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i;
@@ -95,6 +100,13 @@ function distinctKey(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
     specialFloat(v) ? { $float: specialFloat(v) } : v,
   );
+}
+
+// A number, or one as text in decimal: Number alone would also read 0x10, and blanks as 0
+function numberOf(value: unknown): number {
+  return typeof value !== "string" || DECIMAL.test(value.trim())
+    ? Number(value)
+    : NaN;
 }
 
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
@@ -175,8 +187,7 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
     case "Edm.Int32":
     case "Edm.Byte":
     case "Edm.SByte": {
-      const n =
-        typeof value === "string" && value.trim() === "" ? NaN : Number(value);
+      const n = numberOf(value);
       const [min, max] = INTEGER_RANGES[type];
       if (!Number.isInteger(n) || n < min || n > max)
         throw invalid(value, type);
@@ -186,8 +197,7 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
     case "Edm.Single": {
       if (typeof value === "string" && Object.hasOwn(SPECIAL_FLOATS, value))
         return SPECIAL_FLOATS[value];
-      const n =
-        typeof value === "string" && value.trim() === "" ? NaN : Number(value);
+      const n = numberOf(value);
       if (Number.isNaN(n)) throw invalid(value, type);
       return n;
     }
@@ -321,6 +331,20 @@ function propToInternal(value: unknown, prop: Property): PropertyValue {
   return value.map((v) => elementToInternal(v, prop));
 }
 
+// An enum's value as its member's name, given by name or by number; several, for flags
+function enumValue(value: unknown, type: EnumType): string {
+  const given = String(value);
+  return (type.isFlags ? given.split(",") : [given])
+    .map((text) => {
+      const member = type.members.find(
+        (m) => m.name === text.trim() || String(m.value) === text.trim(),
+      );
+      if (!member) throw invalid(value, type.name);
+      return member.name;
+    })
+    .join(",");
+}
+
 function elementToInternal(value: unknown, prop: Property): PropertyValue {
   if (value === null || value === undefined) return null;
   if (prop.complexType) {
@@ -333,10 +357,10 @@ function elementToInternal(value: unknown, prop: Property): PropertyValue {
     const fields = value as Record<string, unknown>;
     const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
-      out[p.name] = propToInternal(fields[p.name], p);
+      out[p.name] = propToInternal(own(fields, p.name), p);
     return out;
   }
-  if (prop.enumType) return String(value);
+  if (prop.enumType) return enumValue(value, prop.enumType);
   const internal = toInternal(value, prop.elementType || prop.type);
   if ((prop.elementType || prop.type) === "Edm.Decimal" && internal !== null)
     checkDecimalFacets(String(internal), prop);
@@ -440,6 +464,7 @@ export {
   V2_TO_CANONICAL,
   CANONICAL_TO_V2,
   toInternal,
+  INTEGER_RANGES,
   keepLongNumbers,
   keyText,
   withPrecision,

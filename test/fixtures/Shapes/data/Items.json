@@ -1,0 +1,5 @@
+[
+  { "ID": 1, "N": 1, "Tod": "12:34:56", "Color": "Red", "Perms": "Read,Write", "Addr": { "City": "Athens" }, "Tags": ["a", "b", "c"] },
+  { "ID": 2, "N": 2, "Tod": "01:02:03.5", "Color": "Blue", "Perms": "Read", "Tags": [] },
+  { "ID": 3, "N": 3 }
+]

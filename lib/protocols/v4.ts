@@ -32,6 +32,9 @@ import { expandLink } from "../paging.ts";
 
 const version = "4.0";
 const headers: Record<string, string> = { "OData-Version": "4.0" };
+// More than any response could use: each level of $expand reads the text of those below it,
+// so a body-sized one, which a $batch can hold, would take seconds and then the whole stack
+const MAX_EXPAND_NESTING = 1000;
 const typedLiteralPrefixes = new Set(["duration", "binary"]);
 
 const GUID =
@@ -86,6 +89,9 @@ function parseLiteral(text: string): Literal {
     return { value: m[1], type: "Edm.Duration" };
   if ((m = t.match(/^binary'([^']*)'$/i)))
     return { value: m[1], type: "Edm.Binary" };
+  // An enum's: its member, which the property reads as it does a string
+  if ((m = t.match(/^[A-Za-z_][\w.]*\.\w+'((?:[^']|'')*)'$/)))
+    return { value: m[1].replace(/''/g, "'"), type: "Edm.String" };
   const bare = matchBareLiteral(t);
   if (bare && bare.length === t.length)
     return { value: bare.value, type: bare.type };
@@ -106,6 +112,7 @@ function parseLiteral(text: string): Literal {
 // Internal -> key literal in a URL. Only strings are quoted in V4, and percent-encoded, so
 // that a / or a ? in one stays part of the key (see decodePath).
 function keyLiteral(value: PropertyValue, prop: Property): string {
+  if (prop.enumType) return `${prop.type}'${String(value)}'`;
   return prop.type === "Edm.String"
     ? `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`
     : String(value);
@@ -159,20 +166,23 @@ function elementToWire(
 // "$expand=Items($select=Material;$top=2;$expand=PurchaseOrder),Other" -> node tree.
 function parseExpand(text: string | undefined, node: QueryNode): void {
   for (const item of splitTopLevel(text || "", ",")) {
-    const m = item.match(/^([^(]+?)\s*(?:\((.*)\))?$/s);
-    if (!m) throw new HttpError(400, `Invalid $expand: ${item}`);
+    const open = item.indexOf("(");
+    const name = open === -1 ? item : item.slice(0, open);
+    if (!name.trim() || (open !== -1 && !item.endsWith(")")))
+      throw new HttpError(400, `Invalid $expand: ${item}`);
+    const options = open === -1 ? undefined : item.slice(open + 1, -1);
     // * expands every navigation (see expandAll). The spec's */$ref and *($levels=n) need
     // $ref and $levels in $expand, which aren't supported.
     if (
-      m[1].trim().startsWith("*") &&
-      (m[1].trim() !== "*" || m[2] !== undefined)
+      name.trim().startsWith("*") &&
+      (name.trim() !== "*" || options !== undefined)
     )
       throw new HttpError(
         501,
         `$expand=${item.trim()} is not supported: only * on its own`,
       );
-    const child = addExpandPath(node, m[1]);
-    if (m[2] !== undefined) applyNestedOptions(child, m[2]);
+    const child = addExpandPath(node, name.trim());
+    if (options !== undefined) applyNestedOptions(child, options);
   }
 }
 
@@ -261,10 +271,23 @@ const SYSTEM_OPTIONS = new Set([
   "$id",
 ]);
 
+// How deep a text's parentheses go
+function nesting(text: string): number {
+  let depth = 0,
+    deepest = 0;
+  for (const c of text) {
+    if (c === "(") deepest = Math.max(deepest, ++depth);
+    else if (c === ")") depth--;
+  }
+  return deepest;
+}
+
 function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   rejectUnsupported(query, SYSTEM_OPTIONS);
   // Query string values are text (a repeated option isn't supported)
   const q = query as Record<string, string | undefined>;
+  if (q.$expand && nesting(q.$expand) > MAX_EXPAND_NESTING)
+    throw new HttpError(400, "$expand is nested too deeply");
   const root = newNode();
   parseExpand(q.$expand, root);
   if (q.$select)

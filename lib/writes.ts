@@ -13,6 +13,7 @@ import type {
   Key,
   Model,
   Navigation,
+  Property,
   Row,
   TypedElement,
 } from "./model.ts";
@@ -22,6 +23,7 @@ import {
   changeable,
   link,
   resolveReference,
+  unlink as removeLink,
   type ReferenceHost,
 } from "./references.ts";
 
@@ -78,6 +80,11 @@ function bindsOf(
         "InvalidReference",
       );
     changeable(type, nav);
+    // null removes a single-valued navigation's link: no target
+    if (urls === null && !nav.isCollection) {
+      out.push({ field, nav, targets: [] });
+      continue;
+    }
     if (nav.isCollection !== Array.isArray(urls))
       throw new HttpError(
         400,
@@ -96,7 +103,7 @@ function bindsOf(
 function boundValues(binds: ReturnType<typeof bindsOf>): Row {
   const values: Row = {};
   for (const { nav, targets } of binds)
-    if (!nav.links && nav.dependentSide === "source")
+    if (!nav.links && nav.dependentSide === "source" && targets.length)
       for (const [src, tgt] of nav.join) values[src] = targets[0][tgt];
   return values;
 }
@@ -197,14 +204,30 @@ function checkRequired(
   for (const name of names) {
     const p = entityType.properties[name];
     // A hidden key (see hiddenKey in navigations.ts) is the server's, never required
-    if (!p || p.nullable || entityType.keys.includes(name)) continue;
+    if (!p || entityType.keys.includes(name)) continue;
     if (p.computed || p.sap?.[settable] === "false") continue;
-    if (row[name] === null)
-      throw new HttpError(
-        400,
-        `Property ${name} is required`,
-        "RequiredProperty",
-      );
+    if (row[name] === null && !p.nullable) throw required(name);
+    checkComplex(p, row[name], name);
+  }
+}
+
+function required(name: string): HttpError {
+  return new HttpError(400, `Property ${name} is required`, "RequiredProperty");
+}
+
+// The required fields of a complex value, or of each in a collection of them. A value that
+// isn't there has none to miss: the property's own Nullable says if it may be.
+function checkComplex(prop: Property, value: unknown, at: string): void {
+  if (!prop.complexType) return;
+  const fields = Object.values(prop.complexType.properties);
+  for (const item of (prop.isCollection ? value : [value]) as Row[]) {
+    if (item === null) continue;
+    for (const field of fields) {
+      const path = `${at}/${field.name}`;
+      if (item[field.name] === null && !field.nullable && !field.computed)
+        throw required(path);
+      checkComplex(field, item[field.name], path);
+    }
   }
 }
 
@@ -323,7 +346,8 @@ function update(
   const changes: Row = {};
   for (const p of Object.values(entityType.properties)) {
     if (entityType.keys.includes(p.name)) continue;
-    if (p.name in fields) changes[p.name] = propToInternal(fields[p.name], p);
+    if (Object.hasOwn(fields, p.name))
+      changes[p.name] = propToInternal(fields[p.name], p);
     else if (replace) changes[p.name] = propToInternal(undefined, p);
   }
   if (!draft) checkRequired(entityType, changes, Object.keys(changes), false);
@@ -332,9 +356,12 @@ function update(
   // nothing.
   const binds = bindsOf(svc, entityType, fields);
   svc.store.update(setName, row, changes);
-  for (const { nav, targets } of binds)
+  for (const { nav, targets } of binds) {
+    if (!nav.isCollection && !targets.length)
+      removeLink(svc, setName, entityType, row, nav);
     for (const target of targets)
       link(svc, setName, entityType, row, nav, target);
+  }
   return row;
 }
 

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Sh.Ns" Alias="Sh" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EnumType Name="Color">
+        <Member Name="Red" Value="1"/>
+        <Member Name="Blue" Value="2"/>
+      </EnumType>
+      <EnumType Name="Perm" IsFlags="true">
+        <Member Name="Read" Value="1"/>
+        <Member Name="Write" Value="2"/>
+        <Member Name="Admin" Value="4"/>
+      </EnumType>
+      <ComplexType Name="Address">
+        <Property Name="City" Type="Edm.String" Nullable="false"/>
+        <Property Name="Zip" Type="Edm.String"/>
+      </ComplexType>
+      <ComplexType Name="Site">
+        <Property Name="Name" Type="Edm.String"/>
+        <Property Name="Addr" Type="Sh.Address"/>
+      </ComplexType>
+      <EntityType Name="Item">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="N" Type="Edm.Int32"/>
+        <Property Name="D" Type="Edm.Double"/>
+        <Property Name="Tod" Type="Edm.TimeOfDay"/>
+        <Property Name="Color" Type="Sh.Color"/>
+        <Property Name="Perms" Type="Sh.Perm"/>
+        <Property Name="Addr" Type="Sh.Address"/>
+        <Property Name="Site" Type="Sh.Site"/>
+        <Property Name="Stops" Type="Collection(Sh.Address)"/>
+        <Property Name="Tags" Type="Collection(Edm.String)"/>
+        <NavigationProperty Name="Kids" Type="Collection(Sh.Kid)" Partner="Parent"/>
+      </EntityType>
+      <EntityType Name="Kid">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="ParentID" Type="Edm.Int32"/>
+        <NavigationProperty Name="Parent" Type="Sh.Item" Partner="Kids">
+          <ReferentialConstraint Property="ParentID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="ByColor">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Sh.Color" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="Odd">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="constructor" Type="Edm.String"/>
+        <Property Name="toString" Type="Edm.String"/>
+      </EntityType>
+      <Action Name="Go" IsBound="true">
+        <Parameter Name="in" Type="Sh.Item"/>
+      </Action>
+      <EntityContainer Name="C">
+        <EntitySet Name="Items" EntityType="Sh.Item">
+          <NavigationPropertyBinding Path="Kids" Target="Kids"/>
+        </EntitySet>
+        <EntitySet Name="Kids" EntityType="Sh.Kid">
+          <NavigationPropertyBinding Path="Parent" Target="Items"/>
+        </EntitySet>
+        <EntitySet Name="ByColors" EntityType="Sh.ByColor"/>
+        <EntitySet Name="Odds" EntityType="Sh.Odd"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -221,7 +221,13 @@ describe("a body of an open type", () => {
       ...PERSON,
       UserName: "open1",
       Nickname: "annie",
-      AddressInfo: [{ Address: "1 Main St", Floor: 3 }],
+      AddressInfo: [
+        {
+          Address: "1 Main St",
+          Floor: 3,
+          City: { Name: "Oslo", CountryRegion: "Norway", Region: "Oslo" },
+        },
+      ],
     });
     assert.equal(r.status, 201);
   });

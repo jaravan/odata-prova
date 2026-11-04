@@ -66,6 +66,7 @@ const KEYWORDS = new Set([
   "lt",
   "le",
   "in",
+  "has",
   "and",
   "or",
   "not",
@@ -170,6 +171,20 @@ function tokenize(
           throw new Error("Unterminated typed literal in $filter");
         const text = input.slice(i, end + 1);
         tokens.push({ kind: "literal", ...protocol.parseLiteral(text) });
+        i = end + 1;
+        continue;
+      }
+      // An enum's literal, by its type's qualified name: Sales.Color'Red'
+      if (w.includes(".") && input[i + w.length] === "'") {
+        let end = input.indexOf("'", i + w.length + 1);
+        while (end !== -1 && input[end + 1] === "'")
+          end = input.indexOf("'", end + 2);
+        if (end === -1)
+          throw new Error("Unterminated typed literal in $filter");
+        tokens.push({
+          kind: "literal",
+          ...protocol.parseLiteral(input.slice(i, end + 1)),
+        });
         i = end + 1;
         continue;
       }
@@ -294,7 +309,7 @@ class Parser {
         }
         this.expect(")");
         left = { in: true, left, list };
-      } else if (this.isOp("eq", "ne", "gt", "ge", "lt", "le")) {
+      } else if (this.isOp("eq", "ne", "gt", "ge", "lt", "le", "has")) {
         const op = this.expect("op").value;
         left = { op, left, right: this.parseAdditive() };
       } else {
@@ -438,6 +453,8 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   }
   const r = evaluate(node.right, row, resolve);
   switch (node.op) {
+    case "has":
+      return { value: hasFlags(l, r), type: "Edm.Boolean" };
     case "eq":
       return { value: compare(l, r) === 0, type: "Edm.Boolean" };
     case "ne":
@@ -597,6 +614,15 @@ function compare(l: Value, r: Value): number {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+// Whether an enum's value holds all the members of another: a flags value is several, Read,Write
+function hasFlags(l: Value, r: Value): boolean {
+  if (l.value === null || r.value === null) return false;
+  const held = String(l.value).split(",");
+  return String(r.value)
+    .split(",")
+    .every((member) => held.includes(member));
+}
+
 function callFunction(name: string, args: Value[]): Value {
   const S = (i: number) => str(args[i]);
   const N = (i: number) => num(args[i]);
@@ -604,6 +630,11 @@ function callFunction(name: string, args: Value[]): Value {
   const string = (value: string): Value => ({ value, type: "Edm.String" });
   const number = (value: number): Value => ({ value, type: "Edm.Int32" });
   const date = (i: number) => new Date(toMillis(args[i].value as string));
+  // Of a time of day, whose text is all it has; of anything else, its date
+  const clock = (index: number, ofDate: (d: Date) => number) =>
+    args[0].type === "Edm.TimeOfDay"
+      ? Math.trunc(Number(String(args[0].value).split(":")[index]))
+      : ofDate(date(0));
   switch (name) {
     case "substringof":
       return bool(S(1).includes(S(0))); // V2 flipped the args: substringof(needle, haystack)
@@ -640,11 +671,11 @@ function callFunction(name: string, args: Value[]): Value {
     case "day":
       return number(date(0).getUTCDate());
     case "hour":
-      return number(date(0).getUTCHours());
+      return number(clock(0, (d) => d.getUTCHours()));
     case "minute":
-      return number(date(0).getUTCMinutes());
+      return number(clock(1, (d) => d.getUTCMinutes()));
     case "second":
-      return number(date(0).getUTCSeconds());
+      return number(clock(2, (d) => d.getUTCSeconds()));
     case "date":
       return { value: date(0).toISOString().slice(0, 10), type: "Edm.Date" };
     case "time":
@@ -755,7 +786,9 @@ function expressionType(
   }
   const left = expressionType(node.left, typeOf);
   const right = expressionType(node.right, typeOf);
-  if (["and", "or", "eq", "ne", "gt", "ge", "lt", "le"].includes(node.op))
+  if (
+    ["and", "or", "eq", "ne", "gt", "ge", "lt", "le", "has"].includes(node.op)
+  )
     return "Edm.Boolean";
   for (const type of [left, right])
     if (type !== null && !isNumericType(type))

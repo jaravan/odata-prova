@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
 import { keyText, propToInternal } from "./types.ts";
+import { own } from "./query.ts";
 import { foreignKeys, generateData, generateLinks } from "./generate.ts";
 import type { MockRules } from "./mock-rules.ts";
 import { asActive } from "./draft.ts";
@@ -485,10 +486,10 @@ class Store {
   normalize(entityType: EntityType, input: Record<string, unknown>): Row {
     const row: Row = {};
     for (const p of Object.values(entityType.properties)) {
-      row[p.name] = propToInternal(input[p.name], p);
+      row[p.name] = propToInternal(own(input, p.name), p);
     }
     for (const p of Object.values(entityType.hiddenKeys ?? {}))
-      row[p.name] = propToInternal(input[p.name], p);
+      row[p.name] = propToInternal(own(input, p.name), p);
     return row;
   }
 
