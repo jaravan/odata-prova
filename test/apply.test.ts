@@ -734,3 +734,18 @@ describe("$apply groupby over INF, -INF and NaN", () => {
     assert.equal(Number(r.body.value[0].N), 4);
   });
 });
+
+describe("toppercent and bottompercent take 0 to 100", () => {
+  let s: TestServer;
+  before(async () => (s = await start()));
+  after(() => s.close());
+
+  it("a negative one is a 400", async () => {
+    for (const method of ["toppercent", "bottompercent"]) {
+      const res = await get(
+        `${s.v4}/PurchaseOrderSet?$apply=${method}(-5,TotalAmount)`,
+      );
+      assert.equal(res.status, 400, method);
+    }
+  });
+});

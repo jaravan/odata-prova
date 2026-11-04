@@ -948,3 +948,30 @@ describe("draft: V2 of a CAP service", () => {
     assert.equal((await get(`${s.v4}/DraftAdministrativeData`)).status, 404);
   });
 });
+
+describe("a draft POST with the key of an active entity", () => {
+  let s: TestServer;
+  before(async () => (s = await start(DRAFT_MODEL)));
+  after(() => s.close());
+
+  it("is a 409, and leaves no draft behind", async () => {
+    const res = await send("POST", `${s.v4}/Books`, { ID: BOOK, title: "dup" });
+    assert.equal(res.status, 409);
+    const rows = await get(`${s.v4}/Books?$filter=ID eq ${BOOK}`);
+    assert.deepEqual(
+      rows.body.value.map((r: DraftRow) => r.IsActiveEntity),
+      [true],
+    );
+    const edit = await send(
+      "POST",
+      `${s.v4}/${book()}/CatalogService.draftEdit`,
+      { PreserveChanges: true },
+    );
+    assert.equal(edit.status, 200);
+  });
+
+  it("with a new key it's a new draft", async () => {
+    const res = await send("POST", `${s.v4}/Books`, { title: "new" });
+    assert.equal(res.status, 201);
+  });
+});

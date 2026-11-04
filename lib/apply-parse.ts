@@ -94,7 +94,7 @@ function parseRank(
   if (!first || !by || more.length || !number.test(first))
     throw new HttpError(400, `Invalid $apply: ${text}`);
   const value = Number(first);
-  if (method.endsWith("percent") && value > 100)
+  if (method.endsWith("percent") && (value < 0 || value > 100))
     throw new HttpError(
       400,
       `Invalid $apply: ${text} (a percentage is 0 to 100)`,

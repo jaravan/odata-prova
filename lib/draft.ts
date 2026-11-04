@@ -657,6 +657,17 @@ class Drafts {
         preset,
         true,
       );
+      if (
+        this.store.find(setName, type, {
+          ...this.svc.keyOf(type, row),
+          IsActiveEntity: true,
+        })
+      )
+        throw new HttpError(
+          409,
+          `${type.name} with this key already exists`,
+          "DuplicateKey",
+        );
       // Deep-inserted compositions join the draft too
       for (const n of this.tree(setName, type, row))
         this.store.update(n.setName, n.row, { ...NEW_DRAFT, [UUID]: uuid });

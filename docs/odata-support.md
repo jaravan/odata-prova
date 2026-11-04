@@ -18,12 +18,13 @@ In a CSV data file, a complex or collection value goes in its cell as JSON. Filt
 Writes and data files are checked against the metadata. Each of these is a `400` (`InvalidValue`), and a data file with one stops the start, naming it:
 
 - a value that doesn't fit its type:
+  - a number written other than in decimal (`0x10`), or an enum value that isn't a member, by name or by value (several, for an `IsFlags` type: `Read,Write`)
   - a string with half a surrogate pair, which has no form in a URL or a header
   - an integer outside its type's range: `Edm.Byte` 0 to 255, `Edm.SByte`, `Edm.Int16`, `Edm.Int32` and `Edm.Int64` theirs
   - a decimal with more digits than its `Precision`, or more after the point than its `Scale` (`Scale="variable"`, or none: any, up to the `Precision`). One with an exponent is kept as the digits it stands for: `1.5e2` is `150`
   - a date or time that isn't ISO 8601 (`2025-03-07`, `2025-03-07T10:00:00Z`, with an offset or without, which is UTC), or that isn't in the calendar (`2025-02-30`). A space for the `T`, and slashes in the date (`2025/03/07`), as spreadsheets write them, are read too, as are V2's `/Date(ms)/`. Nothing else is guessed at: `07.03.2025` and `03/07/2025` are refused rather than read in the server's timezone
   - a time of day past `23:59:59`, a GUID that isn't `8-4-4-4-12` hex digits, a duration that isn't a day-time duration (`P1DT2H`, `PT0.5S`), or binary that isn't base64 or base64url
-- a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null
+- a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, a field of a complex value included, at any depth and in a collection
 - a value of the wrong JSON type: `123` for a string, `"true"` for a boolean (numbers may come as strings)
 - a string longer than its `MaxLength`
 - a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored)
@@ -96,6 +97,8 @@ Arithmetic in `$filter` follows the spec's numeric promotion:
 - `div` of two integers rounds towards zero (`Quantity div 2`); `divby` doesn't.
 - An operation with a null is null, which no comparison matches.
 - A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
+
+`has` compares an enum with its members: `Perms has NS.Perm'Read,Write'`. An enum's literal is its type and member, `Color eq NS.Color'Red'`, by namespace or alias, in a key too. `hour`, `minute` and `second` read an `Edm.TimeOfDay` as well as a date and time.
 
 A property may be named like an operator or a literal (`Div`, `Or`, `True`, `Null`): `Div eq 5` reads the property, and `Add add 1` each as it should. Lower-case `true`, `false`, `null` and `not` are always the keyword.
 
@@ -313,6 +316,14 @@ Limits:
 - A `DraftAdministrativeData` entity set in the metadata (RAP's `I_DraftAdministrativeData`) keeps its own rows: the records are reachable through the navigation only.
 - No validation besides required values on activation, no side effects, and no locks between users.
 
+## Paths and options
+
+`/$count` is a collection's, a collection property's included (`Items(1)/Tags/$count`), and `/$value` a primitive property's: on anything else each is a `400`. A system query option given twice is a `400`, in a `$batch` too.
+
+`$format` takes `json` or `application/json`, with any parameters (`application/json;odata.metadata=minimal`, `;IEEE754Compatible=true`).
+
+A `$search`, `$apply` or `$expand` nested thousands of levels deep, which only a `$batch` can hold, is a `400`.
+
 ## Keys in URLs
 
 A string key may hold any character, a URL's own included, percent-encoded as any value in a URL is: `Docs('SO%2F2025%2F1')` is the document `SO/2025/1`. The URIs the server writes, `Location`, V2's `__metadata.uri` and V4's `@odata.id`, encode them the same way, so they lead back to the entity.
@@ -323,11 +334,17 @@ A key compares by value. `Decs(1.5)` finds `1.50`, either case of a GUID finds t
 
 A `POST` with `X-HTTP-Method: PUT`, `PATCH`, `MERGE` or `DELETE` is that method, as UI5's V2 model sends a `MERGE` outside a `$batch`. Any other value is ignored.
 
+## `$batch`
+
+A body with no closing delimiter is a `400`, since what's after the last delimiter may be half a request: none of it runs. A changeset without one fails alone. An `@odata.bind` may name an earlier request of the changeset by its Content-ID, `"Parent@odata.bind": "$1"`, as a URL can.
+
 ## Deep insert
 
 A create can hold related entities, nested under their navigation: an array for a collection (V2: `{"results": [...]}`), an object for a single-valued one. They are created with it, in one transaction: if one fails, nothing is kept. The response has them, as the server created them, expanded as deep as the request was.
 
 ## Links between entities
+
+`"Parent@odata.bind": null` removes a single-valued navigation's link; on a create, there's none to begin with.
 
 A write can link an entity to existing ones, whatever the navigation joins on: a foreign key on either side, a key of its own or a link set (see [Navigations without a ReferentialConstraint](#navigations-without-a-referentialconstraint)).
 
