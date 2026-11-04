@@ -98,7 +98,7 @@ Arithmetic in `$filter` follows the spec's numeric promotion:
 - An operation with a null is null, which no comparison matches.
 - A minus negates: `-Price lt -100`, `-(Price sub Discount)`.
 
-`has` compares an enum with its members: `Perms has NS.Perm'Read,Write'`. An enum's literal is its type and member, `Color eq NS.Color'Red'`, by namespace or alias, in a key too. `hour`, `minute` and `second` read an `Edm.TimeOfDay` as well as a date and time.
+`has` compares an enum with its members: `Perms has NS.Perm'Read,Write'`. An enum's literal is its type and member, by name or value, `Color eq NS.Color'Red'`, by namespace or alias, in a key too. A type or member that doesn't exist is a `400`, not an empty answer. `hour`, `minute` and `second` read an `Edm.TimeOfDay` as well as a date and time.
 
 A property may be named like an operator or a literal (`Div`, `Or`, `True`, `Null`): `Div eq 5` reads the property, and `Add add 1` each as it should. Lower-case `true`, `false`, `null` and `not` are always the keyword.
 

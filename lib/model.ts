@@ -454,4 +454,6 @@ export interface ODataResponse {
 export interface Literal {
   value: unknown;
   type: string | null;
+  // An enum's literal, NS.Color'Red': the type it names, for the model to check
+  enumType?: string;
 }

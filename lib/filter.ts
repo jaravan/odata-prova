@@ -7,9 +7,22 @@
 // Precedence goes or < and < not < comparison (eq/ne/gt/ge/lt/le/in) < add/sub < mul/div/mod
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
-import type { Literal, Property, PropertyValue, Row } from "./model.ts";
+import type {
+  EntityType,
+  Literal,
+  Model,
+  Property,
+  PropertyValue,
+  Row,
+} from "./model.ts";
 import { HttpError, own } from "./query.ts";
-import { isNumericType, toComparable, toMillis } from "./types.ts";
+import {
+  enumNamed,
+  enumValue,
+  isNumericType,
+  toComparable,
+  toMillis,
+} from "./types.ts";
 
 // What a protocol module supplies: how its literals are spelled
 export interface LiteralSyntax {
@@ -82,13 +95,30 @@ const KEYWORDS = new Set([
 // the keyword, as the spec writes them.
 const RESERVED = new Set(["true", "false", "null", "not"]);
 
-// isProperty: whether the type being filtered has a property of that name, so that Div eq 5
-// and True eq true read the property. Where an operator can be it's the operator, so that
-// Add add 1 reads each as it should.
+// What an expression needs of the model. isProperty: whether the type being filtered has a
+// property of that name, so that Div eq 5 and True eq true read the property. Where an
+// operator can be it's the operator, so that Add add 1 reads each as it should. enumMember:
+// the member an enum's literal names, a mistake in which is a 400 rather than no rows.
+interface Scope {
+  isProperty(name: string): boolean;
+  enumMember(literal: Literal): string;
+}
+
+function scopeOf(model: Model, type: EntityType): Scope {
+  return {
+    isProperty: (name) => Object.hasOwn(type.properties, name),
+    enumMember({ enumType, value }) {
+      const named = enumNamed(model, enumType!);
+      if (!named) throw new Error(`${enumType} is not an enum type`);
+      return enumValue(value, named);
+    },
+  };
+}
+
 function tokenize(
   input: string,
   protocol: LiteralSyntax,
-  isProperty?: (name: string) => boolean,
+  scope?: Scope,
 ): Token[] {
   const tokens: Token[] = [];
   let i = 0;
@@ -181,9 +211,11 @@ function tokenize(
           end = input.indexOf("'", end + 2);
         if (end === -1)
           throw new Error("Unterminated typed literal in $filter");
+        const literal = protocol.parseLiteral(input.slice(i, end + 1));
         tokens.push({
           kind: "literal",
-          ...protocol.parseLiteral(input.slice(i, end + 1)),
+          ...literal,
+          value: scope ? scope.enumMember(literal) : literal.value,
         });
         i = end + 1;
         continue;
@@ -199,7 +231,7 @@ function tokenize(
         operandHere &&
         !RESERVED.has(w) &&
         input[i + w.length] !== "(" &&
-        isProperty?.(w)
+        scope?.isProperty(w)
       )
         tokens.push({ kind: "path", value: w });
       else if (KEYWORDS.has(lower)) tokens.push({ kind: "op", value: lower });
@@ -716,10 +748,10 @@ function bounded<T>(run: () => T): T {
 function compileFilter(
   text: string,
   protocol: LiteralSyntax,
-  isProperty?: (name: string) => boolean,
+  scope?: Scope,
 ): (row: Row, resolve: Resolve) => boolean {
   const ast = bounded(() =>
-    new Parser(tokenize(text, protocol, isProperty)).parse(),
+    new Parser(tokenize(text, protocol, scope)).parse(),
   );
   return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
 }
@@ -800,13 +832,13 @@ function expressionType(
 function compileExpression(
   text: string,
   protocol: LiteralSyntax,
-  isProperty?: (name: string) => boolean,
+  scope?: Scope,
 ): {
   evaluate(row: Row, resolve: Resolve): Value;
   type(typeOf: (path: string) => string): string | null;
 } {
   const ast = bounded(() =>
-    new Parser(tokenize(text, protocol, isProperty)).parse(),
+    new Parser(tokenize(text, protocol, scope)).parse(),
   );
   return {
     evaluate: (row, resolve) => bounded(() => evaluate(ast, row, resolve)),
@@ -814,4 +846,4 @@ function compileExpression(
   };
 }
 
-export { compileFilter, compileExpression };
+export { compileFilter, compileExpression, scopeOf };

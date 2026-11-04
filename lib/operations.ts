@@ -1,7 +1,8 @@
 // Calls an action or function: finds it, reads its parameters, applies the model's rule
 // for it (config.json) and answers by its return type. Draft actions go to draft.ts.
 
-import { toInternal, propToInternal } from "./types.ts";
+import { propToInternal } from "./types.ts";
+import { literalValue } from "./resource-path.ts";
 import { HttpError, decodeUrl, own, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
@@ -175,11 +176,7 @@ function operationParameters(
       );
     else if (p.complexType || p.isCollection)
       params[p.name] = propToInternal(text, p);
-    else
-      params[p.name] = toInternal(
-        svc.protocol.parseLiteral(text).value,
-        p.type,
-      );
+    else params[p.name] = literalValue(text, p, svc.protocol, svc.model);
   }
   return params;
 }

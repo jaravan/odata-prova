@@ -240,7 +240,7 @@ function handle(
   let setName = start.set.name;
   let rows = svc.store.rows(setName);
   let row: Row | undefined = undefined; // defined when the current position is a single entity
-  const key = parseKey(segments[0].keyText, type, svc.protocol);
+  const key = parseKey(segments[0].keyText, type, svc.protocol, svc.model);
   // When POSTing to Parent(key)/Nav
   let parentForCreate:
     | { row: Row; type: EntityType; nav: AnyNavigation; setName: string }
@@ -305,7 +305,7 @@ function handle(
     type = related.type;
     rows = related.rows;
     row = undefined;
-    const segKey = parseKey(seg.keyText, type, svc.protocol);
+    const segKey = parseKey(seg.keyText, type, svc.protocol, svc.model);
     if (segKey) {
       const segType = type;
       row = rows.find((r) => svc.store.matchesKey(segType, r, segKey));
@@ -378,7 +378,7 @@ function draftAdminRequest(request: Request): ODataResponse {
     );
   const type = svc.model.entityTypes[entityType];
   const rows = svc.drafts.admins();
-  const key = parseKey(segments[0].keyText, type, svc.protocol);
+  const key = parseKey(segments[0].keyText, type, svc.protocol, svc.model);
   if (!key) return svc.collectionResponse(rows, name, type, q, opts);
   const row = rows.find((r) => svc.store.matchesKey(type, r, key));
   if (!row) throw new HttpError(404, `${type.name} not found`);

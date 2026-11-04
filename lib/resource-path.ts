@@ -1,10 +1,16 @@
 // A request's resource path, as dispatch reads it (see service.ts): its segments, and the
 // keys in them.
 
-import { toInternal } from "./types.ts";
+import { enumNamed, enumValue, toInternal } from "./types.ts";
 import type { LiteralSyntax } from "./filter.ts";
 import { HttpError, decodeUrl, own } from "./query.ts";
-import type { EntityType, Key } from "./model.ts";
+import type {
+  EntityType,
+  Key,
+  Model,
+  PropertyValue,
+  TypedElement,
+} from "./model.ts";
 
 // A path segment: Name, or Name(key or parameters)
 interface Segment {
@@ -37,6 +43,26 @@ function parseSegments(resourcePath: string): Segment[] {
   return segments;
 }
 
+// A URL literal as the value of a key or a parameter. An enum's literal names its type, which
+// has to be the element's, and its member, which has to be one
+function literalValue(
+  text: string,
+  element: TypedElement,
+  syntax: LiteralSyntax,
+  model: Model,
+): PropertyValue {
+  const literal = syntax.parseLiteral(text);
+  const { enumType } = element;
+  if (literal.enumType && enumNamed(model, literal.enumType) !== enumType)
+    throw new HttpError(
+      400,
+      `${text} is not a value of ${element.name}, a ${element.type}`,
+    );
+  return enumType && literal.value !== null
+    ? enumValue(literal.value, enumType)
+    : toInternal(literal.value, element.type);
+}
+
 // "'4500000001'" or "PurchaseOrderId='4500000001',ItemPosition='0001'" -> { PurchaseOrderId, ItemPosition }
 // The text is as decodePath leaves it: split on its , and =, then each value decoded, so a
 // value may hold them (SO%2F2025%2F1, a%2Cb).
@@ -44,6 +70,7 @@ function parseKey(
   keyText: string | undefined,
   entityType: EntityType,
   syntax: LiteralSyntax,
+  model: Model,
 ): Key | undefined {
   if (keyText === undefined) return undefined;
   const parts: string[] = [];
@@ -69,9 +96,11 @@ function parseKey(
       );
     }
     const k = entityType.keys[0];
-    key[k] = toInternal(
-      syntax.parseLiteral(decodeUrl(parts[0], decodeURIComponent)).value,
-      entityType.properties[k].type,
+    key[k] = literalValue(
+      decodeUrl(parts[0], decodeURIComponent),
+      entityType.properties[k],
+      syntax,
+      model,
     );
     return key;
   }
@@ -84,10 +113,11 @@ function parseKey(
         400,
         `${name} is not a key property of ${entityType.name}`,
       );
-    key[name] = toInternal(
-      syntax.parseLiteral(decodeUrl(part.slice(eq + 1), decodeURIComponent))
-        .value,
-      prop.type,
+    key[name] = literalValue(
+      decodeUrl(part.slice(eq + 1), decodeURIComponent),
+      prop,
+      syntax,
+      model,
     );
   }
   for (const k of entityType.keys) {
@@ -97,4 +127,4 @@ function parseKey(
 }
 
 export type { Segment };
-export { parseSegments, parseKey };
+export { parseSegments, parseKey, literalValue };

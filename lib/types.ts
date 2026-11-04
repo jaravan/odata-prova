@@ -19,6 +19,7 @@
 
 import type {
   EnumType,
+  Model,
   PrimitiveValue,
   Property,
   PropertyValue,
@@ -326,6 +327,16 @@ function propToInternal(value: unknown, prop: Property): PropertyValue {
   return value.map((v) => elementToInternal(v, prop));
 }
 
+// The enum type a literal names, by its namespace or its schema's alias
+function enumNamed(model: Model, name: string): EnumType | undefined {
+  const dot = name.lastIndexOf(".");
+  const namespace = own(model.aliases, name.slice(0, Math.max(dot, 0)));
+  return own(
+    model.enumTypes,
+    namespace ? `${namespace}${name.slice(dot)}` : name,
+  );
+}
+
 // An enum's value as its member's name, given by name or by number; several, for flags
 function enumValue(value: unknown, type: EnumType): string {
   const given = String(value);
@@ -459,6 +470,8 @@ export {
   V2_TO_CANONICAL,
   CANONICAL_TO_V2,
   toInternal,
+  enumNamed,
+  enumValue,
   INTEGER_RANGES,
   keepLongNumbers,
   keyText,

@@ -261,6 +261,11 @@ describe("$filter on enums and times of day", () => {
     );
   });
 
+  it("an enum literal by the member's value", async () => {
+    assert.deepEqual(await ids("Color eq Sh.Color'2'"), [2]);
+    assert.deepEqual(await ids("Perms has Sh.Perm'2'"), [1]);
+  });
+
   it("has", async () => {
     assert.deepEqual(await ids("Color has Sh.Color'Red'"), [1]);
     assert.deepEqual(await ids("Perms has Sh.Perm'Write'"), [1]);
@@ -276,6 +281,45 @@ describe("$filter on enums and times of day", () => {
     assert.equal((await get(`${s.base}${location}`)).status, 200);
     assert.equal((await get(`${s.v4}/ByColors(Sh.Color'Red')`)).status, 200);
     assert.equal((await get(`${s.v4}/ByColors(Sh.Color'Blue')`)).status, 404);
+  });
+
+  it("a type or a member that doesn't exist is a 400, not an empty answer", async () => {
+    for (const filter of [
+      "Color eq No.Such'Red'",
+      "Color eq Sh.Nope'Red'",
+      "Color eq Sh.Color'Green'",
+      "Color has Sh.Color'Green'",
+      "Perms has Sh.Perm'Read,Nope'",
+      "ID eq Sh.Item'1'",
+      "NParent.Color'Red' eq 1",
+    ]) {
+      const res = await get(
+        `${s.v4}/Items?$filter=${encodeURIComponent(filter)}`,
+      );
+      assert.equal(res.status, 400, filter);
+    }
+  });
+
+  it("in $compute and $apply too", async () => {
+    const computed = await get(
+      `${s.v4}/Items?$compute=${encodeURIComponent("No.Such'Red' as C")}`,
+    );
+    assert.equal(computed.status, 400);
+    const applied = await get(
+      `${s.v4}/Items?$apply=${encodeURIComponent("filter(Color eq Sh.Color'Green')")}`,
+    );
+    assert.equal(applied.status, 400);
+  });
+
+  it("in a key: of its type, on a key that is one", async () => {
+    await send("POST", `${s.v4}/ByColors`, { ID: "Blue" });
+    for (const key of ["No.Such'Blue'", "Sh.Perm'Blue'", "Sh.Color'Green'"])
+      assert.equal((await get(`${s.v4}/ByColors(${key})`)).status, 400, key);
+    assert.equal((await get(`${s.v4}/Items(Sh.Color'1')`)).status, 400);
+    assert.equal(
+      (await get(`${s.v4}/ByColors(Sh.Ns.Color'Blue')`)).status,
+      200,
+    );
   });
 
   it("an unterminated one is a 400", async () => {

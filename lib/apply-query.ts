@@ -2,7 +2,7 @@
 // $top, for a collection or an $expand node.
 
 import { toComparable } from "./types.ts";
-import { compileFilter } from "./filter.ts";
+import { compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
 import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
 import { HttpError, own } from "./query.ts";
@@ -105,8 +105,10 @@ function applyQuery(
   if (opts.filter) {
     let predicate: (row: Row, resolve: Resolve) => boolean;
     try {
-      predicate = compileFilter(opts.filter, svc.protocol, (name) =>
-        Object.hasOwn(entityType.properties, name),
+      predicate = compileFilter(
+        opts.filter,
+        svc.protocol,
+        scopeOf(svc.model, entityType),
       );
     } catch (e) {
       if (e instanceof HttpError) throw e;

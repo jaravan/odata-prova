@@ -68,7 +68,7 @@ function resolveReference(
   if (es.name !== nav.targetSet)
     throw invalid(`${nav.name} links to ${nav.targetSet}, not ${es.name}`);
   const type = svc.entitySet(es.name).type;
-  const key = parseKey(segment.keyText, type, svc.protocol) as Key;
+  const key = parseKey(segment.keyText, type, svc.protocol, svc.model) as Key;
   const row = svc.store.find(es.name, type, key);
   if (!row) throw invalid(`${url}: no such ${type.name}`);
   return row;

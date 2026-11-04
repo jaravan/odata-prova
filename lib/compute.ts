@@ -8,7 +8,7 @@
 // the protocols' serializers need nothing of their own. $apply's compute transformation is
 // the same (see aggregation.ts), and so is the expression topcount and the others rank by.
 
-import { compileExpression } from "./filter.ts";
+import { compileExpression, scopeOf } from "./filter.ts";
 import { HttpError, own, splitTopLevel } from "./query.ts";
 import { resolver, type QueryHost } from "./apply-query.ts";
 import type {
@@ -74,8 +74,10 @@ function typedExpression(
   option: string,
 ): { type: string | null; value(row: Row): unknown } {
   try {
-    const compiled = compileExpression(text, svc.protocol, (name) =>
-      Object.hasOwn(type.properties, name),
+    const compiled = compileExpression(
+      text,
+      svc.protocol,
+      scopeOf(svc.model, type),
     );
     const resolve = resolver(svc, type);
     return {

@@ -91,8 +91,12 @@ function parseLiteral(text: string): Literal {
   if ((m = t.match(/^binary'([^']*)'$/i)))
     return { value: m[1], type: "Edm.Binary" };
   // An enum's: its member, which the property reads as it does a string
-  if ((m = t.match(/^[A-Za-z_][\w.]*\.\w+'((?:[^']|'')*)'$/)))
-    return { value: m[1].replace(/''/g, "'"), type: "Edm.String" };
+  if ((m = t.match(/^([A-Za-z_][\w.]*\.\w+)'((?:[^']|'')*)'$/)))
+    return {
+      value: m[2].replace(/''/g, "'"),
+      type: "Edm.String",
+      enumType: m[1],
+    };
   const bare = matchBareLiteral(t);
   if (bare && bare.length === t.length)
     return { value: bare.value, type: bare.type };
