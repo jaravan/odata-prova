@@ -575,11 +575,7 @@ class Store {
   matchesKey(entityType: EntityType, row: Row, key: Key): boolean {
     const same = (k: string) => {
       const prop = entityType.properties[k];
-      // V2 writes a time to the millisecond, whatever its Precision
-      const fraction = this.model.sourceVersion === "2.0" ? "3" : undefined;
-      return (
-        keyText(row[k], prop, fraction) === keyText(key[k], prop, fraction)
-      );
+      return keyText(row[k], prop) === keyText(key[k], prop);
     };
     return (
       entityType.keys.every(same) &&

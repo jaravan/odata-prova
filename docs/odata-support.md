@@ -328,7 +328,7 @@ A `$search`, `$apply` or `$expand` nested thousands of levels deep, which only a
 
 A string key may hold any character, a URL's own included, percent-encoded as any value in a URL is: `Docs('SO%2F2025%2F1')` is the document `SO/2025/1`. The URIs the server writes, `Location`, V2's `__metadata.uri` and V4's `@odata.id`, encode them the same way, so they lead back to the entity.
 
-A key compares by value. `Decs(1.5)` finds `1.50`, either case of a GUID finds the entity, and neither is a new key. A time is as exact as its `Precision`: without one, `2025-01-01T10:00:00.123Z` reads back as `2025-01-01T10:00:00Z` and that finds it, so two keys in the same second are the same key (a V2 document's times count to the millisecond).
+A key compares by value. `Decs(1.5)` finds `1.50`, either case of a GUID finds the entity, and neither is a new key. A time is as exact as its `Precision`: without one, `2025-01-01T10:00:00.123Z` reads back as `2025-01-01T10:00:00Z` and that finds it, so two keys in the same second are the same key. A time key of a V2 document without a `Precision` counts to the millisecond, as V2 writes it, and has `Precision="3"` in the generated V4 metadata, so a key reads the same on both.
 
 ## Methods
 

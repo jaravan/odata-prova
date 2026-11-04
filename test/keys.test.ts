@@ -8,6 +8,7 @@ import { HttpError } from "../lib/query.ts";
 // String keys with characters a URL reserves, as SAP document numbers have them (SO/2025/1)
 const MODEL = path.join(import.meta.dirname, "fixtures", "OddKeys");
 const VALUE_KEYS = path.join(import.meta.dirname, "fixtures", "ValueKeys");
+const VALUE_KEYS_V2 = path.join(import.meta.dirname, "fixtures", "ValueKeysV2");
 const KEYS = ["SO/2025/1", "a,b", "a=b", "#1", "?q", "&a", "50%", "it's"];
 
 // A key as a client writes it in a URL: quoted, a quote doubled, then percent-encoded
@@ -225,5 +226,51 @@ describe("keys that compare by value", () => {
     assert.equal(read.body.ID, "2025-01-01T10:00:00.124Z");
     const offset = await get(`${s.v4}/Fines(2025-01-01T12:00:00.124%2B02:00)`);
     assert.equal(offset.status, 200);
+  });
+});
+
+// V2 writes a time to the millisecond, so a V2 document's time keys are that exact on V4 too:
+// a key read from either protocol finds the entity
+describe("a time key of a V2 document", () => {
+  let s: TestServer;
+  before(async () => (s = await start(VALUE_KEYS_V2)));
+  after(() => s.close());
+
+  it("keeps entities a millisecond apart, and each key reads back on V4", async () => {
+    for (const ID of ["2025-01-01T10:00:00.123", "2025-01-01T10:00:00.124"])
+      assert.equal((await send("POST", `${s.v2}/Stamps`, { ID })).status, 201);
+    const { value } = (await get(`${s.v4}/Stamps`)).body;
+    assert.deepEqual(
+      value.map((r: { ID: string }) => r.ID),
+      ["2025-01-01T10:00:00.123Z", "2025-01-01T10:00:00.124Z"],
+    );
+    for (const { ID } of value) {
+      const read = await get(`${s.v4}/Stamps(${ID})`);
+      assert.equal(read.status, 200, ID);
+      assert.equal(read.body.ID, ID);
+    }
+  });
+
+  it("the generated V4 metadata says so, the key's alone", async () => {
+    const { body } = await get(`${s.v4}/$metadata`);
+    const stamp = body.slice(body.indexOf('Name="Stamp"'));
+    assert.match(stamp, /Name="ID"[^>]*Precision="3"/);
+    assert.doesNotMatch(
+      stamp.split("</EntityType>")[0],
+      /Name="At"[^>]*Precision/,
+    );
+  });
+
+  it("a Precision of its own stays", async () => {
+    const { body } = await get(`${s.v4}/$metadata`);
+    assert.match(
+      body.slice(body.indexOf('Name="Exact"')),
+      /Name="ID"[^>]*Precision="7"/,
+    );
+  });
+
+  it("V2 reads it by its datetime literal", async () => {
+    const read = await get(`${s.v2}/Stamps(datetime'2025-01-01T10:00:00.123')`);
+    assert.equal(read.status, 200);
   });
 });

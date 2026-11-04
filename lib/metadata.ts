@@ -302,6 +302,15 @@ function parseMetadata(
   parseOperations(model, schemas, isV4);
   flattenInheritance(model.complexTypes, "ComplexType");
   flattenInheritance(model.entityTypes, "EntityType");
+  // V2 writes a time to the millisecond, whatever its Precision, so a key read from it is that
+  // exact: a key has to read the same on V4, to find the entity there too
+  if (!isV4)
+    for (const type of Object.values(model.entityTypes))
+      for (const key of type.keys) {
+        const p = type.properties[key];
+        if (["Edm.DateTimeOffset", "Edm.TimeOfDay"].includes(p?.type))
+          p.precision ??= "3";
+      }
   resolvePropertyTypes(model);
   // Inherited keys included: a key names a property, of a type a key can have
   for (const type of Object.values(model.entityTypes))

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="V" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="Stamp">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.DateTime" Nullable="false"/>
+        <Property Name="At" Type="Edm.DateTime"/>
+      </EntityType>
+      <EntityType Name="Exact">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.DateTime" Precision="7" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C" m:IsDefaultEntityContainer="true">
+        <EntitySet Name="Stamps" EntityType="V.Stamp"/>
+        <EntitySet Name="Exacts" EntityType="V.Exact"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -131,13 +131,8 @@ function withPrecision(
 
 // A key's value as text that two ways of writing it share, for finding an entity by its key.
 // 1.50 and 1.5 are one Decimal, a GUID's digits have either case, and a time is as fine as
-// its Precision, which is all a client gets to read and so to build a key from. fraction: the
-// digits of a time whose property has no Precision.
-function keyText(
-  value: unknown,
-  prop: Property,
-  fraction: string | undefined,
-): string {
+// its Precision, which is all a client gets to read and so to build a key from.
+function keyText(value: unknown, prop: Property): string {
   const text = String(value);
   switch (prop.type) {
     case "Edm.Decimal": {
@@ -149,7 +144,7 @@ function keyText(
       return text.toLowerCase();
     case "Edm.DateTimeOffset":
     case "Edm.TimeOfDay":
-      return withPrecision(value as PropertyValue, prop.precision ?? fraction);
+      return withPrecision(value as PropertyValue, prop.precision);
     default:
       return text;
   }
