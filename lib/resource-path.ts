@@ -15,10 +15,13 @@ interface Segment {
 // "PurchaseOrderSet('4500000001')/Items(PurchaseOrderId='4500000001',ItemPosition='0001')/$count"
 // -> [{ name: "PurchaseOrderSet", keyText: "'4500000001'" }, { name: "Items", keyText: "..." }, { name: "$count" }]
 // Every character is a segment's: one that isn't (Set(1)Nav, a stray parenthesis) is a 400,
-// not skipped, which would read another path than the one sent.
+// not skipped, which would read another path than the one sent. A string is read up to its
+// next quote: 'it''s' is two strings side by side, which is the same text. Reading a doubled
+// quote as part of one string as well would give every pair of quotes two readings, and an
+// unclosed run of them a time that doubles with each pair.
 function parseSegments(resourcePath: string): Segment[] {
   const segments: Segment[] = [];
-  const re = /([^/()]+)(?:\(((?:[^()']|'(?:[^']|'')*')*)\))?(?:\/+|$)/y;
+  const re = /([^/()]+)(?:\(((?:[^()']|'[^']*')*)\))?(?:\/+|$)/y;
   for (let at = 0; at < resourcePath.length; at = re.lastIndex) {
     const m = re.exec(resourcePath);
     if (!m)

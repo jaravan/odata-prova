@@ -2,6 +2,8 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { start, get, send, type TestServer } from "./helpers.ts";
+import { parseSegments } from "../lib/resource-path.ts";
+import { HttpError } from "../lib/query.ts";
 
 // String keys with characters a URL reserves, as SAP document numbers have them (SO/2025/1)
 const MODEL = path.join(import.meta.dirname, "fixtures", "OddKeys");
@@ -93,5 +95,33 @@ describe("a function's parameters in the path", () => {
     const r = await get(`${s.v4}/FindDoc(no='x',nope=1)`);
     assert.equal(r.status, 400);
     assert.equal(r.body.error.code, "InvalidParameter");
+  });
+});
+
+describe("parseSegments", () => {
+  it("reads a key's quotes: doubled ones, and in several values", () => {
+    assert.deepEqual(parseSegments("Set('it''s')/Nav(A='x',B='y''')"), [
+      { name: "Set", keyText: "'it''s'" },
+      { name: "Nav", keyText: "A='x',B='y'''" },
+    ]);
+  });
+
+  it("a parenthesis in a key's string is the string's", () => {
+    assert.deepEqual(parseSegments("Set('a)b(')"), [
+      { name: "Set", keyText: "'a)b('" },
+    ]);
+  });
+
+  // Two ways of reading each pair of quotes made the time double with every pair, while the
+  // one thread that answers every request waited for it
+  it("a long run of quotes is a quick 400, however it ends", () => {
+    for (const end of ["x", "", "'x", ")x"]) {
+      const started = performance.now();
+      assert.throws(
+        () => parseSegments(`Alls('${"'".repeat(61)}${end}`),
+        (e: unknown) => e instanceof HttpError && e.status === 400,
+      );
+      assert.ok(performance.now() - started < 500, JSON.stringify(end));
+    }
   });
 });
