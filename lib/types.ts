@@ -166,8 +166,8 @@ const keepLongNumbers = ((
     : value) as (key: string, value: unknown) => unknown;
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
-// An empty string is a value of a string, which ABAP's blank is, and of nothing else: a client
-// sends one for a cleared date or number. (A CSV cell left empty is null: see parseCsv.)
+// An empty string is a value of a string, which ABAP's blank is, and of nothing else, where
+// it stays no value. (A CSV cell left empty is null: see parseCsv.)
 function toInternal(value: unknown, type: string): PrimitiveValue {
   if (value === null || value === undefined) return null;
   if (value === "" && type !== "Edm.String") return null;

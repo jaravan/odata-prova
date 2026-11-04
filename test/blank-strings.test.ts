@@ -66,7 +66,7 @@ describe("an empty string", () => {
     assert.deepEqual(res.body.Tags, [""]);
   });
 
-  it("for a number or a date is still no value: UI5 sends it for a cleared field", async () => {
+  it("for a number or a date is still no value", async () => {
     const res = await send("POST", `${s.v4}/Notes`, {
       ID: "g",
       Required: "x",
