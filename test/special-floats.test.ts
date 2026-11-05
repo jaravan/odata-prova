@@ -252,3 +252,48 @@ describe("a delta link and INF, -INF, NaN and null", () => {
       });
     }
 });
+
+describe("V2's INF, -INF and NaN in a $filter", () => {
+  let s: TestServer;
+  before(
+    async () =>
+      (s = await start(
+        path.join(import.meta.dirname, "fixtures", "SpecialFloats"),
+      )),
+  );
+  after(() => s.close());
+
+  const values = async (filter: string) => {
+    const r = await get(`${s.v2}/Ms?$filter=${encodeURIComponent(filter)}`);
+    assert.equal(r.status, 200, filter);
+    return r.body.d.results.map((m: M) => m.V);
+  };
+
+  for (const [filter, expected] of [
+    ["V eq INF", ["INF"]],
+    ["V eq -INF", ["-INF"]],
+    ["V eq INFd", ["INF"]],
+    ["V eq INFf", ["INF"]],
+    ["V eq NaN", []],
+    ["V ne NaN", ["INF", "-INF", "NaN", 1.5]],
+    ["V gt 1.5d and V lt INF", []],
+  ] as const)
+    it(`${filter} reads the same as in V4`, async () => {
+      assert.deepEqual(await values(filter), expected);
+      const v4 = await get(
+        `${s.v4}/Ms?$filter=${encodeURIComponent(filter.replace(/\b(INF|NaN)[df]\b/, "$1").replace("1.5d", "1.5"))}`,
+      );
+      assert.deepEqual(
+        v4.body.value.map((m: M) => m.V),
+        expected,
+      );
+    });
+
+  it("a name that only starts with one is still a name", async () => {
+    const r = await get(
+      `${s.v2}/Ms?$filter=${encodeURIComponent("INFO eq 1")}`,
+    );
+    assert.equal(r.status, 400);
+    assert.match(r.body.error.message.value, /INFO/);
+  });
+});

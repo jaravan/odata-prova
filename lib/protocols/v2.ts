@@ -45,6 +45,19 @@ const typedLiteralPrefixes = new Set([
   "x",
 ]);
 
+// INF and NaN, which a property can't be named after a literal of: a whole word only
+function matchBareLiteral(
+  text: string,
+): (Literal & { length: number }) | undefined {
+  const m = text.match(/^(INF|NaN)[dDfF]?(?![\w./])/);
+  if (!m) return undefined;
+  return {
+    value: m[1] === "INF" ? Infinity : NaN,
+    type: "Edm.Double",
+    length: m[0].length,
+  };
+}
+
 // A binary literal's text as the base64 values are held in. V2 writes it in hex; what isn't
 // hex is taken as base64, as links this server wrote before it wrote hex.
 function binaryValue(text: string): string {
@@ -293,6 +306,7 @@ const v2: Protocol = {
   headers,
   typedLiteralPrefixes,
   parseLiteral,
+  matchBareLiteral,
   keyLiteral,
   parseQueryOptions,
   serviceDocument(svc) {
