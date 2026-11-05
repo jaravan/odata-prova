@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="R">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+      </EntityType>
+      <Function Name="Lookup">
+        <Parameter Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <ReturnType Type="N.R"/>
+      </Function>
+      <Function Name="Score">
+        <Parameter Name="d" Type="Edm.Double" Nullable="false"/>
+        <ReturnType Type="Edm.Double"/>
+      </Function>
+      <Function Name="Optional">
+        <Parameter Name="d" Type="Edm.Double"/>
+        <ReturnType Type="Edm.Double"/>
+      </Function>
+      <Action Name="Approve">
+        <Parameter Name="n" Type="Edm.Int32" Nullable="false"/>
+        <Parameter Name="note" Type="Edm.String"/>
+      </Action>
+      <EntityContainer Name="C">
+        <EntitySet Name="Rs" EntityType="N.R"/>
+        <FunctionImport Name="Lookup" Function="N.Lookup" EntitySet="Rs"/>
+        <FunctionImport Name="Score" Function="N.Score"/>
+        <FunctionImport Name="Optional" Function="N.Optional"/>
+        <ActionImport Name="Approve" Action="N.Approve"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -166,8 +166,10 @@ function operationParameters(
         );
   }
   for (const p of op.parameters) {
-    // Text from the query string or the path (a repeated query parameter isn't supported)
-    const text = own(raw, p.name) as string | undefined;
+    // Text from the query string or the path
+    const text = own(raw, p.name) as string | string[] | undefined;
+    if (Array.isArray(text))
+      throw new HttpError(400, `${p.name} is given more than once`);
     if (text === undefined) params[p.name] = null;
     else if (text.startsWith("@"))
       throw new HttpError(

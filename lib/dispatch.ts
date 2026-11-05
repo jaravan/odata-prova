@@ -148,6 +148,9 @@ function handle(
     };
   }
 
+  for (const [name, value] of Object.entries(query))
+    if (Array.isArray(value) && /^[$!]/.test(name))
+      throw new HttpError(400, `${name} is given more than once`);
   const q = protocol.parseQueryOptions(query);
   const segments = parseSegments(resourcePath);
   let wantCount = false,
