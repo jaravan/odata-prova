@@ -355,6 +355,14 @@ function checkNoInline(
   }
 }
 
+// A delta of a collection, Kids@delta: OData 4.01's, which isn't done here, so it isn't let
+// through as an annotation is
+function checkNoDelta(fields: Record<string, unknown>): void {
+  for (const name of Object.keys(fields))
+    if (/@(?:odata\.)?delta$/.test(name))
+      throw new HttpError(501, `${name}: a delta in a body is not supported`);
+}
+
 // A single-valued navigation has one entity: bound and given inline, which was meant can't be
 // told. A collection can take both.
 function checkOneOfBindAndInline(
@@ -385,6 +393,7 @@ function insertTree(
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
   checkFields(entityType, fields);
+  checkNoDelta(fields);
   for (const nav of Object.values(entityType.navigations))
     checkInline(nav, own(fields, nav.name));
   // Links to existing entities: a foreign key on this side before the required values are
@@ -471,6 +480,7 @@ function update(
   if (!body || typeof body !== "object")
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
+  checkNoDelta(fields);
   checkFields(entityType, fields);
   const changes: Row = {};
   for (const p of Object.values(entityType.properties)) {

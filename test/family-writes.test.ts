@@ -179,4 +179,31 @@ describe("a to-one link and what a create can't mean", () => {
     const inline = { ID: 991, Parent: { ID: 803 } };
     assert.equal((await send("POST", `${s.v4}/Ks`, inline)).status, 201);
   });
+
+  for (const field of ["Kids@delta", "Kids@odata.delta"]) {
+    it(`PATCH with ${field} says it isn't done`, async () => {
+      const res = await send("PATCH", `${s.v4}/Ps(800)`, {
+        [field]: [{ ID: 950 }],
+      });
+      assert.equal(res.status, 501);
+      assert.match(res.body.error.message, /delta/i);
+      assert.equal((await get(`${s.v4}/Ks(950)`)).status, 404);
+    });
+
+    it(`POST with ${field} too`, async () => {
+      const res = await send("POST", `${s.v4}/Ps`, {
+        ID: 810,
+        [field]: [{ ID: 950 }],
+      });
+      assert.equal(res.status, 501);
+    });
+  }
+
+  it("other annotations are still fine", async () => {
+    const res = await send("PATCH", `${s.v4}/Ps(800)`, {
+      "I1@odata.type": "#Int32",
+      I1: 1,
+    });
+    assert.equal(res.status, 204);
+  });
 });
