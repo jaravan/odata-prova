@@ -73,7 +73,11 @@ function matchBareLiteral(
       length: m[0].length,
     };
   if ((m = text.match(DATE)))
-    return { value: m[0], type: "Edm.Date", length: m[0].length };
+    return {
+      value: toInternal(m[0], "Edm.Date"),
+      type: "Edm.Date",
+      length: m[0].length,
+    };
   if ((m = text.match(TIME)))
     return {
       value: toInternal(m[0], "Edm.TimeOfDay"),

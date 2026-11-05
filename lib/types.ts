@@ -261,7 +261,8 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
       const s = String(value);
       let m: RegExpMatchArray | null;
       let time: string | undefined;
-      if ((m = s.match(V2_TIME))) {
+      // PT alone says nothing: at least one part
+      if ((m = s.match(V2_TIME)) && (m[1] ?? m[2] ?? m[3]) !== undefined) {
         const sec =
           m[3] === undefined
             ? "00"
@@ -455,6 +456,8 @@ function toIsoDateTime(value: unknown, type: string): string {
     S > 59
   )
     throw invalid(value, type);
+  const [zoneH, zoneM] = (zone ?? "").slice(1).split(":").map(Number);
+  if (zoneH > 23 || zoneM > 59) throw invalid(value, type);
   // A date's own day, whatever its time; a zone shifts a timestamp to UTC
   if (type === "Edm.Date" && !zone) return `${y}-${mo}-${d}`;
   const offset =

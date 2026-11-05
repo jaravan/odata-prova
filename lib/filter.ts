@@ -705,8 +705,16 @@ function logical(decides: boolean, l: Value, right: () => Value): Value {
     type: "Edm.Boolean",
   };
 }
+// A value as a number. A string may hold one (see arithmeticType); text that doesn't would be
+// NaN, and a date or a boolean isn't one.
 function num(v: Value): number {
-  return Number(v.value);
+  const n = Number(v.value);
+  if (
+    !isNumericType(v.type ?? "") &&
+    (Number.isNaN(n) || typeof v.value === "boolean")
+  )
+    throw new Error(`Expected a number, not ${str(v)}`);
+  return n;
 }
 function str(v: Value): string {
   return String(v.value);
