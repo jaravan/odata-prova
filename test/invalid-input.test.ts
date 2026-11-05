@@ -3,8 +3,17 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { toInternal } from "../lib/types.ts";
-import { get, send, ORDER, start, type TestServer } from "./helpers.ts";
+import {
+  batch,
+  batchResponses,
+  get,
+  send,
+  ORDER,
+  start,
+  type TestServer,
+} from "./helpers.ts";
 
 const statusOf = async (url: string) => (await get(encodeURI(url))).status;
 
@@ -78,6 +87,93 @@ describe("query options that can't be read", () => {
     assert.equal(await statusOf(`${root}?$inlinecount=none`), 200);
     const { body } = await get(`${root}?$inlinecount=allpages`);
     assert.equal(typeof body.d.__count, "string");
+  });
+});
+
+describe("a long number where text belongs", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "EdmTypes"));
+  });
+  after(() => s.close());
+
+  const post = (ID: number, field: string, literal: string) =>
+    fetch(`${s.v4}/Values`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"ID":${ID},"${field}":${literal}}`,
+    });
+
+  for (const [field, literal] of [
+    ["Day", "1234567890123456"],
+    ["Day", "12345"],
+    ["Took", "1234567890123456"],
+  ])
+    it(`${field}: ${literal} is a 400`, async () => {
+      const res = await post(600, field, literal);
+      assert.equal(res.status, 400);
+      assert.match(await res.text(), /expected a string/);
+    });
+
+  it("where a number belongs, it keeps every digit", async () => {
+    const res = await post(601, "Big", "9007199254740993");
+    assert.equal(res.status, 201);
+    const text = await (await fetch(`${s.v4}/Values(601)?$select=Big`)).text();
+    assert.match(text, /9007199254740993/);
+    const decimal = await post(602, "Amount", "12345678901234567890.123456");
+    assert.equal(decimal.status, 201);
+    assert.match(
+      await (await fetch(`${s.v4}/Values(602)?$select=Amount`)).text(),
+      /12345678901234567890\.123456/,
+    );
+    assert.equal((await post(603, "V", "0.12345678901234567")).status, 201);
+  });
+
+  it("a long number as text is still text where it's wanted", async () => {
+    assert.equal((await post(604, "Big", '"9007199254740993"')).status, 201);
+  });
+
+  it("a long number isn't an object or an entity either", async () => {
+    for (const body of ["1234567890123456", "[1234567890123456]"]) {
+      const res = await fetch(`${s.v4}/Values`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      assert.equal(res.status, 400, body);
+    }
+  });
+});
+
+describe("a long number in a string property", () => {
+  it("is a 400, in a $batch too", async () => {
+    const s = await start(
+      path.join(import.meta.dirname, "fixtures", "Spellings"),
+    );
+    try {
+      const direct = await fetch(`${s.v4}/Rows`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"ID":70,"Text":1234567890123456}',
+      });
+      assert.equal(direct.status, 400);
+      const part = batchResponses(
+        (
+          await batch(s.v4, [
+            { method: "POST", url: "Rows", body: { ID: 71, Text: 1e15 } },
+          ])
+        ).text,
+      )[0];
+      assert.equal(part.status, 400);
+      const text = await fetch(`${s.v4}/Rows`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"ID":72,"Text":"1234567890123456"}',
+      });
+      assert.equal(text.status, 201);
+    } finally {
+      await s.close();
+    }
   });
 });
 

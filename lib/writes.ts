@@ -2,7 +2,12 @@
 // rollback, links to existing entities (see references.ts), and cascading deletes. Drafts
 // write through here too (see draft.ts).
 
-import { isNumericType, joinText, propToInternal } from "./types.ts";
+import {
+  LongNumber,
+  isNumericType,
+  joinText,
+  propToInternal,
+} from "./types.ts";
 import { HttpError, own } from "./query.ts";
 import { nextETag } from "./etag.ts";
 import type {
@@ -156,7 +161,11 @@ function checkValue(prop: TypedElement, value: unknown): void {
   // A complex type's value, or an entity's (an action's parameter can be one)
   const structured = prop.complexType || prop.entityType;
   if (structured) {
-    if (typeof value !== "object" || Array.isArray(value))
+    if (
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      value instanceof LongNumber
+    )
       throw new HttpError(
         400,
         `${prop.name}: expected an object`,
@@ -182,7 +191,7 @@ function checkValue(prop: TypedElement, value: unknown): void {
       : isNumericType(prop.elementType)
         ? ["number", "string"]
         : ["string"];
-  if (!expected.includes(typeof value))
+  if (!expected.includes(value instanceof LongNumber ? "number" : typeof value))
     throw new HttpError(
       400,
       `${prop.name}: expected ${expected.map((t) => `a ${t}`).join(" or ")}, got ${JSON.stringify(value)}`,
@@ -311,7 +320,7 @@ function insertTree(
   presetValues: Row,
   draft: boolean,
 ): Row {
-  if (!body || typeof body !== "object")
+  if (!body || typeof body !== "object" || body instanceof LongNumber)
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
   checkFields(entityType, fields);

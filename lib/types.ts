@@ -222,6 +222,10 @@ function keyText(value: unknown, prop: Property): string {
   }
 }
 
+// A number in a body with more digits than a double holds: text to the conversions, which keep
+// its digits, and still a number to the check of a body's JSON types (see checkValue)
+class LongNumber extends String {}
+
 // A JSON.parse reviver for a request's body: a number with more digits than a double holds
 // (9007199254740993, an Int64) is read as its text, which the property's type then reads.
 // The source text is the reviver's third argument (Node 21 and later).
@@ -233,7 +237,7 @@ const keepLongNumbers = ((
   typeof value === "number" &&
   context?.source !== undefined &&
   context.source.replace(/e.*$|[-.]/gi, "").replace(/^0+/, "").length > 15
-    ? context.source
+    ? new LongNumber(context.source)
     : value) as (key: string, value: unknown) => unknown;
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
@@ -571,6 +575,7 @@ export {
   enumValue,
   INTEGER_RANGES,
   inIntegerRange,
+  LongNumber,
   keepLongNumbers,
   keyText,
   withPrecision,
