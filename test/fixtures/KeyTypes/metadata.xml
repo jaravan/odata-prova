@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="K" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="ByDuration">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Duration" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="ByBinary">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Binary" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="ByDouble">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Double" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="BySingle">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Single" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="ByStamp">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.DateTimeOffset" Nullable="false"/>
+      </EntityType>
+      <EntityType Name="ByBoth">
+        <Key><PropertyRef Name="Data"/><PropertyRef Name="Took"/></Key>
+        <Property Name="Data" Type="Edm.Binary" Nullable="false"/>
+        <Property Name="Took" Type="Edm.Duration" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Durations" EntityType="K.ByDuration"/>
+        <EntitySet Name="Binaries" EntityType="K.ByBinary"/>
+        <EntitySet Name="Doubles" EntityType="K.ByDouble"/>
+        <EntitySet Name="Singles" EntityType="K.BySingle"/>
+        <EntitySet Name="Stamps" EntityType="K.ByStamp"/>
+        <EntitySet Name="Boths" EntityType="K.ByBoth"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

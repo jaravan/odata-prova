@@ -226,7 +226,8 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
       if (typeof value === "string" && Object.hasOwn(SPECIAL_FLOATS, value))
         return SPECIAL_FLOATS[value];
       const n = numberOf(value);
-      if (Number.isNaN(n)) throw invalid(value, type);
+      // The number NaN is a literal's, and text that's no number isn't one
+      if (Number.isNaN(n) && !Number.isNaN(value)) throw invalid(value, type);
       return n;
     }
     case "Edm.Int64": {

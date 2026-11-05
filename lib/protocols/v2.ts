@@ -68,6 +68,11 @@ function parseLiteral(text: string): Literal {
     return { value: t, type: "Edm.Int64" };
   if ((m = t.match(/^(-?\d+(?:\.\d+)?)[mM]$/)))
     return { value: m[1], type: "Edm.Decimal" };
+  if ((m = t.match(/^(-?INF|NaN)[dDfF]?$/)))
+    return {
+      value: m[1] === "NaN" ? NaN : m[1] === "INF" ? Infinity : -Infinity,
+      type: "Edm.Double",
+    };
   if ((m = t.match(/^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)[dDfF]?$/)))
     return { value: Number(m[1]), type: "Edm.Double" };
   throw new HttpError(400, `Cannot parse literal: ${text}`);
@@ -95,8 +100,11 @@ function keyLiteral(value: PropertyValue, prop: Property): string {
       return `${value}L`;
     case "Edm.Decimal":
       return `${value}M`;
+    // base64's + / and = are a URL's own characters
+    case "Edm.Binary":
+      return `binary'${encodeURIComponent(String(value))}'`;
     default:
-      return String(value);
+      return specialFloat(value) ?? String(value);
   }
 }
 

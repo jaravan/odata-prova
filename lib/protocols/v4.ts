@@ -97,6 +97,7 @@ function parseLiteral(text: string): Literal {
       type: "Edm.String",
       enumType: m[1],
     };
+  if (t === "-INF") return { value: -Infinity, type: "Edm.Double" };
   const bare = matchBareLiteral(t);
   if (bare && bare.length === t.length)
     return { value: bare.value, type: bare.type };
@@ -118,9 +119,17 @@ function parseLiteral(text: string): Literal {
 // that a / or a ? in one stays part of the key (see decodePath).
 function keyLiteral(value: PropertyValue, prop: Property): string {
   if (prop.enumType) return `${prop.type}'${String(value)}'`;
-  return prop.type === "Edm.String"
-    ? `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`
-    : String(value);
+  switch (prop.type) {
+    case "Edm.String":
+      return `'${encodeURIComponent(String(value).replace(/'/g, "''"))}'`;
+    case "Edm.Duration":
+      return `duration'${String(value)}'`;
+    // base64's + / and = are a URL's own characters
+    case "Edm.Binary":
+      return `binary'${encodeURIComponent(String(value))}'`;
+    default:
+      return specialFloat(value) ?? String(value);
+  }
 }
 
 // A number JSON.stringify writes as the given text, every digit kept (Node 21 and later; not
