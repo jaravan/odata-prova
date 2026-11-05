@@ -265,6 +265,8 @@ function referenceRequest(
           400,
           `Name the link to remove: ${nav.name}(key)/$ref, or $id`,
         );
+      if (!svc.related(row, type, nav).rows.includes(which))
+        throw new HttpError(404, `${targetType.name} not found`);
       unlink(svc, setName, type, row, nav, which);
       return { status: 204 };
     }
