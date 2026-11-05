@@ -280,7 +280,7 @@ function insertPrincipals(
   const values: Row = {};
   for (const nav of Object.values(type.navigations)) {
     const payload = own(fields, nav.name);
-    if (!payload || !keptOnThisSide(nav)) continue;
+    if (!payload || isDeferred(payload) || !keptOnThisSide(nav)) continue;
     if (binds.some((b) => b.field === nav.name)) continue;
     const preset: Row = {};
     for (const [src, tgt] of nav.join) {
@@ -312,6 +312,49 @@ function insertPrincipals(
   return values;
 }
 
+// V2's list of related entities, { results: [...] }; V4's is the array itself
+const listOf = (value: unknown): unknown =>
+  (value as { results?: unknown } | null)?.results ?? value;
+
+// V2's link to what's related, in place of its content: reading an entity gives it
+const isDeferred = (value: unknown) =>
+  !!value && typeof value === "object" && "__deferred" in value;
+
+// A navigation's value in a create: an entity, or a list of them for a collection. Each is
+// checked as it's created.
+function checkInline(nav: Navigation, value: unknown): void {
+  if (value === undefined || value === null || isDeferred(value)) return;
+  if (
+    nav.isCollection ? !Array.isArray(listOf(value)) : typeof value !== "object"
+  )
+    throw new HttpError(
+      400,
+      `${nav.name}: expected ${nav.isCollection ? "an array" : "an object"}`,
+      "InvalidValue",
+    );
+}
+
+// An update changes this entity and its links. Related entities in the body would be left out
+// without a word, so they're a 400; an empty list or V2's deferred link holds nothing to lose.
+function checkNoInline(
+  type: EntityType,
+  fields: Record<string, unknown>,
+  binds: ReturnType<typeof bindsOf>,
+): void {
+  for (const nav of Object.values(type.navigations)) {
+    const value = own(fields, nav.name);
+    if (value === undefined || value === null || isDeferred(value)) continue;
+    if (binds.some((b) => b.field === nav.name)) continue;
+    const list = listOf(value);
+    if (Array.isArray(list) && !list.length) continue;
+    throw new HttpError(
+      400,
+      `${nav.name}: an update can't hold related entities: link them with @odata.bind, or POST them to ${nav.name}`,
+      "InvalidValue",
+    );
+  }
+}
+
 function insertTree(
   svc: WriteHost,
   setName: string,
@@ -324,6 +367,8 @@ function insertTree(
     throw new HttpError(400, "Request body must be a JSON object");
   const fields = body as Record<string, unknown>;
   checkFields(entityType, fields);
+  for (const nav of Object.values(entityType.navigations))
+    checkInline(nav, own(fields, nav.name));
   // Links to existing entities: a foreign key on this side before the required values are
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
@@ -363,10 +408,9 @@ function insertTree(
       binds.some((b) => b.field === nav.name)
     )
       continue;
-    const children: unknown[] = nav.isCollection
-      ? Array.isArray(payload)
-        ? payload
-        : (payload as { results?: unknown[] }).results || []
+    if (isDeferred(payload)) continue;
+    const children = nav.isCollection
+      ? (listOf(payload) as unknown[])
       : [payload];
     const target = svc.entitySet(nav.targetSet);
     const fk = Object.fromEntries(
@@ -421,6 +465,7 @@ function update(
   // collection's besides the others. Resolved before anything changes, so a bad one changes
   // nothing.
   const binds = bindsOf(svc, entityType, fields);
+  checkNoInline(entityType, fields, binds);
   svc.store.update(setName, row, changes);
   for (const { nav, targets } of binds) {
     if (!nav.isCollection && !targets.length)

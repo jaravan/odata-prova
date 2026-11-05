@@ -34,4 +34,102 @@ describe("families", () => {
       assert.equal(await parentOf(900), null);
     });
   });
+
+  describe("a create with a navigation", () => {
+    for (const Kids of [{ ID: 1 }, "nonsense", 5, 0, "", false, true])
+      it(`Kids: ${JSON.stringify(Kids)} isn't a collection`, async () => {
+        const res = await send("POST", `${s.v4}/Ps`, { ID: 800, Kids });
+        assert.equal(res.status, 400);
+        assert.equal((await get(`${s.v4}/Ps(800)`)).status, 404);
+      });
+
+    for (const Parent of [0, "", false])
+      it(`Parent: ${JSON.stringify(Parent)} isn't an entity`, async () => {
+        const res = await send("POST", `${s.v4}/Ks`, { ID: 801, Parent });
+        assert.equal(res.status, 400);
+      });
+
+    it("an array is created, V2's results too", async () => {
+      const body = { ID: 802, Kids: [{ ID: 960 }] };
+      assert.equal((await send("POST", `${s.v4}/Ps`, body)).status, 201);
+      assert.equal(await parentOf(960), 802);
+      const v2 = { ID: 803, Kids: { results: [{ ID: 961 }] } };
+      assert.equal((await send("POST", `${s.v2}/Ps`, v2)).status, 201);
+      assert.equal(await parentOf(961), 803);
+    });
+
+    it("nothing to create is fine", async () => {
+      for (const [i, Kids] of [[], null, { results: [] }].entries())
+        assert.equal(
+          (await send("POST", `${s.v4}/Ps`, { ID: 810 + i, Kids })).status,
+          201,
+        );
+      const deferred = { __deferred: { uri: "x" } };
+      assert.equal(
+        (await send("POST", `${s.v2}/Ps`, { ID: 820, Kids: deferred })).status,
+        201,
+      );
+    });
+  });
+
+  describe("an update with related entities", () => {
+    for (const [method, body] of [
+      ["PATCH", { Kids: [{ ID: 950 }] }],
+      ["PUT", { Kids: [{ ID: 950 }] }],
+      ["PATCH", { Kids: { results: [{ ID: 950 }] } }],
+      ["PATCH", { Kids: "nonsense" }],
+    ] as const)
+      it(`${method} ${JSON.stringify(body)} is a 400`, async () => {
+        const res = await send(method, `${s.v4}/Ps(700)`, body);
+        assert.equal(res.status, 400);
+        assert.match(res.body.error.message, /Kids/);
+        assert.equal((await get(`${s.v4}/Ks(950)`)).status, 404);
+      });
+
+    it("a to-one is refused too, and changes nothing", async () => {
+      const res = await send("PATCH", `${s.v4}/Ks(900)`, {
+        I1: 5,
+        Parent: { ID: 701 },
+      });
+      assert.equal(res.status, 400);
+      assert.equal((await get(`${s.v4}/Ks(900)`)).body.I1, null);
+    });
+
+    it("what holds nothing to lose is fine", async () => {
+      for (const Kids of [[], null, { results: [] }])
+        assert.equal(
+          (await send("PATCH", `${s.v4}/Ps(700)`, { Kids })).status,
+          204,
+        );
+      assert.equal(
+        (
+          await send("PATCH", `${s.v2}/Ps(700)`, {
+            Kids: { __deferred: { uri: "x" } },
+          })
+        ).status,
+        204,
+      );
+    });
+
+    it("links by reference still are links", async () => {
+      assert.equal(
+        (
+          await send("PATCH", `${s.v4}/Ks(900)`, {
+            "Parent@odata.bind": "Ps(701)",
+          })
+        ).status,
+        204,
+      );
+      assert.equal(await parentOf(900), 701);
+      assert.equal(
+        (
+          await send("PATCH", `${s.v2}/Ks(900)`, {
+            Parent: { __metadata: { uri: "Ps(700)" } },
+          })
+        ).status,
+        204,
+      );
+      assert.equal(await parentOf(900), 700);
+    });
+  });
 });
