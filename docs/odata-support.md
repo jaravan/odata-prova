@@ -446,7 +446,17 @@ Rejected with `501 Not Implemented`:
 - the `/$value` of an entity (a media resource's content): only a property's `/$value` is served
 - the `$filter` functions listed under [Query options](#query-options)
 
-`If-None-Match` is ignored: a read always answers with the entity.
+- a delta in a body (`Kids@delta`, `Kids@odata.delta`)
+
+Rejected with `400 Bad Request`, though OData has them:
+
+- an expression in `$orderby` (`length(Name)`): a property or a path only, or a `$compute` alias
+- `Kids/$count` in `$filter` and `$orderby`
+- parameter aliases (`@p1`) in `$filter`
+- a path into a complex value, as `Rows(1)/Address/City` or `$select=Address/City`
+- spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body: generated as null, so an entity with a required one can't be `PUT` back
+
+`If-None-Match` is ignored: a read always answers with the entity. `odata.metadata` in `Accept` is too: the answer is always `minimal`.
 
 ## Navigations without a ReferentialConstraint
 
