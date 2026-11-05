@@ -721,7 +721,8 @@ function integerValue(c: Ctx, type: string): number {
 // Scale is the number of decimals (2 when the metadata leaves it open); Precision caps the
 // digits in total, so it also caps the integer part.
 function decimalScale(prop: Property): number {
-  return /^\d+$/.test(prop.scale ?? "") ? Number(prop.scale) : 2;
+  // More digits than a double has are only noise, and a decimal holds so many at most
+  return /^\d+$/.test(prop.scale ?? "") ? Math.min(Number(prop.scale), 20) : 2;
 }
 
 function decimalValue(c: Ctx): string {

@@ -3,7 +3,10 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { parseMetadata } from "../lib/metadata.ts";
 import { batch, get, send, start, type TestServer } from "./helpers.ts";
 
 const STAMPS = path.join(import.meta.dirname, "fixtures", "Stamps");
@@ -118,6 +121,53 @@ describe("what a URL can't mean", () => {
       assert.equal((await get(`${s.v4}/Rs?${option}=`)).status, 400);
       assert.equal((await get(`${s.v2}/Rs?${option}=`)).status, 400);
     });
+});
+
+describe("facets no value fits", () => {
+  const schema = (property: string) =>
+    `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EntityType Name="A"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/>${property}</EntityType><EntityContainer Name="C"><EntitySet Name="As" EntityType="N.A"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
+
+  for (const property of [
+    `<Property Name="D" Type="Edm.Decimal" Scale="99999999999"/>`,
+    `<Property Name="D" Type="Edm.DateTimeOffset" Precision="99999999999"/>`,
+    `<Property Name="D" Type="Edm.TimeOfDay" Precision="99999999999"/>`,
+  ])
+    it(`${property} generates and reads`, async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "facets-"));
+      fs.writeFileSync(path.join(dir, "metadata.xml"), schema(property));
+      const s = await start(dir, { mockRows: 2 });
+      try {
+        const { status, body } = await get(`${s.v4}/As`);
+        assert.equal(status, 200);
+        assert.equal(body.value.length, 2);
+      } finally {
+        await s.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+  it("a Scale past its Precision stops the start, naming it", () => {
+    assert.throws(
+      () =>
+        parseMetadata(
+          schema(
+            `<Property Name="D" Type="Edm.Decimal" Precision="10" Scale="99999999999"/>`,
+          ),
+        ),
+      /metadata\.xml: D has a Scale of 99999999999, more than its Precision of 10/,
+    );
+  });
+
+  it("Scale variable and a Scale up to the Precision are fine", () => {
+    for (const scale of ["variable", "floating", "10", "0"])
+      assert.doesNotThrow(() =>
+        parseMetadata(
+          schema(
+            `<Property Name="D" Type="Edm.Decimal" Precision="10" Scale="${scale}"/>`,
+          ),
+        ),
+      );
+  });
 });
 
 describe("a binary's /$value in a $batch", () => {

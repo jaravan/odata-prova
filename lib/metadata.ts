@@ -816,6 +816,11 @@ function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
     if (v2Type === "Edm.DateTime" && sap["display-format"] === "Date")
       type = "Edm.Date";
   }
+  // CSDL has Scale at most Precision: past it, no value but 0 would fit
+  if (/^\d+$/.test(p.Precision ?? "") && Number(p.Scale) > Number(p.Precision))
+    throw new Error(
+      `metadata.xml: ${p.Name} has a Scale of ${p.Scale}, more than its Precision of ${p.Precision}`,
+    );
   return {
     name: p.Name,
     type,
