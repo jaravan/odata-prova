@@ -382,9 +382,12 @@ function forestOf(
     } else roots.push(row);
   }
   const reached = new Set<Row>();
-  const reach = (node: Row) => {
-    reached.add(node);
-    for (const kid of children.get(node)!) reach(kid);
+  const reach = (root: Row) => {
+    const pending = [root];
+    for (let node = pending.pop(); node; node = pending.pop()) {
+      reached.add(node);
+      for (const kid of children.get(node)!) pending.push(kid);
+    }
   };
   roots.forEach(reach);
   for (const row of rows)
@@ -424,7 +427,13 @@ function topLevels(
       opened.add(at);
   const limited: Limited = { order: [], shown: new Map(), depth: new Map() };
   // below: how many levels to show under the node
-  const visit = (node: Row, below: number, depth: number) => {
+  const levels = t.levels ?? Infinity;
+  const pending = forest.roots
+    .map((node) => ({ node, below: levels - 1, depth: 0 }))
+    .reverse();
+  for (let at = pending.pop(); at; at = pending.pop()) {
+    const { node, depth } = at;
+    let { below } = at;
     limited.order.push(node);
     limited.depth.set(node, depth);
     const override = expand.get(String(node[h.nodeProperty]));
@@ -432,10 +441,9 @@ function topLevels(
     if (opened.has(node)) below = Math.max(below, 1);
     const kids = below > 0 ? forest.children.get(node)! : [];
     limited.shown.set(node, kids);
-    for (const kid of kids) visit(kid, below - 1, depth + 1);
-  };
-  const levels = t.levels ?? Infinity;
-  for (const root of forest.roots) visit(root, levels - 1, 0);
+    for (let i = kids.length - 1; i >= 0; i--)
+      pending.push({ node: kids[i], below: below - 1, depth: depth + 1 });
+  }
   return withDerived(type, h, limited, forest);
 }
 
@@ -458,43 +466,48 @@ function relatives(
   const start = new Set(run(rows, t.transformations).rows.map(id));
   // Each node's parent in the whole hierarchy
   const nav = svc.navigation(type, h.parentNavigation)!;
-  const parentOf = new Map<string, string>();
+  const next = new Map<string, string[]>();
+  const follow = (from: string, to: string) => {
+    const known = next.get(from);
+    if (known) known.push(to);
+    else next.set(from, [to]);
+  };
   for (const row of svc.store.rows(t.set)) {
     const parent = svc.related(row, type, nav).rows[0];
-    if (parent) parentOf.set(id(row), id(parent));
+    if (!parent || id(parent) === id(row)) continue;
+    if (t.kind === "ancestors") follow(id(row), id(parent));
+    else follow(id(parent), id(row));
   }
-  // A node's ancestors, nearest first, up to the distance; a cycle ends the walk
-  const ancestors = (node: string): string[] => {
-    const found: string[] = [];
-    for (
-      let at = parentOf.get(node);
-      at !== undefined && !found.includes(at) && at !== node;
-      at = parentOf.get(at)
-    ) {
-      if (found.length === (t.distance ?? Infinity)) break;
-      found.push(at);
-    }
-    return found;
-  };
-  const keep =
-    t.kind === "ancestors"
-      ? (() => {
-          const wanted = new Set([...start].flatMap(ancestors));
-          return (node: string) => wanted.has(node);
-        })()
-      : (node: string) => ancestors(node).some((a) => start.has(a));
+  // Out from the start nodes a level at a time, up to the distance. Each node is reached once,
+  // however deep the hierarchy and however many start nodes are on one path; a cycle ends there.
+  const wanted = new Set<string>();
+  let level = [...start];
+  for (let d = 0; level.length && d < (t.distance ?? Infinity); d++) {
+    const reached: string[] = [];
+    for (const node of level)
+      for (const other of next.get(node) ?? [])
+        if (!wanted.has(other)) {
+          wanted.add(other);
+          reached.push(other);
+        }
+    level = reached;
+  }
   const result = rows.filter(
-    (row) => keep(id(row)) || (t.keepStart && start.has(id(row))),
+    (row) => wanted.has(id(row)) || (t.keepStart && start.has(id(row))),
   );
   // Filled in relative to the result, with the rows as the whole hierarchy
   const forest = forestOf(svc, rows, type, h);
   const inResult = new Set(result);
   const depth = new Map<Row, number>();
-  const measure = (node: Row, d: number) => {
-    depth.set(node, d);
-    for (const kid of forest.children.get(node)!) measure(kid, d + 1);
-  };
-  forest.roots.forEach((r) => measure(r, 0));
+  for (const root of forest.roots) {
+    depth.set(root, 0);
+    const pending = [root];
+    for (let node = pending.pop(); node; node = pending.pop())
+      for (const kid of forest.children.get(node)!) {
+        depth.set(kid, depth.get(node)! + 1);
+        pending.push(kid);
+      }
+  }
   const shown = new Map(
     result.map((node) => [
       node,
@@ -522,16 +535,23 @@ function withDerived(
 ): Row[] {
   const { order, shown, depth } = limited;
   const counts = new Map<Row, number>();
-  const descendants = (node: Row): number => {
-    let n = counts.get(node);
-    if (n === undefined) {
-      n = (shown.get(node) ?? []).reduce(
-        (s, kid) => s + 1 + descendants(kid),
-        0,
-      );
-      counts.set(node, n);
+  // A node's kids are counted first, so it comes back to the stack once they are
+  const descendants = (start: Row): number => {
+    const pending = [start];
+    while (pending.length) {
+      const node = pending.at(-1)!;
+      const kids = shown.get(node) ?? [];
+      const left = kids.filter((kid) => !counts.has(kid));
+      for (const kid of left) pending.push(kid);
+      if (!left.length) {
+        counts.set(
+          node,
+          kids.reduce((n, kid) => n + 1 + counts.get(kid)!, 0),
+        );
+        pending.pop();
+      }
     }
-    return n;
+    return counts.get(start)!;
   };
   return order.map((node, rank) => {
     const out: Row = { ...node };
@@ -585,14 +605,20 @@ function traverse(
     else input.set(id(row), [row]);
   }
   const out: Row[] = [];
-  const visit = (node: Row) => {
-    const own = input.get(id(node)) ?? [];
-    input.delete(id(node));
+  // A node's rows wait on the stack under its children when they come after them
+  const pending: (Row | Row[])[] = [...forest.roots].reverse();
+  for (let at = pending.pop(); at; at = pending.pop()) {
+    if (Array.isArray(at)) {
+      out.push(...at);
+      continue;
+    }
+    const own = input.get(id(at)) ?? [];
+    input.delete(id(at));
     if (t.order === "preorder") out.push(...own);
-    forest.children.get(node)!.forEach(visit);
-    if (t.order === "postorder") out.push(...own);
-  };
-  forest.roots.forEach(visit);
+    else pending.push(own);
+    const kids = forest.children.get(at)!;
+    for (let i = kids.length - 1; i >= 0; i--) pending.push(kids[i]);
+  }
   // Rows that aren't nodes of the hierarchy, in their order
   for (const left of input.values()) out.push(...left);
   return out;
