@@ -207,3 +207,28 @@ describe("a to-one link and what a create can't mean", () => {
     assert.equal(res.status, 204);
   });
 });
+
+describe("what a create says twice", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(FAMILIES);
+    await send("POST", `${s.v4}/Ps`, { ID: 810 });
+    await send("POST", `${s.v4}/Ps`, { ID: 811 });
+  });
+  afterEach(() => s.close());
+
+  it("@bind is the same as @odata.bind", async () => {
+    const res = await send("POST", `${s.v4}/Ks`, {
+      ID: 1,
+      "Parent@bind": "Ps(810)",
+    });
+    assert.equal(res.status, 201);
+    assert.equal((await get(`${s.v4}/Ks(1)`)).body.PID, 810);
+    const parent = await send("POST", `${s.v4}/Ps`, {
+      ID: 812,
+      "Kids@bind": ["Ks(1)"],
+    });
+    assert.equal(parent.status, 201);
+    assert.equal((await get(`${s.v4}/Ks(1)`)).body.PID, 812);
+  });
+});

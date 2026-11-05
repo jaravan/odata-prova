@@ -63,7 +63,8 @@ function bindsOf(
 ): { field: string; nav: Navigation; targets: Row[] }[] {
   const out: { field: string; nav: Navigation; targets: Row[] }[] = [];
   for (const [field, value] of Object.entries(fields)) {
-    const bind = /^(.+)@odata\.bind$/.exec(field);
+    // Nav@bind is OData 4.01's spelling
+    const bind = /^(.+)@(?:odata\.)?bind$/.exec(field);
     let name: string, urls: unknown;
     if (bind) [name, urls] = [bind[1], value];
     else {
