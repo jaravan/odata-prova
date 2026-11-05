@@ -414,6 +414,14 @@ function propertyRequest(
     };
   if (wantValue && (prop.isCollection || prop.complexType))
     throw new HttpError(400, `$value applies to a primitive, not ${prop.name}`);
+  // V4's null property has no body; V2 keeps its { d: { Name: null } }
+  if (value === null && svc.protocol.version === "4.0") return { status: 204 };
+  if (wantValue && prop.type === "Edm.Binary" && value !== null)
+    return {
+      status: 200,
+      contentType: "application/octet-stream",
+      body: Buffer.from(String(value), "base64"),
+    };
   if (wantValue)
     return {
       status: 200,

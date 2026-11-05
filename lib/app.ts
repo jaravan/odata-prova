@@ -366,7 +366,7 @@ function createApp({
       .status(result.status)
       .setHeader("Content-Type", result.contentType || "application/json");
     return res.end(
-      typeof result.body === "string"
+      typeof result.body === "string" || Buffer.isBuffer(result.body)
         ? result.body
         : JSON.stringify(result.body),
     );

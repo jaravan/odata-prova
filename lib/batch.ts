@@ -124,8 +124,12 @@ function renderHttpResponsePart(
   let bodyText = "";
   if (result.status !== 204 && result.body !== undefined) {
     headers += `Content-Type: ${result.contentType || "application/json"}\r\n`;
-    bodyText =
-      typeof result.body === "string"
+    // A multipart body is text, so bytes go in it as base64 and say so
+    if (Buffer.isBuffer(result.body))
+      headers += "Content-Transfer-Encoding: base64\r\n";
+    bodyText = Buffer.isBuffer(result.body)
+      ? result.body.toString("base64")
+      : typeof result.body === "string"
         ? result.body
         : JSON.stringify(result.body);
   }

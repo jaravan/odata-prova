@@ -4,7 +4,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { get, send, start, type TestServer } from "./helpers.ts";
+import { batch, get, send, start, type TestServer } from "./helpers.ts";
 
 const STAMPS = path.join(import.meta.dirname, "fixtures", "Stamps");
 const BASE = "2025-01-01T00:00:00";
@@ -58,5 +58,60 @@ describe("a Precision past the millisecond", () => {
       body.value.map((r: { ID: number }) => r.ID),
       [2, 1, 3],
     );
+  });
+});
+
+describe("a property's value", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(STAMPS);
+    await send("POST", `${s.v4}/Rs`, { ID: 1, S: "x", B: "AQID" });
+    await send("POST", `${s.v4}/Rs`, { ID: 2 });
+  });
+  after(() => s.close());
+
+  for (const root of ["v4", "v2"] as const)
+    it(`/$value of a binary is its bytes, in ${root}`, async () => {
+      const res = await fetch(`${s[root]}/Rs(1)/B/$value`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "application/octet-stream");
+      assert.deepEqual(
+        new Uint8Array(await res.arrayBuffer()),
+        Uint8Array.of(1, 2, 3),
+      );
+    });
+
+  it("text stays text", async () => {
+    const res = await fetch(`${s.v4}/Rs(1)/S/$value`);
+    assert.match(res.headers.get("content-type")!, /text\/plain/);
+    assert.equal(await res.text(), "x");
+  });
+
+  for (const url of ["Rs(2)/S", "Rs(2)/S/$value", "Rs(2)/B/$value"])
+    it(`${url}, null, is a 204 in V4`, async () => {
+      const res = await fetch(`${s.v4}/${url}`);
+      assert.equal(res.status, 204);
+      assert.equal(await res.text(), "");
+    });
+
+  it("a value is still a 200", async () => {
+    assert.equal((await fetch(`${s.v4}/Rs(1)/S`)).status, 200);
+  });
+});
+
+describe("a binary's /$value in a $batch", () => {
+  it("is base64, and says so", async () => {
+    const s = await start(STAMPS);
+    try {
+      await send("POST", `${s.v4}/Rs`, { ID: 1, B: "//79" });
+      const { text } = await batch(s.v4, [
+        { method: "GET", url: "Rs(1)/B/$value" },
+      ]);
+      assert.match(text, /Content-Type: application\/octet-stream/i);
+      assert.match(text, /Content-Transfer-Encoding: base64\r\n/i);
+      assert.match(text, /\/\/79/);
+    } finally {
+      await s.close();
+    }
   });
 });
