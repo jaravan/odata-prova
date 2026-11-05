@@ -741,10 +741,16 @@ function comparedAs(left: string | null, right: string | null): string | null {
   return left && left !== "Edm.String" ? left : right;
 }
 
+// What comparing a value costs past a step of an expression: a text long enough to matter is
+// read again for every row
+const longText = (value: unknown) =>
+  typeof value === "string" && value.length > 256 ? value.length : 0;
+
 // Whichever side is an actual property sets the type - that's what lets us compare
 // a plain string literal against a Decimal or DateTime property, or a bare V4 date against
 // a full timestamp, without the caller having to know or care.
 function compare(l: Value, r: Value): number {
+  spend(longText(l.value) + longText(r.value));
   const type = comparedAs(l.type, r.type);
   const fraction = l.fraction ?? r.fraction;
   const shown = (value: unknown) =>
