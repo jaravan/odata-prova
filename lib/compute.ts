@@ -143,6 +143,7 @@ function applyCompute(
         400,
         `${option}: ${alias} needs a value of a primitive type`,
       );
+    const copy = copied(svc, type, expression);
     properties[alias] = {
       name: alias,
       type: typed.type,
@@ -153,7 +154,7 @@ function applyCompute(
       isCollection: false,
       computed: true,
       // A copy of a property is written as finely as the property
-      precision: copied(svc, type, expression)?.precision,
+      precision: copy ? copy.precision : "as written",
     };
     return { alias, typed };
   });

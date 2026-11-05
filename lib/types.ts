@@ -198,6 +198,8 @@ function withPrecision(
   value: PropertyValue,
   precision: string | undefined,
 ): string {
+  // A calculated time has no facet: it's as fine as it came out
+  if (precision === "as written") return String(value);
   // 12 is as fine as CSDL goes
   const digits = Math.min(Number(precision) || 0, 12);
   return String(value).replace(

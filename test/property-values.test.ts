@@ -214,4 +214,23 @@ describe("time() of a moment", () => {
   it("orders by it", async () => {
     assert.deepEqual(await ids("time(At) gt 12:00:00"), [1, 3]);
   });
+
+  for (const [id, expected] of [
+    [1, "12:00:00.123"],
+    [2, "12:00:00"],
+    [3, "12:00:00.1234567"],
+  ] as const)
+    it(`$compute gives ${expected}`, async () => {
+      const { body } = await get(
+        `${s.v4}/Rs(${id})?$select=K&$compute=${encodeURIComponent("time(At) as K")}`,
+      );
+      assert.equal(body.K, expected);
+    });
+
+  it("and $apply's compute", async () => {
+    const { body } = await get(
+      `${s.v4}/Rs?$apply=${encodeURIComponent("filter(ID eq 3)/compute(time(At) as K)")}`,
+    );
+    assert.equal(body.value[0].K, "12:00:00.1234567");
+  });
 });
