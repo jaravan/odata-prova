@@ -1,6 +1,9 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { SqlitePersistence } from "../lib/sqlite.ts";
 import {
   start,
   get,
@@ -140,4 +143,112 @@ describe("NaN in what puts values in order", () => {
     assert.deepEqual(await rank("toppercent(50,V)"), [3]);
     assert.deepEqual(await rank("bottompercent(50,V)"), [1, 2]);
   });
+});
+
+describe("INF, -INF and NaN as keys, saved and restarted", () => {
+  const MODEL = path.join(import.meta.dirname, "fixtures", "DoubleKeys");
+  let dir: string;
+  let s: TestServer | undefined;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "double-keys-"));
+  });
+  afterEach(async () => {
+    await s?.close();
+    s = undefined;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const restart = async () => {
+    await s?.close();
+    s = await start(MODEL, {
+      persistence: new SqlitePersistence(path.join(dir, "state.db")),
+    });
+    return s;
+  };
+  const keys = async () => {
+    const { body } = await get(`${s!.v4}/Points?$orderby=K`);
+    return body.value.map((p: { K: unknown; Note: unknown }) => [p.K, p.Note]);
+  };
+  const create = async (...values: unknown[]) => {
+    for (const K of values)
+      assert.equal(
+        (await send("POST", `${s!.v4}/Points`, { K, Note: String(K) })).status,
+        201,
+      );
+  };
+
+  it("deleting one keeps the others", async () => {
+    await restart();
+    await create("INF", "-INF", "NaN", 1.5);
+    assert.equal((await send("DELETE", `${s!.v4}/Points(-INF)`)).status, 204);
+    const before = await keys();
+    await restart();
+    assert.deepEqual(await keys(), before);
+    assert.equal(before.length, 3);
+  });
+
+  it("each is saved as a row of its own", async () => {
+    await restart();
+    await create("INF", "-INF", "NaN");
+    await restart();
+    assert.deepEqual(await keys(), [
+      ["-INF", "-INF"],
+      ["INF", "INF"],
+      ["NaN", "NaN"],
+    ]);
+  });
+
+  it("updating one changes that one, and no copy of it is left", async () => {
+    await restart();
+    await create("INF", "-INF");
+    await send("PATCH", `${s!.v4}/Points(INF)`, { Note: "changed" });
+    await restart();
+    assert.deepEqual(await keys(), [
+      ["-INF", "-INF"],
+      ["INF", "changed"],
+    ]);
+  });
+
+  it("a key with a finite value is as it was", async () => {
+    await restart();
+    await create(1.5, 0, -2);
+    await send("DELETE", `${s!.v4}/Points(0)`);
+    await restart();
+    assert.equal((await keys()).length, 2);
+  });
+});
+
+describe("a delta link and INF, -INF, NaN and null", () => {
+  const VALUES = ["INF", "-INF", "NaN", null, 1.5];
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "DoubleKeys"));
+    await send("POST", `${s.v4}/Points`, { K: 1 });
+  });
+  after(() => s.close());
+
+  const changes = async (from: unknown, to: unknown) => {
+    await send("PATCH", `${s.v4}/Points(1)`, { V: from });
+    const tracked = await get(`${s.v4}/Points`, {
+      prefer: "odata.track-changes",
+    });
+    await send("PATCH", `${s.v4}/Points(1)`, { V: to });
+    const delta = await get(s.base + tracked.body["@odata.deltaLink"]);
+    return delta.body.value as { V: unknown }[];
+  };
+
+  for (const from of VALUES)
+    for (const to of VALUES) {
+      if (from === to) {
+        it(`${from} to itself is no change`, async () => {
+          assert.deepEqual(await changes(from, to), []);
+        });
+        continue;
+      }
+      it(`${from} to ${to} is a change`, async () => {
+        const rows = await changes(from, to);
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0].V, to);
+      });
+    }
 });

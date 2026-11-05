@@ -103,17 +103,22 @@ function specialFloat(value: unknown): string | undefined {
   return Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF";
 }
 
+// JSON, but with INF, -INF and NaN, which JSON.stringify would all write as null, each as
+// {"$float": "INF"}: no property is called $float, as OData names start with a letter or an
+// underscore. So two values that differ have different text, for comparing, keying or saving.
+function floatJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    specialFloat(v) ? { $float: specialFloat(v) } : v,
+  );
+}
+
 // A value of a type as text, for grouping and counting distinct ones: the same for two values
-// eq calls equal, however each is spelled (0.3 and 0.30), and different for any others. JSON,
-// but with INF, -INF and NaN, which JSON.stringify would all write as null, kept apart. A
+// eq calls equal, however each is spelled (0.3 and 0.30), and different for any others. A
 // value toComparable can't read stays itself, and isn't taken for null.
 function distinctKey(value: unknown, type: string): string {
-  return JSON.stringify(
-    toComparable(value, type) ?? value ?? null,
-    (_key, v: unknown) => {
-      if (typeof v === "bigint") return String(v);
-      return specialFloat(v) ? { $float: specialFloat(v) } : v;
-    },
+  const comparable = toComparable(value, type) ?? value ?? null;
+  return floatJson(
+    typeof comparable === "bigint" ? String(comparable) : comparable,
   );
 }
 
@@ -553,4 +558,5 @@ export {
   isIntegerType,
   specialFloat,
   distinctKey,
+  floatJson,
 };

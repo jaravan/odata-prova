@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { start, get, send, ORDER, PO_MODEL, SALES_MODEL } from "./helpers.ts";
 import { SharedDatabase, SharedPersistence } from "./memory-persistence.ts";
 import { sharedTurn } from "../lib/persistence.ts";
@@ -23,6 +24,27 @@ async function servers(db: SharedDatabase, n = 2, modelDir = PO_MODEL) {
 const order = (id: string) => `PurchaseOrderSet('${id}')`;
 
 describe("servers sharing a saved state", () => {
+  it("rows keyed INF and -INF are told apart on the other server", async () => {
+    const model = path.join(import.meta.dirname, "fixtures", "DoubleKeys");
+    const [a, b] = await servers(new SharedDatabase(), 2, model);
+    const notes = async () => {
+      const { body } = await get(`${b.s.v4}/Points?$orderby=K`);
+      return body.value.map((p: { Note: string }) => p.Note);
+    };
+    try {
+      await send("POST", `${a.s.v4}/Points`, { K: "INF", Note: "up" });
+      await send("POST", `${a.s.v4}/Points`, { K: "-INF", Note: "down" });
+      assert.deepEqual(await notes(), ["down", "up"]);
+      await send("PATCH", `${a.s.v4}/Points(INF)`, { Note: "changed" });
+      assert.deepEqual(await notes(), ["down", "changed"]);
+      await send("DELETE", `${a.s.v4}/Points(-INF)`);
+      assert.deepEqual(await notes(), ["changed"]);
+    } finally {
+      await a.s.close();
+      await b.s.close();
+    }
+  });
+
   it("a write on one is read on the other, at once", async () => {
     const db = new SharedDatabase();
     const [a, b] = await servers(db);

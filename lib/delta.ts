@@ -12,6 +12,7 @@
 
 import { applyQuery, type QueryHost } from "./apply-query.ts";
 import { HttpError } from "./query.ts";
+import { floatJson } from "./types.ts";
 import type { ODataService } from "./service.ts";
 import type {
   EntityType,
@@ -80,7 +81,7 @@ function deltaChanges(
     }).results.length > 0;
   const same = (a: Row, b: Row) =>
     Object.keys(type.properties).every(
-      (p) => JSON.stringify(a[p]) === JSON.stringify(b[p]),
+      (p) => floatJson(a[p]) === floatJson(b[p]),
     );
 
   const previous = new Map(before.map((row) => [keyOf(row), row]));

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="D" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Point">
+        <Key><PropertyRef Name="K"/></Key>
+        <Property Name="K" Type="Edm.Double" Nullable="false"/>
+        <Property Name="Note" Type="Edm.String"/>
+        <Property Name="V" Type="Edm.Double"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Points" EntityType="D.Point"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

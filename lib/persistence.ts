@@ -17,7 +17,7 @@ import { fingerprint, type Change, type Store } from "./store.ts";
 import { regenerationNotes } from "./mock-rules.ts";
 import { ADMIN } from "./draft.ts";
 import { HttpError, own } from "./query.ts";
-import { propToInternal } from "./types.ts";
+import { floatJson, propToInternal } from "./types.ts";
 
 // What a commit changed in one set: the rows to write, as they are now, and the rows to
 // delete, each by its identity (see identityOf). Deletes go first: an entity deleted and
@@ -117,22 +117,13 @@ function identityColumns(model: Model, setName: string): string[] {
   throw new Error(`no identity for the rows of ${setName}`);
 }
 
-// A row as a backend saves it, and back. JSON can't hold INF, -INF and NaN, which Edm.Double
-// and Edm.Single can be. They're written as {"$float": "INF"}: no property or field is called
-// $float, as OData names start with a letter or an underscore.
+// A row as a backend saves it, and back: see floatJson for INF, -INF and NaN
 const FLOATS: Record<string, number> = {
   INF: Infinity,
   "-INF": -Infinity,
   NaN: NaN,
 };
-const toJson = (row: unknown) =>
-  JSON.stringify(row, (_key, value: unknown) =>
-    typeof value === "number" && !Number.isFinite(value)
-      ? {
-          $float: Number.isNaN(value) ? "NaN" : value > 0 ? "INF" : "-INF",
-        }
-      : value,
-  );
+const toJson = floatJson;
 const fromJson = <T = Row>(text: string) =>
   JSON.parse(text, (_key, value: unknown) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -145,7 +136,7 @@ const fromJson = <T = Row>(text: string) =>
   }) as T;
 
 function identityOf(columns: string[], row: Row): string {
-  return JSON.stringify(columns.map((c) => row[c]));
+  return floatJson(columns.map((c) => row[c]));
 }
 
 // The net effect of an outermost commit's changes (see Store.commit), per set in the order
@@ -435,7 +426,7 @@ function apply(store: Store, changes: SetChanges[]): void {
     if (!(set in sets)) continue;
     const columns = identityColumns(store.model, set);
     const find = (key: string) =>
-      store.lookup(set, columns, JSON.parse(key) as PropertyValue[])[0];
+      store.lookup(set, columns, fromJson<PropertyValue[]>(key))[0];
     for (const key of deleted) {
       const row = find(key);
       if (row) store.removeRow(set, row);
