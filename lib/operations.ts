@@ -134,8 +134,10 @@ function operationParameters(
         );
       checkProperty(p, value);
     }
-    for (const p of op.parameters)
+    for (const p of op.parameters) {
       params[p.name] = propToInternal(own(input, p.name), p);
+      if (params[p.name] === null) checkNullable(op, p);
+    }
     return params;
   }
   let raw: Record<string, unknown> = query;
@@ -178,9 +180,24 @@ function operationParameters(
       );
     else if (p.complexType || p.isCollection)
       params[p.name] = propToInternal(text, p);
-    else params[p.name] = literalValue(text, p, svc.protocol, svc.model);
+    else {
+      params[p.name] = literalValue(text, p, svc.protocol, svc.model);
+      if (params[p.name] === null) checkNullable(op, p);
+    }
   }
   return params;
+}
+
+function checkNullable(
+  op: Operation,
+  p: Operation["parameters"][number],
+): void {
+  if (!p.nullable)
+    throw new HttpError(
+      400,
+      `${op.name} needs its parameter ${p.name}, which can't be null`,
+      "RequiredProperty",
+    );
 }
 
 // binding: { setName, type, row, rows } a bound operation was called on. A V2 import with
