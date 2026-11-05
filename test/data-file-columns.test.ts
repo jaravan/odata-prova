@@ -132,3 +132,24 @@ describe("a row with no key in a data file", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("an operation rule setting a key", () => {
+  it("stops the start, naming it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rule-"));
+    const model = path.join(import.meta.dirname, "fixtures", "OperationsV2");
+    fs.cpSync(model, dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        operations: {
+          ApprovePurchaseOrder: { set: { PurchaseOrderId: "2" } },
+        },
+      }),
+    );
+    assert.throws(
+      () => createApp({ modelDir: dir, log: () => {} }),
+      /PurchaseOrderId is a key of .*an operation can't change/,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

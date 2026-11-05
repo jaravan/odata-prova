@@ -81,6 +81,10 @@ function operationRules(model: Model, config: Config): Rules {
         throw configError(
           `${file}: operations.${name}.set: ${type.name} has no property ${prop}`,
         );
+      else if (type.keys.includes(prop))
+        throw configError(
+          `${file}: operations.${name}.set: ${prop} is a key of ${type.name}, which an operation can't change`,
+        );
   }
   return Object.fromEntries(
     Object.entries(rules).map(([name, { set }]) => [name, { set }]),
