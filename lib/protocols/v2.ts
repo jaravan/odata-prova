@@ -14,6 +14,7 @@ import type {
 import type { ODataService } from "../service.ts";
 import type { Protocol } from "../protocol.ts";
 import {
+  binaryBytes,
   inIntegerRange,
   toInternal,
   toMillis,
@@ -44,6 +45,14 @@ const typedLiteralPrefixes = new Set([
   "x",
 ]);
 
+// A binary literal's text as the base64 values are held in. V2 writes it in hex; what isn't
+// hex is taken as base64, as links this server wrote before it wrote hex.
+function binaryValue(text: string): string {
+  return /^(?:[0-9a-f]{2})*$/i.test(text)
+    ? Buffer.from(text, "hex").toString("base64")
+    : text;
+}
+
 // URL / $filter literal -> { value (internal), type }.
 function parseLiteral(text: string): Literal {
   const t = text.trim();
@@ -65,7 +74,7 @@ function parseLiteral(text: string): Literal {
   if ((m = t.match(/^time'([^']+)'$/i)))
     return { value: toInternal(m[1], "Edm.TimeOfDay"), type: "Edm.TimeOfDay" };
   if ((m = t.match(/^(?:binary|X)'([^']*)'$/i)))
-    return { value: m[1], type: "Edm.Binary" };
+    return { value: binaryValue(m[1]), type: "Edm.Binary" };
   if (t === "true" || t === "false")
     return { value: t === "true", type: "Edm.Boolean" };
   if (t === "null") return { value: null, type: null };
@@ -110,9 +119,8 @@ function keyLiteral(value: PropertyValue, prop: Property): string {
       return `${value}L`;
     case "Edm.Decimal":
       return `${value}M`;
-    // base64's + / and = are a URL's own characters
     case "Edm.Binary":
-      return `binary'${encodeURIComponent(String(value))}'`;
+      return `binary'${binaryBytes(String(value)).toUpperCase()}'`;
     default:
       return specialFloat(value) ?? String(value);
   }

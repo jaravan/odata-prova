@@ -181,6 +181,11 @@ function joinText(value: unknown): string {
   return GUID.test(text) ? text.toLowerCase() : text;
 }
 
+// A binary's bytes in hex: base64 and base64url, padded or not, are spellings of the same ones
+function binaryBytes(text: string): string {
+  return Buffer.from(text, "base64").toString("hex");
+}
+
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
 // or as something the type can't hold.
 function invalid(value: unknown, type: string): HttpError {
@@ -217,6 +222,8 @@ function keyText(value: unknown, prop: Property): string {
     case "Edm.DateTimeOffset":
     case "Edm.TimeOfDay":
       return withPrecision(value as PropertyValue, prop.precision);
+    case "Edm.Binary":
+      return binaryBytes(text);
     default:
       return text;
   }
@@ -522,6 +529,7 @@ function toComparable(
       digits ? `.${digits}` : "",
     );
   if (type === "Edm.Duration") return durationMillis(String(value));
+  if (type === "Edm.Binary") return binaryBytes(String(value));
   return value as PrimitiveValue;
 }
 
@@ -578,6 +586,7 @@ export {
   LongNumber,
   keepLongNumbers,
   keyText,
+  binaryBytes,
   withPrecision,
   propToInternal,
   toComparable,

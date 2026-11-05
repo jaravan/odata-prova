@@ -98,3 +98,65 @@ describe("a date and time past what ISO 8601's four digits of a year hold -> 400
     assert.equal(r.body.error.code, "InvalidValue");
   });
 });
+
+// V2 writes binary literals in hex: binary'31' and X'31' are the byte 0x31
+describe("V2's hex binary literals", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "KeyTypes"));
+    for (const Id of ["MQ==", "AAAA", "+/+/", "YQ"])
+      assert.equal(
+        (await send("POST", `${s.v4}/Binaries`, { Id })).status,
+        201,
+      );
+  });
+  after(() => s.close());
+
+  const found = async (url: string) =>
+    (await get(`${s.v2}/${url}`)).body?.d?.Id;
+  const filter = async (expression: string) =>
+    (await get(`${s.v2}/Binaries?$filter=${encodeURIComponent(expression)}`))
+      .body.d.results.length;
+
+  for (const literal of ["binary'31'", "X'31'", "x'31'", "binary'MQ%3D%3D'"])
+    it(`Binaries(${literal}) is the row`, async () => {
+      assert.equal(await found(`Binaries(${literal})`), "MQ==");
+    });
+
+  it("in either case of the hex digits", async () => {
+    assert.equal(await found("Binaries(X'FBFFBF')"), "+/+/");
+    assert.equal(await found("Binaries(X'fbffbf')"), "+/+/");
+  });
+
+  it("in a $filter", async () => {
+    assert.equal(await filter("Id eq X'31'"), 1);
+    assert.equal(await filter("Id eq binary'31'"), 1);
+    assert.equal(await filter("Id eq binary'MQ=='"), 1);
+    assert.equal(await filter("Id eq X'32'"), 0);
+  });
+
+  it("base64 that looks like hex is hex, so AAAA is two bytes", async () => {
+    assert.equal(await found("Binaries(binary'000000')"), "AAAA");
+    assert.equal(await found("Binaries(binary'AAAA')"), undefined);
+  });
+
+  it("the server's own links are in hex, and lead to the row", async () => {
+    const { results } = (await get(`${s.v2}/Binaries`)).body.d;
+    for (const row of results) {
+      assert.match(row.__metadata.uri, /Binaries\(binary'[0-9A-F]*'\)$/);
+      const { body } = await get(`${s.base}${row.__metadata.uri}`);
+      assert.equal(body.d.Id, row.Id);
+    }
+  });
+
+  it("the same bytes are the same key however they're spelled", async () => {
+    assert.equal(
+      (await send("POST", `${s.v4}/Binaries`, { Id: "YQ==" })).status,
+      409,
+    );
+  });
+
+  it("V4 stays base64url", async () => {
+    assert.equal((await get(`${s.v4}/Binaries(binary'MQ==')`)).status, 200);
+  });
+});
