@@ -28,6 +28,7 @@ import type {
 } from "./model.ts";
 import type { MockRule, MockValue } from "./config.ts";
 import type { MockRules } from "./mock-rules.ts";
+import { own } from "./query.ts";
 import { INTEGER_RANGES, propToInternal } from "./types.ts";
 
 // A seeded random number generator, uniform in [0, 1)
@@ -411,6 +412,15 @@ function anchors(rng: Rng, index: number, count: number): Anchors {
           DAY +
         int(rng, 24 * 4) * QUARTER_HOUR),
   };
+}
+
+// The rule for a set's property: both are names of the model's, toString or valueOf too
+function ruleFor(
+  rules: MockRules,
+  set: string,
+  path: string,
+): MockRule | undefined {
+  return own(own(rules, set), path);
 }
 
 // --- Foreign keys -------------------------------------------------------------------------
@@ -825,7 +835,7 @@ function elementValue(c: Ctx, depth: number): PropertyValue {
 }
 
 function propertyValue(c: Ctx, depth = 0): PropertyValue {
-  const rule = c.rules[`${c.path}${c.prop.name}`];
+  const rule = own(c.rules, `${c.path}${c.prop.name}`);
   if (rule && !c.prop.isCollection) return ruleValue(c, rule.value);
   if (rule) {
     // A collection of values: two, each by the rule
@@ -967,7 +977,7 @@ function generateData(
   rules: MockRules = {},
 ): Record<string, Row[]> {
   const fks = foreignKeys(model);
-  const all = { ...data };
+  const all = Object.assign(Object.create(null) as Record<string, Row[]>, data);
   const rngs = Object.fromEntries(
     sets.map((set) => [set, random(`${model.container.namespace}/${set}`)]),
   );
@@ -1023,11 +1033,11 @@ function generateData(
       const seq = (seqs.get(parent) || 0) + 1;
       seqs.set(parent, seq);
       for (const k of type.keys) {
-        if (k in row) continue;
+        if (Object.hasOwn(row, k)) continue;
         const prop = type.properties[k];
         // A rule's running number (see mock-rules.ts: a key takes no other), as written:
         // "####0" counts by 10 itself
-        const rule = rules[set]?.[k];
+        const rule = ruleFor(rules, set, k);
         row[k] = rule
           ? ruleValue(keyCtx(prop, rng, seq), rule.value, seq)
           : keyValue(
@@ -1054,7 +1064,7 @@ function generateData(
     all[set].forEach((row, i) => {
       const rowAnchors = anchors(rngs[set], i + 1, all[set].length);
       for (const prop of Object.values(type.properties)) {
-        if (prop.name in row) continue;
+        if (Object.hasOwn(row, prop.name)) continue;
         row[prop.name] = propertyValue({
           prop,
           rng: rngs[set],
@@ -1062,7 +1072,7 @@ function generateData(
           typeName: type.name,
           measures: measuresOf(type.properties),
           anchors: rowAnchors,
-          rules: rules[set] ?? {},
+          rules: own(rules, set) ?? {},
           path: "",
         });
       }
@@ -1160,9 +1170,9 @@ function fromHeader(
   const measures = measuresOf(item.properties);
   return Object.values(item.properties).filter(
     (p) =>
-      p.name in header.properties &&
+      Object.hasOwn(header.properties, p.name) &&
       !fk.props.includes(p.name) &&
-      !rules[fk.set]?.[p.name] &&
+      !ruleFor(rules, fk.set, p.name) &&
       (measures.currencies.has(p.name) ||
         (p.type === "Edm.String" &&
           /currency|waers|companycode|bukrs|plant|werks/i.test(p.name))),
@@ -1205,7 +1215,7 @@ function itemsAgree(
   const line = lineValue(item);
   let total = headerGenerated ? headerTotal(header) : undefined;
   // A property a mock rule sets keeps the rule's value
-  if (total && rules[fk.principal]?.[total.name]) total = undefined;
+  if (total && ruleFor(rules, fk.principal, total.name)) total = undefined;
   const keyOf = (row: Row, props: string[]) =>
     JSON.stringify(props.map((p) => row[p]));
   const headers = new Map(
@@ -1267,7 +1277,7 @@ function sourceOf(
   const props = member ? top.complexType!.properties : type.properties;
   const prop = props[member ?? name];
 
-  const rule = rules[set]?.[path];
+  const rule = ruleFor(rules, set, path);
   if (rule)
     return {
       how: prop.isCollection
@@ -1402,9 +1412,9 @@ function generateLinks(
 ): Row[] {
   const rng = random(`${model.container.namespace}/${set.name}`);
   const [from, to] = set.ends;
-  const targets = data[to.set] ?? [];
+  const targets = own(data, to.set) ?? [];
   const links: Row[] = [];
-  for (const row of data[from.set] ?? []) {
+  for (const row of own(data, from.set) ?? []) {
     const pool = targets.filter((t) => t !== row);
     for (let n = int(rng, 4); n > 0 && pool.length; n--) {
       const target = pool.splice(int(rng, pool.length), 1)[0];

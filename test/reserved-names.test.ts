@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { explain } from "../lib/explain.ts";
 import { SqlitePersistence } from "../lib/sqlite.ts";
 import {
   batch,
@@ -221,4 +222,40 @@ describe("names every JavaScript object has, generated and saved", () => {
     const { body } = await get(`${again.v4}/constructor(900)`);
     assert.equal(body.constructor, "kept");
   });
+});
+
+// A set named toString with properties named name, valueOf or keys: each is what a function or
+// an object has already, and none of them is a mock rule
+describe("generated rows for names every JavaScript object has", () => {
+  const RULES = path.join(import.meta.dirname, "fixtures", "ReservedRules");
+
+  it("start, and hold what their types say", async () => {
+    const s = await start(RULES, { mockRows: 5 });
+    try {
+      const { status, body } = await get(`${s.v4}/toString`);
+      assert.equal(status, 200);
+      assert.equal(body.value.length, 5);
+      for (const row of body.value) {
+        assert.equal(typeof row.name, "string");
+        assert.equal(typeof row.valueOf, "number");
+        assert.equal(typeof row.keys, "string");
+      }
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("the fixture of relations generates too", async () => {
+    const s = await start(RESERVED, { mockRows: 5 });
+    try {
+      assert.equal((await get(`${s.v4}/constructor`)).body.value.length, 5);
+    } finally {
+      await s.close();
+    }
+  });
+
+  for (const model of [RULES, RESERVED])
+    it(`--explain reads ${path.basename(model)}`, () => {
+      assert.match(explain(model, 5, true), /toString/);
+    });
 });

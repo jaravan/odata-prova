@@ -16,6 +16,7 @@ import {
 import type { Store } from "./store.ts";
 import { SAP_FIELDS } from "./sap-fields.ts";
 import { foreignKeys } from "./generate.ts";
+import { own } from "./query.ts";
 import { propToInternal } from "./types.ts";
 
 // Per entity set, per property ("Status", or "Address/City" for a complex property's member)
@@ -272,7 +273,7 @@ function resolveMockRules(
   for (const fk of foreignKeys(model))
     for (const p of fk.props) (fkProps[fk.set] ??= new Set()).add(p);
 
-  const resolved: MockRules = {};
+  const resolved = Object.create(null) as MockRules;
   const specific = new Set<string>(); // "set path" set by a Set.Property rule
   const errors: string[] = [];
   // A rule on every set: the sets it can't fit, and whether it fits any
@@ -372,7 +373,7 @@ function resolveMockRules(
       const at = `${set} ${path}`;
       if (!rule.set && specific.has(at)) continue;
       if (rule.set) specific.add(at);
-      (resolved[set] ??= {})[path] = rule;
+      (resolved[set] ??= Object.create(null))[path] = rule;
       applied.add(rule);
     }
   }
@@ -394,7 +395,7 @@ function resolveMockRules(
         idSized(rule, prop) &&
         !misfit(rule, prop, true, rows)
       )
-        (resolved[es.name] ??= {})[k] = rule;
+        (resolved[es.name] ??= Object.create(null))[k] = rule;
     }
   }
   // A rule on every set that fits none of them is a mistake: say why, for each
@@ -440,7 +441,7 @@ function regenerationNotes(
   const lines = regenerated.map((set) => `  ${set}: regenerated`);
   for (const set of store.generated) {
     if (regenerated.includes(set)) continue;
-    const by = kept[set];
+    const by = own(kept, set);
     if (by)
       lines.push(
         `  ${set}: kept, ${by} refers to it and ${store.hasChanges(by) ? "has your changes" : "is from a data file"} (${again})`,
