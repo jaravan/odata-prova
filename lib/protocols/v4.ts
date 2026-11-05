@@ -28,6 +28,7 @@ import {
   checkSelect,
   splitTopLevel,
   parseInt10,
+  parseBoolean,
   rejectUnsupported,
   errorCode,
 } from "../query.ts";
@@ -259,7 +260,7 @@ function applyNestedOptions(node: QueryNode, text: string): void {
         node.skip = parseInt10(value, "$skip");
         break;
       case "$count":
-        node.count = value === "true";
+        node.count = parseBoolean(value, "$count");
         break;
       case "$search":
         node.search = value;
@@ -318,7 +319,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
     top: parseInt10(q.$top, "$top"),
     skip: parseInt10(q.$skip, "$skip"),
     skiptoken: parseInt10(q.$skiptoken, "$skiptoken"),
-    count: q.$count === "true",
+    count: parseBoolean(q.$count, "$count"),
     search: q.$search,
     select: root.select,
     expand: root.expand,

@@ -198,8 +198,17 @@ function parseInt10(text: unknown, name: string): number | undefined {
   return Number(text);
 }
 
+// $count's value, true or false in either case. Like a blank number, a blank one isn't given.
+function parseBoolean(text: string | undefined, name: string): boolean {
+  if (!text) return false;
+  if (!/^(?:true|false)$/i.test(text))
+    throw new HttpError(400, `Invalid ${name}: ${text}`);
+  return text.toLowerCase() === "true";
+}
+
 export {
   HttpError,
+  parseBoolean,
   errorCode,
   decodeUrl,
   serviceUrlPath,

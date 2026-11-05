@@ -162,6 +162,8 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   rejectUnsupported(query, SYSTEM_OPTIONS);
   // Query string values are text (a repeated option isn't supported)
   const q = query as Record<string, string | undefined>;
+  if (![undefined, "allpages", "none"].includes(q.$inlinecount))
+    throw new HttpError(400, `Invalid $inlinecount: ${q.$inlinecount}`);
   const root = newNode();
   for (const path of (q.$expand || "").split(",")) addExpandPath(root, path);
   if (q.$select)

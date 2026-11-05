@@ -326,7 +326,7 @@ Limits:
 
 ## Paths and options
 
-`/$count` is a collection's, a collection property's included (`Items(1)/Tags/$count`), and `/$value` a primitive property's: on anything else each is a `400`. A system query option given twice is a `400`, in a `$batch` too.
+`/$count` is a collection's, a collection property's included (`Items(1)/Tags/$count`), and `/$value` a primitive property's: on anything else each is a `400`. A system query option given twice is a `400`, in a `$batch` too. So is one that can't be read, rather than read as another: a `$count` other than `true` or `false` in any case, an `$inlinecount` other than `allpages` or `none`, and an `$orderby` term other than a property followed by `asc` or `desc`. Expressions in an `$orderby` aren't supported. Neither is arithmetic on dates, and `add`, `sub`, `round` and the like are a `400` on anything that isn't a number, or a string holding one.
 
 `$format` takes `json` or `application/json`, with any parameters (`application/json;odata.metadata=minimal`, `;IEEE754Compatible=true`).
 

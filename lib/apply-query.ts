@@ -149,8 +149,14 @@ function applyQuery(
 
   if (opts.orderby) {
     const terms = opts.orderby.split(",").map((t) => {
-      const [path, dir] = t.trim().split(/\s+/);
-      return { path, desc: (dir || "asc").toLowerCase() === "desc" };
+      const [path, dir = "asc", ...more] = t.trim().split(/\s+/);
+      // Anything else after the path would be left out, and sort by something else
+      if (more.length || !/^(?:asc|desc)$/i.test(dir))
+        throw new HttpError(
+          400,
+          `Invalid $orderby: ${t.trim()} (write a property, then asc or desc)`,
+        );
+      return { path, desc: dir.toLowerCase() === "desc" };
     });
     results = [...results].sort((a, b) => {
       for (const { path, desc } of terms) {
