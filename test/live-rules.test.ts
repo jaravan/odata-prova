@@ -214,17 +214,23 @@ describe("live mock rules", () => {
       path.join(dir, "config.json"),
       JSON.stringify({ extends: "./shared.json" }),
     );
-    const until = async (done: () => boolean) => {
-      for (let i = 0; i < 100 && !done(); i++)
+    const until = async (done: () => boolean, again = () => {}) => {
+      for (let i = 0; i < 100 && !done(); i++) {
+        if (i % 10 === 9) again();
         await new Promise((r) => setTimeout(r, 50));
+      }
       assert.ok(done());
     };
     logged = [];
-    fs.writeFileSync(
-      shared,
-      JSON.stringify({ mock: { "PurchaseOrderSet.Status": ["Approved"] } }),
-    );
-    await until(() => orders().every((o) => o.Status === "Approved"));
+    // On macOS a watch misses what's written just after it starts, as a test does and an
+    // editor doesn't: saved again until it's seen
+    const save = () =>
+      fs.writeFileSync(
+        shared,
+        JSON.stringify({ mock: { "PurchaseOrderSet.Status": ["Approved"] } }),
+      );
+    save();
+    await until(() => orders().every((o) => o.Status === "Approved"), save);
     await until(() =>
       logged.some((l) => l.includes("PurchaseOrderSet: regenerated")),
     );
