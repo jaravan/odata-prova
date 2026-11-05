@@ -8,7 +8,7 @@ import { HttpError, decodeUrl, newNode, own } from "./query.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
-import { deltaResponse, tracksChanges } from "./delta.ts";
+import { deltaResponse, snapshot, tracksChanges } from "./delta.ts";
 import { addLink } from "./links.ts";
 import { referenceRequest } from "./references.ts";
 import { pageSizeFor, requestLink } from "./paging.ts";
@@ -473,7 +473,9 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
           requestLink(path, query, {
             $skiptoken: undefined,
             ...protocol.deltaOption!(
-              svc.deltaTokens.issue(setName, svc.store.rows(setName)),
+              svc.deltaTokens.issue(
+                snapshot(svc, setName, type, svc.store.rows(setName), q),
+              ),
             ),
           });
       if (svc.model.entitySets[setName]?.contained && parentForCreate)

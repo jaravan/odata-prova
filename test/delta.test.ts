@@ -246,3 +246,107 @@ describe("V2 delta links", () => {
     }
   });
 });
+
+// A $filter can reach other rows: what it matched changes with them, and the entity with it
+describe("a delta when a related row changes what the $filter matches", () => {
+  const FAMILIES = path.join(import.meta.dirname, "fixtures", "Families");
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(FAMILIES);
+    await send("POST", `${s.v4}/Ps`, { ID: 1, I1: 9 });
+    await send("POST", `${s.v4}/Ks`, { ID: 10, PID: 1, I1: 7 });
+  });
+  afterEach(() => s.close());
+
+  const tracked = async (url: string) =>
+    s.base +
+    (await get(`${s.v4}/${encodeURI(url)}`, TRACK)).body["@odata.deltaLink"];
+
+  it("the kid that made the parent match is deleted", async () => {
+    const link = await tracked("Ps?$filter=Kids/any()");
+    await send("DELETE", `${s.v4}/Ks(10)`);
+    const { body } = await get(link);
+    assert.equal(body.value.length, 1);
+    assert.equal(body.value[0].reason, "changed");
+    assert.match(body.value[0].id, /Ps\(1\)/);
+  });
+
+  it("the kid stops matching a lambda", async () => {
+    const link = await tracked("Ps?$filter=Kids/any(k:k/I1 gt 5)");
+    await send("PATCH", `${s.v4}/Ks(10)`, { I1: 1 });
+    const { body } = await get(link);
+    assert.equal(body.value[0].reason, "changed");
+  });
+
+  it("the parent changes under a path through it", async () => {
+    const link = await tracked("Ks?$filter=Parent/I1 eq 9");
+    await send("PATCH", `${s.v4}/Ps(1)`, { I1: 8 });
+    const { body } = await get(link);
+    assert.equal(body.value[0].reason, "changed");
+    assert.match(body.value[0].id, /Ks\(10\)/);
+  });
+
+  it("an entity that starts to match is in the delta, unchanged itself", async () => {
+    const link = await tracked("Ks?$filter=Parent/I1 eq 8");
+    await send("PATCH", `${s.v4}/Ps(1)`, { I1: 8 });
+    const { body } = await get(link);
+    assert.deepEqual(
+      body.value.map((k: { ID: number }) => k.ID),
+      [10],
+    );
+  });
+
+  it("an entity changed and leaving the filter's reach is one entry", async () => {
+    const link = await tracked("Ps?$filter=Kids/any()");
+    await send("PATCH", `${s.v4}/Ps(1)`, { I1: 1 });
+    await send("DELETE", `${s.v4}/Ks(10)`);
+    const { body } = await get(link);
+    assert.equal(body.value.length, 1);
+    assert.equal(body.value[0].reason, "changed");
+  });
+
+  it("deleted with the kid gone first, it matched when the link was read", async () => {
+    const link = await tracked("Ps?$filter=Kids/any()");
+    await send("DELETE", `${s.v4}/Ks(10)`);
+    await send("DELETE", `${s.v4}/Ps(1)`);
+    const { body } = await get(link);
+    assert.equal(body.value[0].reason, "deleted");
+  });
+
+  it("an entity that matches throughout isn't in the delta", async () => {
+    const link = await tracked("Ps?$filter=Kids/any()");
+    await send("POST", `${s.v4}/Ks`, { ID: 11, PID: 1, I1: 7 });
+    assert.deepEqual((await get(link)).body.value, []);
+  });
+
+  it("the next link starts from what matched at that read", async () => {
+    const first = await tracked("Ps?$filter=Kids/any()");
+    await send("DELETE", `${s.v4}/Ks(10)`);
+    const { body } = await get(first);
+    const next = s.base + body["@odata.deltaLink"];
+    assert.deepEqual((await get(next)).body.value, []);
+    await send("POST", `${s.v4}/Ks`, { ID: 12, PID: 1, I1: 7 });
+    const again = await get(next);
+    assert.deepEqual(
+      again.body.value.map((p: { ID: number }) => p.ID),
+      [1],
+    );
+  });
+
+  it("V2 lists it in __deleted", async () => {
+    const r = await get(
+      `${s.v2}/Ks?$filter=${encodeURIComponent("Parent/I1 eq 9")}`,
+      TRACK,
+    );
+    await send("PATCH", `${s.v4}/Ps(1)`, { I1: 8 });
+    const { body } = await get(s.base + r.body.d.__delta);
+    assert.equal(body.d.__deleted.length, 1);
+  });
+
+  it("a delta link with another $filter has expired", async () => {
+    const link = await tracked("Ps?$filter=Kids/any()");
+    const edited = link.replace("Kids/any()", "ID eq 1");
+    assert.notEqual(edited, link);
+    assert.equal((await get(edited)).status, 410);
+  });
+});

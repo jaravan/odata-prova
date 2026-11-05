@@ -179,7 +179,7 @@ GET /odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3
   "@odata.deltaLink": "/odata/v4/MySrv/PurchaseOrderSet?$filter=Status eq 'Open'&$deltatoken=m1x2k3-2" }
 ```
 
-The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`.
+The delta has the entities added or changed that match the link's `$filter` and `$search`, with its `$select` and `$expand`. Each entity that matched before and is deleted, or no longer matches, gets a `$deletedEntity` entry, with `"reason": "deleted"` or `"changed"`. That counts a `$filter` that reaches other rows: `Kids/any()` stops matching when the last kid is deleted, and an entity that starts matching that way is in the delta. A change to a row that only appears in an `$expand` isn't a change of the entity. The link is for the `$filter` and `$search` it was given with: with others it's a 410 Gone.
 
 Changes come from any write: a create, update or delete, a draft activated, or an operation's `config.json` rule.
 
