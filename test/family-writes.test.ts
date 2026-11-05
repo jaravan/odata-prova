@@ -160,4 +160,23 @@ describe("a to-one link and what a create can't mean", () => {
     assert.equal((await send("DELETE", url)).status, 204);
     assert.equal(await parent(), null);
   });
+
+  it("a to-one bound and given inline is a 400, and creates nothing", async () => {
+    const res = await send("POST", `${s.v4}/Ks`, {
+      ID: 999,
+      "Parent@odata.bind": "Ps(801)",
+      Parent: { ID: 802 },
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error.message, /Parent/);
+    assert.equal((await get(`${s.v4}/Ps(802)`)).status, 404);
+    assert.equal((await get(`${s.v4}/Ks(999)`)).status, 404);
+  });
+
+  it("either alone still works", async () => {
+    const bound = { ID: 990, "Parent@odata.bind": "Ps(801)" };
+    assert.equal((await send("POST", `${s.v4}/Ks`, bound)).status, 201);
+    const inline = { ID: 991, Parent: { ID: 803 } };
+    assert.equal((await send("POST", `${s.v4}/Ks`, inline)).status, 201);
+  });
 });

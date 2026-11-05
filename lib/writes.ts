@@ -355,6 +355,24 @@ function checkNoInline(
   }
 }
 
+// A single-valued navigation has one entity: bound and given inline, which was meant can't be
+// told. A collection can take both.
+function checkOneOfBindAndInline(
+  fields: Record<string, unknown>,
+  binds: ReturnType<typeof bindsOf>,
+): void {
+  for (const { field, nav } of binds) {
+    const inline = own(fields, nav.name);
+    if (nav.isCollection || field === nav.name) continue;
+    if (inline !== undefined && inline !== null && !isDeferred(inline))
+      throw new HttpError(
+        400,
+        `${nav.name} is given inline, and bound with ${field}: send one of them`,
+        "InvalidValue",
+      );
+  }
+}
+
 function insertTree(
   svc: WriteHost,
   setName: string,
@@ -372,6 +390,7 @@ function insertTree(
   // Links to existing entities: a foreign key on this side before the required values are
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
+  checkOneOfBindAndInline(fields, binds);
   const given = { ...fields, ...presetValues };
   const row = svc.store.normalize(entityType, {
     ...body,
