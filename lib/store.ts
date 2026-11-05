@@ -267,17 +267,18 @@ class Store {
     this.generatedLinks = [];
     const dataDir = path.join(modelDir, "data");
     const files = Object.create(null) as Record<string, string | undefined>;
+    const names = new Set(Object.keys(model.linkSets));
     for (const es of Object.values(model.entitySets)) {
       const et = model.entityTypes[es.entityType];
-      const { file, rows } = loadSeedFile(dataDir, [
-        es.name,
-        et.fullName,
-        `${et.namespace}-${et.name}`,
-      ]);
+      const candidates = [es.name, et.fullName, `${et.namespace}-${et.name}`];
+      for (const name of candidates) names.add(name);
+      const { file, rows } = loadSeedFile(dataDir, candidates);
       files[es.name] = file;
       const ignored = et.openType ? [] : ignoredColumns(et, rows as Row[]);
       if (ignored.length)
-        log(`  ${file}: ignored, not in metadata.xml: ${ignored.join(", ")}`);
+        log(
+          `  ${file}: ignored, ${et.name} has no such property: ${ignored.join(", ")}`,
+        );
       this.data[es.name] = rows.map((row, i) => {
         try {
           return this.normalize(et, row);
@@ -302,6 +303,11 @@ class Store {
           file,
         );
     }
+
+    // Not read by any set, which is then empty or generated: maybe a typo
+    for (const name of fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [])
+      if (/\.(csv|json)$/.test(name) && !names.has(path.parse(name).name))
+        log(`  ${path.join(dataDir, name)}: ignored, no entity set reads it`);
 
     if (mockRows > 0) {
       this.generated = Object.keys(files).filter((name) => !files[name]);

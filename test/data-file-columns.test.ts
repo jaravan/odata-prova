@@ -30,7 +30,7 @@ describe("a data file's columns the metadata doesn't have", () => {
       fs.writeFileSync(path.join(dir, "data", name), text);
     const lines: string[] = [];
     s = await start(dir, { log: (line) => lines.push(line) });
-    return lines.filter((line) => /not in metadata\.xml/.test(line));
+    return lines.filter((line) => /has no such property/.test(line));
   };
 
   it("a CSV's are named, and the rows load without them", async () => {
@@ -87,8 +87,29 @@ describe("the data files of the fixtures and examples", () => {
       const s = await start(model, { log: (line) => lines.push(line) });
       await s.close();
       assert.deepEqual(
-        lines.filter((line) => /not in metadata\.xml/.test(line)),
+        lines.filter((line) => /: ignored,/.test(line)),
         [],
       );
     });
+});
+
+describe("a data file no set reads", () => {
+  it("is named in the log", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "typo-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(FAMILIES, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    fs.writeFileSync(path.join(dir, "data", "Typo.json"), "[]");
+    fs.writeFileSync(path.join(dir, "data", "Ps.json"), "[]");
+    fs.writeFileSync(path.join(dir, "data", "notes.txt"), "mine");
+    const lines: string[] = [];
+    const s = await start(dir, { log: (line) => lines.push(line) });
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+    const found = lines.filter((line) => /no entity set reads it/.test(line));
+    assert.equal(found.length, 1);
+    assert.match(found[0], /Typo\.json/);
+  });
 });
