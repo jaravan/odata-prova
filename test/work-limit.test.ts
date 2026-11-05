@@ -23,6 +23,12 @@ const lambdas = (levels: number) =>
 const expands = (levels: number) =>
   `${"Items($expand=PurchaseOrder($expand=".repeat(levels)}Items${"))".repeat(levels)}`;
 
+// Each concat copies the rows once for each sequence, so these multiply
+const concats = (sequences: number, levels: number) =>
+  Array(levels)
+    .fill(`concat(${Array(sequences).fill("identity").join(",")})`)
+    .join("/");
+
 describe("a request that would take too much work -> 400, and the server carries on", () => {
   let s: TestServer;
   before(async () => {
@@ -36,6 +42,35 @@ describe("a request that would take too much work -> 400, and the server carries
     assert.equal(r.body.error.code, "TooMuchWork");
     assert.equal((await get(`${s.base}/healthz`)).status, 200);
   };
+
+  it("rows that multiply with each $apply concat", async () => {
+    await refused(`${s.v4}/${SET}?$apply=${q(concats(200, 3))}&$top=1`);
+    await refused(`${s.v4}/${SET}?$apply=${q(concats(200, 4))}&$top=1`);
+  });
+
+  it("whatever the sequences are, and whatever comes after", async () => {
+    const sequence = Array(200).fill("compute(1 as K)").join(",");
+    const apply = `concat(${sequence})/concat(${sequence.replaceAll("K", "L")})/${concats(200, 1)}`;
+    await refused(`${s.v4}/${SET}?$apply=${q(apply)}&$top=1`);
+  });
+
+  it("in a groupby's sequence too", async () => {
+    await refused(
+      `${s.v4}/${SET}?$apply=${q(`groupby((Status),${concats(200, 3)})`)}&$top=1`,
+    );
+  });
+
+  it("the rows a concat is for are fine", async () => {
+    const res = await get(
+      `${s.v4}/${SET}?$apply=${q(concats(200, 2))}&$count=true&$top=1`,
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.body["@odata.count"], 5 * 200 * 200);
+    const paged = await get(
+      `${s.v4}/${SET}?$apply=${q("concat(aggregate($count as N),identity)")}`,
+    );
+    assert.equal(paged.body.value.length, 6);
+  });
 
   it("text that grows with each replace, in $filter and in $compute", async () => {
     await refused(`${s.v4}/${SET}?$filter=${q(`${replaces(25)} eq 'x'`)}`);

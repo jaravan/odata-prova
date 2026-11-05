@@ -36,6 +36,7 @@
 // anything else, such as a currency or unit, is the value all the rows share, or null when
 // they differ, which is what UI5 expects of a unit.
 
+import { spend } from "./work.ts";
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import type { Resolve } from "./filter.ts";
@@ -67,6 +68,9 @@ import type {
   Row,
   Transformation,
 } from "./model.ts";
+
+// What a row costs a concat (see work.ts): a row that is copied, up to 2 million of them
+const CONCAT_WORK = 10;
 
 // The rows and their type after each transformation in turn. inGroup: they are a group's,
 // which a filter's $these/aggregate(...) aggregates
@@ -130,6 +134,9 @@ function applyTransformations(
         const results = t.sequences.map((seq) =>
           applyTransformations(svc, rows, type, seq, inGroup),
         );
+        // A short URL can multiply the rows at each level, so they're paid for before they
+        // take up the memory: a request that runs out of it ends the process, beyond any catch
+        spend(results.reduce((n, r) => n + r.rows.length, 0) * CONCAT_WORK);
         rows = results.flatMap((r) => r.rows);
         type = unionType(
           type,
