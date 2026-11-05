@@ -70,3 +70,23 @@ describe("a long literal", () => {
     assert.equal(body["@odata.count"], 20000);
   });
 });
+
+describe("a very large group", () => {
+  it("sums and averages its decimals", async () => {
+    const dir = modelWith(
+      Array.from({ length: 130000 }, (_, i) => ({ ID: i, Amount: "1.50" })),
+    );
+    const s = await start(dir);
+    try {
+      const { status, body } = await get(
+        `${s.v4}/Values?$apply=${encodeURIComponent("aggregate(Amount with sum as T,Amount with average as A)")}`,
+      );
+      assert.equal(status, 200, JSON.stringify(body));
+      assert.equal(Number(body.value[0].T), 195000);
+      assert.equal(Number(body.value[0].A), 1.5);
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

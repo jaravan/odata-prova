@@ -335,7 +335,10 @@ function exactSum(
 ): { total: bigint; scale: number } | undefined {
   const texts = values.map(String);
   if (texts.some((t) => /e/i.test(t))) return undefined;
-  const scale = Math.max(...texts.map((t) => t.split(".")[1]?.length ?? 0));
+  const scale = texts.reduce(
+    (most, t) => Math.max(most, t.split(".")[1]?.length ?? 0),
+    0,
+  );
   let total = 0n;
   for (const t of texts) {
     const [whole, fraction = ""] = t.replace(/^[+-]/, "").split(".");
