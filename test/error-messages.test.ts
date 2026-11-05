@@ -2,7 +2,11 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { get, start, type TestServer } from "./helpers.ts";
+import path from "node:path";
+import { parseMetadata } from "../lib/metadata.ts";
+import { get, send, start, type TestServer } from "./helpers.ts";
+
+const RESERVED = path.join(import.meta.dirname, "fixtures", "ReservedNames");
 
 // What a message has no business saying
 const INTERNALS =
@@ -112,5 +116,103 @@ describe("a function called with the wrong arguments", () => {
     );
     assert.equal(status, 400);
     assert.match(body.error.message, /\$compute.*tolower takes/);
+  });
+});
+
+describe("names that mean something to JavaScript", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(RESERVED);
+  });
+  after(() => s.close());
+
+  it("a set named constructor, with a foreign key, is a set", async () => {
+    assert.equal((await get(`${s.v4}/constructor`)).status, 200);
+    const { status } = await send("POST", `${s.v4}/constructor`, {
+      ID: 900,
+      constructor: "x",
+    });
+    assert.equal(status, 201);
+    assert.equal((await get(`${s.v4}/constructor(900)`)).body.constructor, "x");
+  });
+
+  it("a set named toString is a set", async () => {
+    assert.equal((await get(`${s.v4}/toString`)).status, 200);
+    const { status } = await send("POST", `${s.v4}/toString`, { ID: 900 });
+    assert.equal(status, 201);
+    assert.equal((await get(`${s.v4}/toString(900)`)).status, 200);
+  });
+
+  it("the service lists both, on both protocols", async () => {
+    const { body } = await get(`${s.v4}/`);
+    assert.deepEqual(body.value.map((v: { name: string }) => v.name).sort(), [
+      "constructor",
+      "toString",
+    ]);
+    assert.equal((await fetch(`${s.v2}/$metadata`)).status, 200);
+  });
+});
+
+describe("metadata that can't be read says so", () => {
+  const xml = (schema: string) =>
+    `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm">${schema}</Schema></edmx:DataServices></edmx:Edmx>`;
+  const type = (name: string, extra = "") =>
+    `<EntityType Name="${name}"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/>${extra}</EntityType>`;
+  const container = (body: string) =>
+    `<EntityContainer Name="C">${body}</EntityContainer>`;
+  const set = (entityType: string) =>
+    `<EntitySet Name="As" EntityType="${entityType}"/>`;
+
+  it("an entity set of the type constructor is of an unknown type", () => {
+    assert.throws(
+      () => parseMetadata(xml(type("A") + container(set("constructor")))),
+      /unknown entity type constructor/,
+    );
+  });
+
+  it("a contained navigation to a type named constructor has no target", () => {
+    assert.doesNotThrow(() =>
+      parseMetadata(
+        xml(
+          type(
+            "A",
+            `<NavigationProperty Name="B" Type="constructor" ContainsTarget="true"/>`,
+          ) + container(set("N.A")),
+        ),
+      ),
+    );
+  });
+
+  it("annotations on a type named constructor annotate nothing", () => {
+    assert.doesNotThrow(() =>
+      parseMetadata(
+        xml(
+          type("A") +
+            container(set("N.A")) +
+            `<Annotations Target="constructor/x"><Annotation Term="Org.OData.Core.V1.Computed"/></Annotations>`,
+        ),
+      ),
+    );
+  });
+
+  it("__proto__ is refused as a name, wherever it is", () => {
+    for (const schema of [
+      type("__proto__") + container(set("N.__proto__")),
+      type("A", `<Property Name="__proto__" Type="Edm.String"/>`) +
+        container(set("N.A")),
+      type("A") + container(`<EntitySet Name="__proto__" EntityType="N.A"/>`),
+    ])
+      assert.throws(() => parseMetadata(xml(schema)), /named __proto__/);
+  });
+
+  it("a property with no Type is named", () => {
+    assert.throws(
+      () =>
+        parseMetadata(
+          xml(type("A", `<Property Name="X"/>`) + container(set("N.A"))),
+        ),
+      (e: Error) =>
+        /metadata\.xml.*X/.test(e.message) && !INTERNALS.test(e.message),
+    );
   });
 });

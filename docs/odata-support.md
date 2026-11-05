@@ -11,7 +11,7 @@ All primitive Edm types, plus the ones below. Geography and geometry values aren
 - **Type definitions** (V4 `TypeDefinition`). A property of one has its underlying type, with the definition's facets (`MaxLength`, `Precision`, `Scale`) where it sets none, which is also how the V2 `$metadata` writes it.
 - **Schema aliases** in type references (`T.Order` for `a.types.Order`, CAP's `SAP__self.`), and binding targets qualified with their container (`a.svc.C/Lines`).
 
-Singletons aren't served: the startup log lists each one (`not served: Singleton Me`), and a navigation bound to one is disabled, a `501` saying why.
+Singletons aren't served: the startup log lists each one (`not served: Singleton Me`), and a navigation bound to one is disabled, a `501` saying why. A name can be any identifier but `__proto__`, which stops the service from starting, saying so.
 
 In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
 

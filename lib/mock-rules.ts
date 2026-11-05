@@ -268,7 +268,7 @@ function resolveMockRules(
   const typeOf = (set: string): EntityType =>
     model.entityTypes[model.entitySets[set].entityType];
   // The foreign keys of each set: their values come from the row they point at
-  const fkProps: Record<string, Set<string>> = {};
+  const fkProps = Object.create(null) as Record<string, Set<string>>;
   for (const fk of foreignKeys(model))
     for (const p of fk.props) (fkProps[fk.set] ??= new Set()).add(p);
 

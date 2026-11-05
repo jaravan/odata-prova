@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="R" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Kid">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="ParentID" Type="Edm.Int32"/>
+        <Property Name="constructor" Type="Edm.String"/>
+        <NavigationProperty Name="Parent" Type="R.Parent">
+          <ReferentialConstraint Property="ParentID" ReferencedProperty="ID"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="Parent">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="constructor" EntityType="R.Kid">
+          <NavigationPropertyBinding Path="Parent" Target="toString"/>
+        </EntitySet>
+        <EntitySet Name="toString" EntityType="R.Parent"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

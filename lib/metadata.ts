@@ -16,6 +16,7 @@ import type {
   TypedElement,
 } from "./model.ts";
 import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
+import { own } from "./query.ts";
 import { parseConcurrency } from "./etag.ts";
 import { parseCustomAggregates } from "./aggregates.ts";
 import { parseHierarchies } from "./hierarchy.ts";
@@ -118,10 +119,11 @@ function parseMetadata(
   checkAttributes(schemas, isV4);
 
   // Collected first; the model is put together once there is a container
-  const entityTypes: Model["entityTypes"] = {};
-  const complexTypes: Model["complexTypes"] = {};
-  const enumTypes: Model["enumTypes"] = {};
-  const entitySets: Model["entitySets"] = {};
+  // No prototype: a name is any text, constructor and __proto__ included
+  const entityTypes: Model["entityTypes"] = Object.create(null);
+  const complexTypes: Model["complexTypes"] = Object.create(null);
+  const enumTypes: Model["enumTypes"] = Object.create(null);
+  const entitySets: Model["entitySets"] = Object.create(null);
   const associations: Model["associations"] = {};
   const associationSets: Model["associationSets"] = [];
   let container: Container | undefined;
@@ -367,9 +369,13 @@ const list = (x: Xml): Xml[] =>
 // Property its Type, a navigation its target, a key its property's name
 function checkAttributes(schemas: Xml[], isV4: boolean): void {
   const need = (el: Xml, attributes: string[], what: string) => {
-    for (const a of attributes)
+    for (const a of attributes) {
       if (typeof el?.[a] !== "string" || !el[a])
         throw new Error(`metadata.xml: ${what} has no ${a}`);
+      // The store's rows, and its maps by set, are plain objects: it would set their prototype
+      if (a === "Name" && el[a] === "__proto__")
+        throw new Error(`metadata.xml: ${what} can't be named __proto__`);
+    }
   };
   const named = (kind: string, el: Xml) =>
     typeof el?.Name === "string" && el.Name
@@ -464,7 +470,7 @@ function checkAttributes(schemas: Xml[], isV4: boolean): void {
 
 // The namespace of each alias in the document's <edmx:Include Alias> and <Schema Alias>
 function parseAliases(edmx: Xml, schemas: Xml[]): Record<string, string> {
-  const aliases: Record<string, string> = {};
+  const aliases: Record<string, string> = Object.create(null);
   for (const ref of list(edmx.Reference))
     for (const inc of list(ref.Include))
       if (inc.Alias) aliases[inc.Alias] = inc.Namespace;
@@ -542,7 +548,10 @@ function parseMeasures(model: Model, schemas: Xml[], qualify: Qualify): void {
     for (const block of list(schema.Annotations)) {
       const [typeName, propName, ...rest] = String(block.Target).split("/");
       if (!rest.length)
-        read(types[qualify(typeName)]?.properties[propName], block.Annotation);
+        read(
+          own(types, qualify(typeName))?.properties[propName],
+          block.Annotation,
+        );
     }
   }
   for (const t of Object.values(types))
