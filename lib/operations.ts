@@ -3,6 +3,7 @@
 
 import { propToInternal } from "./types.ts";
 import { literalValue } from "./resource-path.ts";
+import { isDeepStrictEqual } from "node:util";
 import { HttpError, decodeUrl, own, splitTopLevel } from "./query.ts";
 import { draftAction } from "./draft.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
@@ -97,12 +98,29 @@ function boundOperation(
   const namespace = own(svc.model.aliases, name.slice(0, Math.max(dot, 0)));
   const qualified = namespace ? `${namespace}${name.slice(dot)}` : name;
   // A bound operation has a binding parameter (see parseOperations)
-  return svc.operations.bound.find(
+  const [first, ...others] = svc.operations.bound.filter(
     (op) =>
       (op.fullName === qualified || op.name === name) &&
       types.has(op.binding!.elementType) &&
       op.binding!.isCollection === onCollection,
   );
+  return others.length ? { ...first, overloads: others } : first;
+}
+
+// The declaration of a function with the parameters the call names, as OData tells overloads
+// apart. None has them: the first, whose check then says what's wrong.
+function overloaded(op: Operation, paramText: string | undefined): Operation {
+  if (!op.overloads || op.kind !== "function") return op;
+  const given = splitTopLevel(paramText || "", ",")
+    .filter((part) => part.trim())
+    .map((part) => part.slice(0, part.indexOf("=")).trim())
+    .sort();
+  const match = [op, ...op.overloads].find((o) =>
+    isDeepStrictEqual(o.parameters.map((p) => p.name).sort(), given),
+  );
+  return match
+    ? { ...op, parameters: match.parameters, returnType: match.returnType }
+    : op;
 }
 
 // Parameters: V4 actions from the JSON body, V4 functions from the path (Fn(a=1,b='x')),
@@ -217,6 +235,7 @@ function callOperation(
   opts: ResponseOptions,
   headers: RequestHeaders,
 ): ODataResponse {
+  op = overloaded(op, paramText);
   // Checked before the operation runs: an action's changes would stay otherwise
   const rt = op.returnType;
   if (q.apply && !(rt?.entityType && rt.isCollection))

@@ -22,12 +22,34 @@
         <Parameter Name="n" Type="Edm.Int32" Nullable="false"/>
         <Parameter Name="note" Type="Edm.String"/>
       </Action>
+      <Function Name="Ov">
+        <Parameter Name="a" Type="Edm.Int32"/>
+        <ReturnType Type="Edm.String"/>
+      </Function>
+      <Function Name="Ov">
+        <Parameter Name="b" Type="Edm.String"/>
+        <ReturnType Type="Edm.Int32"/>
+      </Function>
+      <Function Name="Ov">
+        <ReturnType Type="Edm.Boolean"/>
+      </Function>
+      <Function Name="Bo" IsBound="true">
+        <Parameter Name="it" Type="N.R"/>
+        <Parameter Name="a" Type="Edm.Int32"/>
+        <ReturnType Type="Edm.String"/>
+      </Function>
+      <Function Name="Bo" IsBound="true">
+        <Parameter Name="it" Type="N.R"/>
+        <Parameter Name="b" Type="Edm.String"/>
+        <ReturnType Type="Edm.Int32"/>
+      </Function>
       <EntityContainer Name="C">
         <EntitySet Name="Rs" EntityType="N.R"/>
         <FunctionImport Name="Lookup" Function="N.Lookup" EntitySet="Rs"/>
         <FunctionImport Name="Score" Function="N.Score"/>
         <FunctionImport Name="Optional" Function="N.Optional"/>
         <ActionImport Name="Approve" Action="N.Approve"/>
+        <FunctionImport Name="Ov" Function="N.Ov"/>
       </EntityContainer>
     </Schema>
   </edmx:DataServices>

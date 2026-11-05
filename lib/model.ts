@@ -287,6 +287,8 @@ export interface Operation {
   binding?: TypedElement;
   parameters: TypedElement[];
   returnType?: TypedElement;
+  // A function's other declarations of the same name (see overloaded in operations.ts)
+  overloads?: Operation[];
   // V2 function imports say which method calls them (m:HttpMethod: GET, POST, ...)
   httpMethod?: string;
   // The entity set an import's result comes from

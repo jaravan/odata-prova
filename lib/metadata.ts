@@ -731,7 +731,9 @@ function parseOperations(model: Model, schemas: Xml[], isV4: boolean): void {
             returnType: typeRef("", o.ReturnType?.Type),
           };
           if (isBound) model.operations.bound.push(op);
-          else unbound[op.fullName] ||= op; // an overload keeps the first
+          else if (unbound[op.fullName])
+            (unbound[op.fullName].overloads ??= []).push(op);
+          else unbound[op.fullName] = op;
         }
       }
     }
@@ -786,7 +788,7 @@ function resolveOperationTypes(model: Model): void {
     ...model.operations.bound,
     ...Object.values(model.operations.imports),
   ];
-  for (const op of ops) {
+  for (const op of ops.flatMap((op) => [op, ...(op.overloads ?? [])])) {
     for (const p of [op.binding, ...op.parameters, op.returnType]) {
       if (!p) continue;
       resolveTypeRef(model, p);

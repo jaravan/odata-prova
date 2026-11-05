@@ -55,3 +55,29 @@ describe("a parameter that can't be null", () => {
     );
   });
 });
+
+describe("overloaded functions", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(FIXTURES, "Params"));
+  });
+  after(() => s.close());
+
+  for (const [url, expected] of [
+    ["Ov(a=1)", ""],
+    ["Ov(b='x')", 0],
+    ["Ov()", false],
+    ["Rs(1)/N.Bo(a=1)", ""],
+    ["Rs(1)/N.Bo(b='x')", 0],
+  ] as const)
+    it(`${url} is the overload with those parameters`, async () => {
+      const { status, body } = await get(`${s.v4}/${url}`);
+      assert.equal(status, 200, JSON.stringify(body));
+      assert.equal(body.value, expected);
+    });
+
+  it("a parameter no overload has is still a 400", async () => {
+    assert.equal((await get(`${s.v4}/Ov(c=1)`)).status, 400);
+    assert.equal((await get(`${s.v4}/Rs(1)/N.Bo(c=1)`)).status, 400);
+  });
+});
