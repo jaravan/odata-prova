@@ -329,12 +329,12 @@ function decimalAverage(values: PrimitiveValue[]): string {
 }
 
 // The sum as a whole number of units of 10^-scale, or undefined when a value is in exponent
-// notation, which is then added up as numbers
+// notation or isn't finite, which is then added up as numbers
 function exactSum(
   values: PrimitiveValue[],
 ): { total: bigint; scale: number } | undefined {
   const texts = values.map(String);
-  if (texts.some((t) => /e/i.test(t))) return undefined;
+  if (!texts.every((t) => /^[+-]?\d+(?:\.\d*)?$/.test(t))) return undefined;
   const scale = texts.reduce(
     (most, t) => Math.max(most, t.split(".")[1]?.length ?? 0),
     0,

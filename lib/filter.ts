@@ -588,6 +588,7 @@ function decimalArithmetic(op: string, l: Value, r: Value): string | undefined {
 // 2 is 2.5), and dividing an integer or a decimal by zero is an error. A quotient of decimals
 // has no end, so it's cut to 15 significant digits.
 function arithmetic(op: string, l: Value, r: Value): Value {
+  spend(longText(l.value) + longText(r.value));
   const type = arithmeticType(op, l.type, r.type);
   if (l.value === null || l.value === undefined) return { value: null, type };
   if (r.value === null || r.value === undefined) return { value: null, type };
@@ -612,7 +613,11 @@ function arithmetic(op: string, l: Value, r: Value): Value {
     throw new Error("Division by zero");
   if (type === "Edm.Decimal" && ["add", "sub", "mul", "mod"].includes(op)) {
     const value = decimalArithmetic(op, l, r);
-    if (value !== undefined) return { value, type };
+    if (value === undefined)
+      throw new Error(
+        `A number here has more digits than a ${type} can calculate with`,
+      );
+    return { value, type };
   }
   let value: number;
   switch (op) {
@@ -631,7 +636,13 @@ function arithmetic(op: string, l: Value, r: Value): Value {
     default:
       value = INTEGER.test(type) ? Math.trunc(a / b) : a / b;
   }
-  if (type === "Edm.Decimal") value = Number(value.toPrecision(15));
+  if (type === "Edm.Decimal") {
+    if (!Number.isFinite(value))
+      throw new Error(
+        `A number here has more digits than a ${type} can calculate with`,
+      );
+    value = Number(value.toPrecision(15));
+  }
   return { value, type };
 }
 
@@ -802,6 +813,7 @@ function wholeUnits(name: string, units: bigint): bigint {
 
 // round, floor and ceiling: a value of the type they're given, as expressionType says
 function rounded(name: string, v: Value): Value {
+  spend(longText(v.value));
   if (v.type && INTEGER.test(v.type)) return v;
   const units = v.type === "Edm.Decimal" ? decimalUnits(v.value) : undefined;
   if (units !== undefined)

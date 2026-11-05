@@ -26,6 +26,8 @@ function modelWith(rows: unknown[]): string {
   return dir;
 }
 
+const DIGITS = "9".repeat(500_000);
+
 describe("a long literal", () => {
   let s: TestServer;
   let dir: string;
@@ -42,6 +44,13 @@ describe("a long literal", () => {
 
   const LONG = 2_000_000;
   for (const [what, filter] of [
+    ["an addition", `Amount add ${DIGITS} gt 0`],
+    ["a subtraction", `Amount sub ${DIGITS} gt 0`],
+    ["a product", `Amount mul ${DIGITS} gt 0`],
+    ["a quotient", `Amount div ${DIGITS} gt 0`],
+    ["a remainder", `Amount mod ${DIGITS} gt 0`],
+    ["a floor", `floor(${DIGITS}.5) gt 0`],
+    ["a ceiling", `ceiling(${DIGITS}.5) gt 0`],
     ["text", `Text eq '${"x".repeat(LONG)}'`],
     ["a number", `Big eq ${"1".repeat(LONG)}`],
     ["a decimal", `Amount eq ${"1".repeat(LONG)}.5`],
@@ -60,9 +69,26 @@ describe("a long literal", () => {
         ).text,
       );
       assert.equal(part.status, 400);
-      assert.equal(part.body.error.code, "TooMuchWork");
+      assert.equal(part.body.error.code, "TooMuchWork", what);
       assert.ok(performance.now() - started < 8000);
     });
+
+  it("negated, it's refused at the first row", async () => {
+    const started = performance.now();
+    const [part] = batchResponses(
+      (
+        await batch(s.v4, [
+          {
+            method: "GET",
+            url: `Values?$filter=${encodeURIComponent(`-(${DIGITS}.5) lt 0`)}`,
+          },
+        ])
+      ).text,
+    );
+    assert.equal(part.status, 400);
+    assert.match(part.body.error.message, /digits/);
+    assert.ok(performance.now() - started < 8000);
+  });
 
   it("a short one reads every row", async () => {
     const { status, body } = await get(
@@ -201,5 +227,39 @@ describe("a large write", () => {
     } finally {
       await s.close();
     }
+  });
+});
+
+describe("a number too long to calculate with", () => {
+  let s: TestServer;
+  let dir: string;
+  before(async () => {
+    dir = modelWith([{ ID: 1, Amount: "1.5" }]);
+    s = await start(dir);
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const NINES = "9".repeat(320);
+  for (const url of [
+    `Values?$apply=${encodeURIComponent(`compute(Amount add ${NINES} as X)/aggregate(X with sum as Y)`)}`,
+    `Values?$compute=${encodeURIComponent(`Amount add ${NINES} as X`)}`,
+    `Values?$compute=${encodeURIComponent(`Amount mul ${"9".repeat(50)} as X`)}`,
+  ])
+    it(`${decodeURIComponent(url).slice(0, 44)}... is a 400, not a guess`, async () => {
+      const { status, body } = await get(`${s.v4}/${url}`);
+      assert.equal(status, 400);
+      assert.match(body.error.message, /digits/);
+    });
+
+  it("up to what a decimal holds it's exact", async () => {
+    // As text: JSON.parse would round it
+    const res = await fetch(
+      `${s.v4}/Values?$compute=${encodeURIComponent(`Amount add ${"9".repeat(30)} as X`)}`,
+    );
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /"X":10{29}0\.5/);
   });
 });
