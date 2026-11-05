@@ -19,6 +19,8 @@ import type {
   Row,
 } from "./model.ts";
 
+const PATH = /^(?:\$it\/)?[A-Za-z_]\w*(?:\/[A-Za-z_]\w*)*$/;
+
 // "NetPrice mul Quantity as LineTotal,..." -> [{ expression, alias }]. option: the query
 // option it's in, for the message of a mistake
 function parseCompute(text: string, option = "$compute"): Computation[] {
@@ -29,13 +31,17 @@ function parseCompute(text: string, option = "$compute"): Computation[] {
   });
 }
 
-// The type of a property path: "Prop", or "Nav/Prop" through single-valued navigations. A
+// The property at a path: "Prop", or "Nav/Prop" through single-valued navigations. A
 // path can also be a property of its own, in a groupby's result (see withPaths in
 // aggregation.ts).
-function pathType(svc: QueryHost, type: EntityType, path: string): string {
+function pathProperty(
+  svc: QueryHost,
+  type: EntityType,
+  path: string,
+): Property {
   path = path.replace(/^\$it\//, "");
   const itself = own(type.properties, path);
-  if (itself) return itself.type;
+  if (itself) return itself;
   const parts = path.split("/");
   let at = type;
   for (const part of parts.slice(0, -1)) {
@@ -46,7 +52,7 @@ function pathType(svc: QueryHost, type: EntityType, path: string): string {
   }
   const prop = own(at.properties, parts[parts.length - 1]);
   if (!prop) throw new Error(`Unknown property ${path} on ${at.name}`);
-  return prop.type;
+  return prop;
 }
 
 // A computed value as the store holds a value of its type (see types.ts): Int64 and Decimal
@@ -81,7 +87,7 @@ function typedExpression(
     );
     const resolve = resolver(svc, type);
     return {
-      type: compiled.type((path) => pathType(svc, type, path)),
+      type: compiled.type((path) => pathProperty(svc, type, path).type),
       value(row) {
         try {
           return compiled.evaluate(row, resolve).value;
@@ -131,6 +137,10 @@ function applyCompute(
       sap: {},
       isCollection: false,
       computed: true,
+      // A copy of a property is written as finely as the property
+      precision: PATH.test(expression)
+        ? pathProperty(svc, type, expression).precision
+        : undefined,
     };
     return { alias, typed };
   });

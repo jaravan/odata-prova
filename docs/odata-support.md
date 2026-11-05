@@ -132,7 +132,7 @@ V4's `$compute` adds properties to each entity, from an expression written as in
 GET /odata/v4/MySrv/PurchaseOrderItemSet?$compute=Quantity mul NetPrice as LineTotal&$filter=LineTotal gt 5000&$orderby=LineTotal desc
 ```
 
-A computed property is in the response, and `$filter`, `$orderby` and `$select` use it like one of the entity's own.
+A computed property is in the response, and `$filter`, `$orderby` and `$select` use it like one of the entity's own. A copy of a property is written as finely as the property, by its `Precision`.
 
 The expression can use the entity's properties, paths through single-valued navigations (`PurchaseOrder/Status`), arithmetic and the `$filter` functions. Its type follows from them: `Quantity mul NetPrice` of two decimals is an `Edm.Decimal`, `year(OrderDate)` an `Edm.Int32`.
 

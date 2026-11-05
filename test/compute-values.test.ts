@@ -96,3 +96,50 @@ describe("integer arithmetic stays in its type's range", () => {
     assert.equal(status, 200);
   });
 });
+
+describe("$compute copies a time as fine as its property", () => {
+  let s: Awaited<ReturnType<typeof start>>;
+  before(async () => {
+    s = await start(path.join(FIXTURES, "SalesSrv"));
+  });
+  after(() => s.close());
+
+  type Order = { CreatedAt: string; K: string; DeliveryTime: string };
+  const first = async (query: string) => {
+    const { status, body } = await get(`${s.v4}/Orders?$top=1&${query}`);
+    assert.equal(status, 200);
+    return (body as { value: Order[] }).value[0];
+  };
+
+  it("a copy of a property is written as the property is", async () => {
+    const row = await first("$compute=CreatedAt as K&$select=CreatedAt,K");
+    assert.equal(row.K, row.CreatedAt);
+  });
+
+  it("and in $apply's compute", async () => {
+    const row = await first("$apply=compute(CreatedAt as K)");
+    assert.equal(row.K, row.CreatedAt);
+  });
+
+  it("through a navigation", async () => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$top=1&$compute=Order/CreatedAt as K&$select=K&$expand=Order($select=CreatedAt)`,
+    );
+    assert.equal(status, 200);
+    const [row] = (body as { value: { K: string; Order: Order }[] }).value;
+    assert.equal(row.K, row.Order.CreatedAt);
+  });
+
+  it("the copy compares as the property does", async () => {
+    const row = await first("$compute=CreatedAt as K&$select=CreatedAt,K");
+    const { body } = await get(
+      `${s.v4}/Orders?$compute=CreatedAt as K&$filter=${encodeURIComponent(`K eq ${row.CreatedAt}`)}`,
+    );
+    assert.equal((body as { value: unknown[] }).value.length, 1);
+  });
+
+  it("an expression is written as before", async () => {
+    const row = await first("$compute=year(CreatedAt) as K&$select=K");
+    assert.equal(row.K, 2025);
+  });
+});
