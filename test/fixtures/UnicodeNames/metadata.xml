@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="U" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Stadt">
+        <Key><PropertyRef Name="Schlüssel"/><PropertyRef Name="Jahr"/></Key>
+        <Property Name="Schlüssel" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Jahr" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Größe" Type="Edm.Int32"/>
+        <Property Name="名前" Type="Edm.String"/>
+        <Property Name="LandNr" Type="Edm.Int32"/>
+        <NavigationProperty Name="Länd" Type="U.Land" Partner="Städte">
+          <ReferentialConstraint Property="LandNr" ReferencedProperty="Nr"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="Land">
+        <Key><PropertyRef Name="Nr"/></Key>
+        <Property Name="Nr" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Größe" Type="Edm.Int32"/>
+        <NavigationProperty Name="Städte" Type="Collection(U.Stadt)" Partner="Länd"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Städte" EntityType="U.Stadt">
+          <NavigationPropertyBinding Path="Länd" Target="Länder"/>
+        </EntitySet>
+        <EntitySet Name="Länder" EntityType="U.Land">
+          <NavigationPropertyBinding Path="Städte" Target="Städte"/>
+        </EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

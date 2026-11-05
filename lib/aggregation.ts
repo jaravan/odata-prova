@@ -40,7 +40,7 @@ import { spend } from "./work.ts";
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import type { Resolve } from "./filter.ts";
-import { HttpError, own } from "./query.ts";
+import { HttpError, NAME, own } from "./query.ts";
 import { topLevels, relatives, traverse } from "./hierarchy.ts";
 import { applyCompute, typedExpression } from "./compute.ts";
 import {
@@ -71,6 +71,7 @@ import type {
 
 // What a row costs a concat (see work.ts): a row that is copied, up to 2 million of them
 const CONCAT_WORK = 10;
+const RANKED_PATH = new RegExp(`^${NAME}(/${NAME})*$`, "u");
 
 // The rows and their type after each transformation in turn. inGroup: they are a group's,
 // which a filter's $these/aggregate(...) aggregates
@@ -431,7 +432,7 @@ function rankedBy(
   type: EntityType,
   by: string,
 ): { valueType: string; valueOf: (row: Row) => unknown } {
-  if (/^[A-Za-z_]\w*(\/[A-Za-z_]\w*)*$/.test(by)) {
+  if (RANKED_PATH.test(by)) {
     const prop = by.includes("/")
       ? pathProperty(svc, type, by)
       : propertyOf(type, by);

@@ -3,7 +3,7 @@
 
 import { enumNamed, enumValue, toInternal } from "./types.ts";
 import type { LiteralSyntax } from "./filter.ts";
-import { HttpError, decodeUrl, own } from "./query.ts";
+import { HttpError, NAME, decodeUrl, own } from "./query.ts";
 import type {
   EntityType,
   Key,
@@ -63,6 +63,8 @@ function literalValue(
     : toInternal(literal.value, element.type);
 }
 
+const NAMED_KEY = new RegExp(`^${NAME}=`, "u");
+
 // "'4500000001'" or "PurchaseOrderId='4500000001',ItemPosition='0001'" -> { PurchaseOrderId, ItemPosition }
 // The text is as decodePath leaves it: split on its , and =, then each value decoded, so a
 // value may hold them (SO%2F2025%2F1, a%2Cb).
@@ -88,7 +90,7 @@ function parseKey(
   parts.push(cur);
 
   const key: Key = {};
-  if (parts.length === 1 && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[0].trim())) {
+  if (parts.length === 1 && !NAMED_KEY.test(parts[0].trim())) {
     if (entityType.keys.length !== 1) {
       throw new HttpError(
         400,

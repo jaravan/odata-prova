@@ -9,7 +9,7 @@
 // the same (see aggregation.ts), and so is the expression topcount and the others rank by.
 
 import { compileExpression, scopeOf } from "./filter.ts";
-import { HttpError, own, splitTopLevel } from "./query.ts";
+import { HttpError, NAME, own, splitTopLevel } from "./query.ts";
 import { resolver, type QueryHost } from "./apply-query.ts";
 import type {
   Computation,
@@ -19,7 +19,8 @@ import type {
   Row,
 } from "./model.ts";
 
-const PATH = /^(?:\$it\/)?[A-Za-z_]\w*(?:\/[A-Za-z_]\w*)*$/;
+const PATH = new RegExp(`^(?:\\$it/)?${NAME}(?:/${NAME})*$`, "u");
+const ALIAS = new RegExp(`^${NAME}$`, "u");
 
 // "NetPrice mul Quantity as LineTotal,..." -> [{ expression, alias }]. option: the query
 // option it's in, for the message of a mistake
@@ -125,7 +126,7 @@ function applyCompute(
   const properties: Record<string, Property> = {};
   const expressions = compute.map(({ expression, alias }) => {
     // __proto__ would set the rows' prototype rather than a property
-    if (!/^[A-Za-z_]\w*$/.test(alias) || alias === "__proto__")
+    if (!ALIAS.test(alias) || alias === "__proto__")
       throw new HttpError(400, `Invalid ${option} alias: ${alias}`);
     if (
       own(type.properties, alias) ||

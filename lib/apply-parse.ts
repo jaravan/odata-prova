@@ -3,13 +3,13 @@
 // -> [{ kind: "filter", ... }, { kind: "groupby", ... }]. A mistake is a 400; a valid
 // transformation the server doesn't run is a 501.
 
-import { HttpError, parseInt10, splitTopLevel } from "./query.ts";
+import { HttpError, NAME, parseInt10, splitTopLevel } from "./query.ts";
 import { parseTopLevels, parseRelatives, parseTraverse } from "./hierarchy.ts";
 import { parseCompute } from "./compute.ts";
 import type { Aggregate, Transformation } from "./model.ts";
 
 const METHODS = new Set(["sum", "min", "max", "average", "countdistinct"]);
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const IDENTIFIER = new RegExp(`^${NAME}$`, "u");
 
 function parseApply(text: string): Transformation[] {
   return splitTopLevel(text, "/").map(parseTransformation);

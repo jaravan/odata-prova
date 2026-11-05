@@ -201,6 +201,10 @@ function rejectUnsupported(
   }
 }
 
+// A name in CSDL, as a regular expression's source (for the u flag): any letter or _ first, then
+// also digits and combining marks
+const NAME = "[\\p{L}_][\\p{L}\\p{M}\\p{N}_]*";
+
 function parseInt10(text: unknown, name: string): number | undefined {
   if (text === undefined || text === "") return undefined;
   if (!/^\d+$/.test(String(text)))
@@ -218,6 +222,7 @@ function parseBoolean(text: string | undefined, name: string): boolean {
 
 export {
   HttpError,
+  NAME,
   parseBoolean,
   errorCode,
   decodeUrl,
