@@ -431,6 +431,7 @@ class Parser {
         }
       }
       this.expect(")");
+      checkArguments(t.value, args.length);
       return { func: t.value, args };
     }
     throw new Error(
@@ -807,7 +808,13 @@ function callFunction(name: string, args: Value[]): Value {
   const bool = (value: boolean): Value => ({ value, type: "Edm.Boolean" });
   const string = (value: string): Value => ({ value, type: "Edm.String" });
   const number = (value: number): Value => ({ value, type: "Edm.Int32" });
-  const date = (i: number) => new Date(toMillis(args[i].value as string));
+  const date = (i: number) => {
+    const { value } = args[i];
+    const moment = new Date(typeof value === "string" ? toMillis(value) : NaN);
+    if (Number.isNaN(moment.getTime()))
+      throw new Error(`${name} needs a date or a time, not ${S(i)}`);
+    return moment;
+  };
   // Of a time of day, whose text is all it has; of anything else, its date
   const clock = (index: number, ofDate: (d: Date) => number) =>
     args[0].type === "Edm.TimeOfDay"
@@ -919,6 +926,28 @@ const UNSUPPORTED_FUNCTIONS = [
   "maxdatetime",
   "matchespattern",
 ];
+// How many arguments a function takes, at least and at most: one unless it's here
+const FUNCTION_ARGUMENTS: Record<string, [number, number]> = {
+  now: [0, 0],
+  substringof: [2, 2],
+  contains: [2, 2],
+  startswith: [2, 2],
+  endswith: [2, 2],
+  concat: [2, 2],
+  indexof: [2, 2],
+  substring: [2, 3],
+  replace: [3, 3],
+};
+
+// Checked when it's read, so a mistake is a 400 even when no row gets to it
+function checkArguments(name: string, count: number): void {
+  const [min, max] = own(FUNCTION_ARGUMENTS, name) ?? [1, 1];
+  if (count < min || count > max)
+    throw new Error(
+      `${name} takes ${min === max ? min : `${min} to ${max}`} argument${max === 1 ? "" : "s"}, not ${count}`,
+    );
+}
+
 const FUNCTION_TYPES: Record<string, string> = {
   substringof: "Edm.Boolean",
   contains: "Edm.Boolean",
