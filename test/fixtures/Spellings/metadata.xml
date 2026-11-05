@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="S" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Row">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Amount" Type="Edm.Decimal" Precision="30" Scale="variable"/>
+        <Property Name="Ref" Type="Edm.Guid"/>
+        <Property Name="Took" Type="Edm.Duration"/>
+        <Property Name="At" Type="Edm.DateTimeOffset"/>
+        <Property Name="Big" Type="Edm.Int64"/>
+        <Property Name="Text" Type="Edm.String"/>
+        <Annotation Term="Org.OData.Aggregation.V1.CustomAggregate" Qualifier="Ref" String="Edm.Guid"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Rows" EntityType="S.Row"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

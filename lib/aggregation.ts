@@ -151,7 +151,9 @@ function applyTransformations(
           t.aggregates,
         ));
         const out = aggregated(type, t.properties, t.aggregates);
-        rows = groupsOf(rows, t.properties).map((g) => aggregateRow(g, out));
+        rows = groupsOf(rows, type, t.properties).map((g) =>
+          aggregateRow(g, out),
+        );
         type = out.type;
         break;
       }
@@ -184,7 +186,7 @@ function eachGroup(
     true,
   ).type;
   const out: Row[] = [];
-  for (const group of groupsOf(paths.rows, t.properties))
+  for (const group of groupsOf(paths.rows, paths.type, t.properties))
     for (const row of applyTransformations(
       svc,
       group,
@@ -418,10 +420,16 @@ function holdsEntities(transformations: Transformation[]): boolean {
 }
 
 // The rows of each distinct combination of the grouping values, in the order first seen
-function groupsOf(rows: readonly Row[], properties: string[]): Row[][] {
+function groupsOf(
+  rows: readonly Row[],
+  type: EntityType,
+  properties: string[],
+): Row[][] {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
-    const k = distinctKey(properties.map((p) => row[p]));
+    const k = properties
+      .map((p) => distinctKey(row[p], type.properties[p].type))
+      .join();
     const group = groups.get(k);
     if (group) group.push(row);
     else groups.set(k, [row]);

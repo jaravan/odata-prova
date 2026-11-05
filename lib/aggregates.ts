@@ -265,11 +265,13 @@ function aggregateValues(
       // A number is summed; anything else is the value the rows share, or null
       if (isNumericType(input.type))
         return aggregateValues("sum", values, input);
-      return new Set(values.map((v) => distinctKey(v))).size === 1
+      return new Set(values.map((v) => distinctKey(v, input.type))).size === 1
         ? values[0]
         : null;
     case "countdistinct":
-      return String(new Set(values.map((v) => distinctKey(v))).size);
+      return String(
+        new Set(values.map((v) => distinctKey(v, input.type))).size,
+      );
     case "min":
     case "max": {
       let best: PrimitiveValue = null;
