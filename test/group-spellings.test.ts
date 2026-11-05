@@ -33,7 +33,7 @@ describe("values with several spellings", () => {
       (await apply(`aggregate(${property} with countdistinct as N)`))[0].N,
     );
 
-  for (const property of ["Amount", "Ref", "Took", "At"]) {
+  for (const property of ["Amount", "Ref", "Took", "At", "Tod"]) {
     it(`groupby puts every spelling of a ${property} in one group`, async () => {
       assert.deepEqual(await counts(property), [3, 1, 1]);
     });

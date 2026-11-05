@@ -9,6 +9,7 @@
         <Property Name="Ref" Type="Edm.Guid"/>
         <Property Name="Took" Type="Edm.Duration"/>
         <Property Name="At" Type="Edm.DateTimeOffset"/>
+        <Property Name="Tod" Type="Edm.TimeOfDay" Precision="3"/>
         <Property Name="Big" Type="Edm.Int64"/>
         <Property Name="Text" Type="Edm.String"/>
         <Annotation Term="Org.OData.Aggregation.V1.CustomAggregate" Qualifier="Ref" String="Edm.Guid"/>

@@ -512,6 +512,11 @@ function toComparable(
   if (type === "Edm.DateTimeOffset")
     return new Date(value as string | number).getTime();
   if (type === "Edm.Date") return String(value).slice(0, 10);
+  // Zeros ending a fraction don't change a time
+  if (type === "Edm.TimeOfDay")
+    return String(value).replace(/\.(\d*?)0*$/, (_, digits: string) =>
+      digits ? `.${digits}` : "",
+    );
   if (type === "Edm.Duration") return durationMillis(String(value));
   return value as PrimitiveValue;
 }
