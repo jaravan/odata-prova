@@ -141,6 +141,21 @@ function loadSeedFile(
   return { file: undefined, rows: [] };
 }
 
+// The columns of a data file's rows that metadata.xml doesn't have. They're ignored, as
+// metadata.xml says what an entity has; one may be a typo, so the log names them.
+function ignoredColumns(type: EntityType, rows: Row[]): string[] {
+  const names = new Set(rows.flatMap((row) => Object.keys(row)));
+  return [...names].filter(
+    (name) =>
+      !name.includes("@") &&
+      name !== "__metadata" &&
+      !own(type.properties, name) &&
+      !own(type.hiddenKeys, name) &&
+      !own(type.navigations, name) &&
+      !own(type.disabledNavigations, name),
+  );
+}
+
 // A change the store made inside a transaction, with what it takes to undo it. Rows change
 // in place, so an update keeps the row's old values of the fields it set (absent: the
 // fields the row didn't have), and a remove the row and where it was.
@@ -260,6 +275,9 @@ class Store {
         `${et.namespace}-${et.name}`,
       ]);
       files[es.name] = file;
+      const ignored = et.openType ? [] : ignoredColumns(et, rows as Row[]);
+      if (ignored.length)
+        log(`  ${file}: ignored, not in metadata.xml: ${ignored.join(", ")}`);
       this.data[es.name] = rows.map((row, i) => {
         try {
           return this.normalize(et, row);

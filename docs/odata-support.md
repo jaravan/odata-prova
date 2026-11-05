@@ -27,7 +27,7 @@ Writes and data files are checked against the metadata. Each of these is a `400`
 - a `Nullable="false"` property that a create, `PUT` or `PATCH` leaves null, a field of a complex value included, at any depth and in a collection
 - a value of the wrong JSON type: `123` for a string, `"true"` for a boolean (numbers may come as strings)
 - a string longer than its `MaxLength`
-- a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored)
+- in a write, a field the type doesn't have, unless the type is `OpenType="true"` (its undeclared properties aren't stored). `metadata.xml` says what an entity has, so a data file's other columns are ignored rather than refused, and the startup log names them, in case one is a typo
 - related entities where there is no creating them: inline in a `PATCH` or `PUT`, which link with `@odata.bind` instead, or a navigation's value that isn't an entity, or a list of them for a collection. An empty list and V2's `__deferred` hold nothing, and are fine
 
 Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required. Neither is anything in a draft, which may be incomplete until it is activated.

@@ -1,0 +1,94 @@
+// metadata.xml says what an entity has: a data file's other columns are ignored, and the log
+// says which, since one may be a typo.
+
+import { afterEach, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { get, start, type TestServer } from "./helpers.ts";
+
+const FAMILIES = path.join(import.meta.dirname, "fixtures", "Families");
+
+describe("a data file's columns the metadata doesn't have", () => {
+  let dir: string;
+  let s: TestServer;
+  afterEach(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // The Families model with data files, and what starting it logs
+  const started = async (files: Record<string, string>) => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "columns-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(FAMILIES, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    for (const [name, text] of Object.entries(files))
+      fs.writeFileSync(path.join(dir, "data", name), text);
+    const lines: string[] = [];
+    s = await start(dir, { log: (line) => lines.push(line) });
+    return lines.filter((line) => /not in metadata\.xml/.test(line));
+  };
+
+  it("a CSV's are named, and the rows load without them", async () => {
+    const [warning, ...rest] = await started({
+      "Ps.csv": "ID,I1,Nope,Other\n1,9,x,y\n",
+    });
+    assert.match(warning, /Ps\.csv/);
+    assert.match(warning, /Nope, Other/);
+    assert.deepEqual(rest, []);
+    const { status, body } = await get(`${s.v4}/Ps(1)`);
+    assert.equal(status, 200);
+    assert.equal(body.I1, 9);
+    assert.equal(body.Nope, undefined);
+  });
+
+  it("a JSON file's too, from any row, each once", async () => {
+    const [warning] = await started({
+      "Ps.json": '[{"ID":1,"Nope":1},{"ID":2,"Nope":2,"Later":3}]',
+    });
+    assert.match(warning, /Ps\.json/);
+    assert.match(warning, /Nope, Later/);
+  });
+
+  it("every file says its own", async () => {
+    const warnings = await started({
+      "Ps.csv": "ID,A\n1,x\n",
+      "Ks.csv": "ID,B\n1,x\n",
+    });
+    assert.equal(warnings.length, 2);
+  });
+
+  it("a file that fits says nothing", async () => {
+    assert.deepEqual(await started({ "Ps.csv": "ID,I1\n1,9\n" }), []);
+  });
+
+  it("a navigation, an annotation or __metadata isn't one", async () => {
+    const warnings = await started({
+      "Ps.json": '[{"ID":1,"Kids":[],"@odata.etag":"x","__metadata":{}}]',
+    });
+    assert.deepEqual(warnings, []);
+  });
+});
+
+describe("the data files of the fixtures and examples", () => {
+  const models = [
+    ...fs
+      .readdirSync(path.join(import.meta.dirname, "fixtures"))
+      .map((name) => path.join(import.meta.dirname, "fixtures", name)),
+  ].filter((dir) => fs.existsSync(path.join(dir, "data")));
+
+  for (const model of models)
+    it(`${path.basename(model)} has none`, async () => {
+      const lines: string[] = [];
+      const s = await start(model, { log: (line) => lines.push(line) });
+      await s.close();
+      assert.deepEqual(
+        lines.filter((line) => /not in metadata\.xml/.test(line)),
+        [],
+      );
+    });
+});
