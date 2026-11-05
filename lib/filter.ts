@@ -753,6 +753,39 @@ function hasFlags(l: Value, r: Value): boolean | null {
     .every((member) => held.includes(member));
 }
 
+// A decimal as a whole number, every digit kept. units: see decimalUnits. The / of bigints goes
+// towards zero, so what's left has the sign of units.
+function wholeUnits(name: string, units: bigint): bigint {
+  const one = 10n ** BigInt(DECIMAL_DIGITS);
+  const whole = units / one,
+    rest = units % one;
+  if (rest === 0n) return whole;
+  const away = rest < 0n ? -1n : 1n;
+  if (name === "floor") return rest < 0n ? whole - 1n : whole;
+  if (name === "ceiling") return rest > 0n ? whole + 1n : whole;
+  return rest * away * 2n >= one ? whole + away : whole;
+}
+
+// round, floor and ceiling: a value of the type they're given, as expressionType says
+function rounded(name: string, v: Value): Value {
+  if (v.type && INTEGER.test(v.type)) return v;
+  const units = v.type === "Edm.Decimal" ? decimalUnits(v.value) : undefined;
+  if (units !== undefined)
+    return { value: String(wholeUnits(name, units)), type: "Edm.Decimal" };
+  const n = num(v);
+  // The spec rounds a midpoint away from zero, Math.round towards +Infinity (-2.5 -> -2)
+  const value =
+    name === "round"
+      ? Math.sign(n) * Math.round(Math.abs(n))
+      : name === "floor"
+        ? Math.floor(n)
+        : Math.ceil(n);
+  return {
+    value,
+    type: v.type && isNumericType(v.type) ? v.type : "Edm.Double",
+  };
+}
+
 function callFunction(name: string, args: Value[]): Value {
   // The spec's rule for all of them. Round, floor and ceiling give their argument's type.
   if (args.some(isNull))
@@ -826,15 +859,9 @@ function callFunction(name: string, args: Value[]): Value {
     case "now":
       return { value: new Date().toISOString(), type: "Edm.DateTimeOffset" };
     case "round":
-      if (args[0].type === "Edm.Int64") return args[0];
-      // The spec rounds a midpoint away from zero, Math.round towards +Infinity (-2.5 -> -2)
-      return number(Math.sign(N(0)) * Math.round(Math.abs(N(0))));
     case "floor":
-      if (args[0].type === "Edm.Int64") return args[0];
-      return number(Math.floor(N(0)));
     case "ceiling":
-      if (args[0].type === "Edm.Int64") return args[0];
-      return number(Math.ceil(N(0)));
+      return rounded(name, args[0]);
     default:
       throw new Error(`Unsupported $filter function ${name}`);
   }
