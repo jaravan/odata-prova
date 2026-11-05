@@ -198,7 +198,8 @@ function withPrecision(
   value: PropertyValue,
   precision: string | undefined,
 ): string {
-  const digits = Number(precision) || 0;
+  // 12 is as fine as CSDL goes
+  const digits = Math.min(Number(precision) || 0, 12);
   return String(value).replace(
     /(:\d{2})(?:\.(\d+))?(?=Z|[+-]\d{2}:\d{2}|$)/,
     (_: string, sec: string, frac: string = "") =>
@@ -501,7 +502,11 @@ function toIsoDateTime(value: unknown, type: string): string {
       ? 0
       : (zone[0] === "-" ? -1 : 1) *
         (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)));
-  return isoText(new Date(utc - offset * 60000), value, type);
+  const text = isoText(new Date(utc - offset * 60000), value, type);
+  // Date holds milliseconds: a finer time keeps its digits, in the text
+  return /[1-9]/.test(frac.slice(4))
+    ? text.replace(/\.\d+/, frac.replace(/0+$/, ""))
+    : text;
 }
 
 // Internal -> value comparable in $filter / $orderby (numbers for numeric types, ms for
@@ -520,8 +525,7 @@ function toComparable(
   if (type && isNumericType(type)) return Number(value);
   // Hex digits, in either case
   if (type === "Edm.Guid") return String(value).toLowerCase();
-  if (type === "Edm.DateTimeOffset")
-    return new Date(value as string | number).getTime();
+  if (type === "Edm.DateTimeOffset") return momentOrder(value);
   if (type === "Edm.Date") return String(value).slice(0, 10);
   // Zeros ending a fraction don't change a time
   if (type === "Edm.TimeOfDay")
@@ -531,6 +535,16 @@ function toComparable(
   if (type === "Edm.Duration") return durationMillis(String(value));
   if (type === "Edm.Binary") return binaryBytes(String(value));
   return value as PrimitiveValue;
+}
+
+// A moment as a number to compare, in picoseconds so that every digit of a time counts, which
+// a double's wouldn't. What isn't a moment is NaN, as Date has it.
+function momentOrder(value: unknown): bigint | number {
+  const ms = new Date(value as string | number).getTime();
+  if (Number.isNaN(ms)) return NaN;
+  const finer = typeof value === "string" && value.match(/\.\d{3}(\d+)/);
+  const digits = finer ? finer[1].padEnd(9, "0").slice(0, 9) : "0";
+  return BigInt(ms) * 1000000000n + BigInt(digits);
 }
 
 // The order of two values toComparable gave, neither null. NaN isn't less or greater than
