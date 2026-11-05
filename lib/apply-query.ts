@@ -1,7 +1,7 @@
 // Applies a request's query options to rows: $filter, $search, $count, $orderby, $skip and
 // $top, for a collection or an $expand node.
 
-import { toComparable } from "./types.ts";
+import { compareValues, toComparable } from "./types.ts";
 import { compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
 import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
@@ -161,13 +161,9 @@ function applyQuery(
         let cmp = 0;
         if (ca === null && cb !== null) cmp = -1;
         else if (ca !== null && cb === null) cmp = 1;
-        else if (ca !== null && cb !== null) {
-          // Both from the same property (see toComparable): numbers, or strings, or
-          // booleans, which < orders alike
-          const a = ca as number,
-            b = cb as number;
-          cmp = a < b ? -1 : a > b ? 1 : 0;
-        }
+        // Both from the same property (see toComparable): numbers, or strings, or
+        // booleans, which < orders alike
+        else if (ca !== null && cb !== null) cmp = compareValues(ca, cb);
         if (cmp !== 0) return desc ? -cmp : cmp;
       }
       return 0;

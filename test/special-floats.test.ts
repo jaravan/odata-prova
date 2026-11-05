@@ -75,3 +75,69 @@ describe("INF, -INF and NaN", () => {
     assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
   });
 });
+
+describe("NaN in what puts values in order", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(
+      path.join(import.meta.dirname, "fixtures", "SpecialFloats"),
+    );
+  });
+  after(() => s.close());
+
+  // Replaces the rows with these values, in this order, and gives them to the test
+  const rowsOf = async (values: (number | string | null)[]) => {
+    for (const { ID } of (await get(`${s.v4}/Ms`)).body.value)
+      await send("DELETE", `${s.v4}/Ms(${ID})`);
+    for (const [ID, V] of values.entries())
+      assert.equal((await send("POST", `${s.v4}/Ms`, { ID, V })).status, 201);
+  };
+  const read = async (query: string) =>
+    (await get(`${s.v4}/Ms?${query}`)).body.value.map(
+      (row: { V: unknown }) => row.V,
+    );
+  const aggregate = async (values: (number | string | null)[]) => {
+    await rowsOf(values);
+    const apply = encodeURIComponent(
+      "aggregate(V with min as Low,V with max as High)",
+    );
+    const [{ Low, High }] = (await get(`${s.v4}/Ms?$apply=${apply}`)).body
+      .value;
+    return [Low, High];
+  };
+
+  const SCRAMBLED = [1.5, -1.5, null, 0, 1e300, "NaN", "INF", "-INF", 2.5, 0.5];
+
+  it("$orderby: null, then the numbers, then NaN, wherever it stood", async () => {
+    await rowsOf(SCRAMBLED);
+    const up = [null, "-INF", -1.5, 0, 0.5, 1.5, 2.5, 1e300, "INF", "NaN"];
+    assert.deepEqual(await read("$orderby=V"), up);
+    assert.deepEqual(await read("$orderby=V desc"), [...up].reverse());
+  });
+
+  it("$orderby keeps the order of the rows that are equal, several NaNs too", async () => {
+    await rowsOf(["NaN", 2, "NaN", 1]);
+    const ids = (await get(`${s.v4}/Ms?$orderby=V`)).body.value.map(
+      (row: { ID: number }) => row.ID,
+    );
+    assert.deepEqual(ids, [3, 1, 0, 2]);
+  });
+
+  it("min and max are the two ends of that order, whichever row comes first", async () => {
+    assert.deepEqual(await aggregate(["NaN", 1, 2]), [1, "NaN"]);
+    assert.deepEqual(await aggregate([1, "NaN", 2]), [1, "NaN"]);
+    assert.deepEqual(await aggregate([1, 2, "NaN"]), [1, "NaN"]);
+    assert.deepEqual(await aggregate(["NaN"]), ["NaN", "NaN"]);
+  });
+
+  it("a rank leaves NaN out, as it does null", async () => {
+    await rowsOf(["NaN", 1, null, 3, 2]);
+    const rank = (t: string) => read(`$apply=${encodeURIComponent(t)}`);
+    assert.deepEqual(await rank("topcount(2,V)"), [3, 2]);
+    assert.deepEqual(await rank("bottomcount(2,V)"), [1, 2]);
+    assert.deepEqual(await rank("topsum(4,V)"), [3, 2]);
+    assert.deepEqual(await rank("bottomsum(2,V)"), [1, 2]);
+    assert.deepEqual(await rank("toppercent(50,V)"), [3]);
+    assert.deepEqual(await rank("bottompercent(50,V)"), [1, 2]);
+  });
+});

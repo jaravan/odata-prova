@@ -42,7 +42,12 @@ import type { Resolve } from "./filter.ts";
 import { HttpError, own } from "./query.ts";
 import { topLevels, relatives, traverse } from "./hierarchy.ts";
 import { applyCompute, typedExpression } from "./compute.ts";
-import { distinctKey, isNumericType, toComparable } from "./types.ts";
+import {
+  compareValues,
+  distinctKey,
+  isNumericType,
+  toComparable,
+} from "./types.ts";
 import { parseAggregates, IDENTIFIER } from "./apply-parse.ts";
 import {
   aggregated,
@@ -329,7 +334,7 @@ function pathProperty(
 // The rows topcount and the others keep: the highest values first (top...) or the lowest
 // (bottom...), as many as the count, or until they add up to the sum or to the percentage of
 // the total. A count ranks any primitive value (text alphabetically, dates by time), a sum
-// or percentage a number. Rows whose value is null are left out.
+// or percentage a number. Rows whose value is null or NaN are left out: neither has a rank.
 function ranked(
   svc: QueryHost,
   rows: readonly Row[],
@@ -351,12 +356,8 @@ function ranked(
       // What it adds to a sum: the comparable form of a decimal is in smaller units
       amount: Number(valueOf(row)),
     }))
-    .filter((r) => r.value !== null)
-    .sort((a, b) => {
-      const x = a.value!,
-        y = b.value!;
-      return sign * (x < y ? -1 : x > y ? 1 : 0);
-    });
+    .filter((r) => r.value !== null && !Number.isNaN(r.value))
+    .sort((a, b) => sign * compareValues(a.value, b.value));
   if (counting) return valued.slice(0, t.value).map((r) => r.row);
   const target = t.method.endsWith("percent")
     ? (valued.reduce((s, r) => s + r.amount, 0) * t.value) / 100

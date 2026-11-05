@@ -4,6 +4,7 @@
 
 import { HttpError, own } from "./query.ts";
 import {
+  compareValues,
   distinctKey,
   isIntegerType,
   isNumericType,
@@ -273,9 +274,13 @@ function aggregateValues(
     case "max": {
       let best: PrimitiveValue = null;
       for (const v of values) {
-        const c = toComparable(v, input.type) as number;
-        const b = toComparable(best, input.type) as number;
-        if (best === null || (method === "min" ? c < b : c > b)) best = v;
+        const c = toComparable(v, input.type);
+        const b = toComparable(best, input.type);
+        if (
+          best === null ||
+          compareValues(c, b) * (method === "min" ? -1 : 1) > 0
+        )
+          best = v;
       }
       return best;
     }

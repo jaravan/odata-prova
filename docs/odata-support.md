@@ -88,7 +88,7 @@ A `$select` of something that is neither a property nor a navigation of the type
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`. They work over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nest, and take `$it` for the entity outside the lambda.
 
-`INF`, `-INF` and `NaN` are literals, as in the spec. `round` takes a midpoint away from zero (`round(-2.5)` is `-3`), and durations compare by their length (`duration'P1D' gt duration'PT1H'`). The spec's functions `cast`, `isof`, `fractionalseconds`, `totaloffsetminutes`, `totalseconds`, `mindatetime`, `maxdatetime` and `matchesPattern` are a `501`, and any other unknown function a `400`.
+`INF`, `-INF` and `NaN` are literals, as in the spec. The spec gives `NaN` no place in an order, so here it comes after every number, as in PostgreSQL: last in `$orderby`, first with `desc`, and what `max` gives. `round` takes a midpoint away from zero (`round(-2.5)` is `-3`), and durations compare by their length (`duration'P1D' gt duration'PT1H'`). The spec's functions `cast`, `isof`, `fractionalseconds`, `totaloffsetminutes`, `totalseconds`, `mindatetime`, `maxdatetime` and `matchesPattern` are a `501`, and any other unknown function a `400`.
 
 Integers and decimals in `$filter` and `$compute` keep every digit: comparisons, and `add`, `sub`, `mul` and `mod`. A quotient of decimals has no end, so `div` and `divby` give 15 significant digits. A `Double` on either side compares as a double. Sums and averages in `$apply` are exact.
 
@@ -215,7 +215,7 @@ Transformations are separated by `/` and run in order, before the other query op
 
 - `filter(...)`, `search(...)`, `orderby(...)`, `skip(n)` and `top(n)`: as the query options of the same names. `identity` leaves the rows as they are.
 - `compute(Amount mul 2 as Double,...)`: a property for each row, as [`$compute`](#computed-properties-compute) adds it, which the transformations after it use: `compute(month(OrderDate) as Month)/groupby((Month),aggregate($count as Count))`. Its rows are copies, written as the result's rows, not entities to expand.
-- Ranks, where `P` is a property, an alias, a path or an expression (`TotalAmount mul Quantity`, `length(Name)`). Rows whose value is null are left out.
+- Ranks, where `P` is a property, an alias, a path or an expression (`TotalAmount mul Quantity`, `length(Name)`). Rows whose value is null or `NaN` are left out.
   - `topcount(n,P)` and `bottomcount(n,P)`: the `n` rows with the highest or lowest values of `P`, in that order. `P` can be any value with an order: text goes alphabetically, dates by time.
   - `topsum(s,P)` and `bottomsum(s,P)`: the fewest of them, from the highest or the lowest, whose values add up to at least `s`.
   - `toppercent(p,P)` and `bottompercent(p,P)`: the same, up to `p` percent of the total, where `P` is a number.

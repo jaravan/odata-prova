@@ -474,6 +474,16 @@ function toComparable(
   return value as PrimitiveValue;
 }
 
+// The order of two values toComparable gave, neither null. NaN isn't less or greater than
+// anything, and a sort that's told so of some values and not of others leaves the rest out of
+// order too, so it has a place of its own: after every number, as PostgreSQL has it.
+function compareValues(a: unknown, b: unknown): number {
+  if (Number.isNaN(a) || Number.isNaN(b))
+    return Number(Number.isNaN(a)) - Number(Number.isNaN(b));
+  const [x, y] = [a as number, b as number];
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
 // A day-time duration's length in ms, so that P1D sorts after PT1H; null when it isn't one
 function durationMillis(text: string): number | null {
   const m = text.match(
@@ -518,6 +528,7 @@ export {
   withPrecision,
   propToInternal,
   toComparable,
+  compareValues,
   toMillis,
   timeOfDayToV2,
   isNumericType,
