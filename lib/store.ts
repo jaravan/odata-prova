@@ -16,7 +16,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { EntityType, Key, Model, PropertyValue, Row } from "./model.ts";
+import type {
+  EntitySet,
+  EntityType,
+  Key,
+  Model,
+  PropertyValue,
+  Row,
+} from "./model.ts";
 import { joinText, keyText, propToInternal } from "./types.ts";
 import { own } from "./query.ts";
 import { foreignKeys, generateData, generateLinks } from "./generate.ts";
@@ -164,6 +171,10 @@ type Change =
   | { op: "update"; set: string; row: Row; before: Row; absent: string[] }
   | { op: "remove"; set: string; row: Row; index: number };
 
+// A key as text, as matchesKey compares it
+const keyName = (type: EntityType, key: Record<string, unknown>) =>
+  JSON.stringify(type.keys.map((k) => keyText(key[k], type.properties[k])));
+
 // The key of a lookup: values compared as navigations compare them (see joinText)
 const valuesKey = (values: PropertyValue[]) =>
   JSON.stringify(values.map(joinText));
@@ -172,7 +183,8 @@ const valuesKey = (values: PropertyValue[]) =>
 function undo(data: Record<string, Row[]>, changes: Change[]): void {
   for (const c of changes.toReversed()) {
     const rows = data[c.set];
-    if (c.op === "insert") rows.splice(rows.indexOf(c.row), 1);
+    // Undone last first, so it's at the end: indexOf would walk the set for each
+    if (c.op === "insert") rows.splice(rows.lastIndexOf(c.row), 1);
     else if (c.op === "remove") rows.splice(c.index, 0, c.row);
     else {
       Object.assign(c.row, c.before);
@@ -234,6 +246,7 @@ class Store {
   // Rows by the values of some of their columns, per set and columns (see lookup). Built when
   // first asked for, dropped by a change to the set that could move a row between buckets.
   private indexes = new Map<string, Map<string, Map<string, Row[]>>>();
+  private keyIndexes = new Map<string, Map<string, Row>>();
   // The sets a saved commit, or a write outside a transaction, has changed: a generated one
   // that isn't in it is the generator's still, so regenerate may replace its rows
   private changed = new Set<string>();
@@ -495,6 +508,7 @@ class Store {
       regenerated.push(name);
     }
     this.indexes.clear();
+    this.keyIndexes.clear();
     this.mockRules = rules;
     this.generatedFrom = from;
     return {
@@ -553,6 +567,7 @@ class Store {
     for (const [setName, rows] of Object.entries(state))
       if (Object.hasOwn(this.data, setName)) this.data[setName] = [...rows];
     this.indexes.clear();
+    this.keyIndexes.clear();
   }
 
   // The rows of setName whose columns hold values, in the set's order: what
@@ -586,6 +601,7 @@ class Store {
   // Drops the indexes change may have made wrong: an update's on the columns it set, an
   // insert's or a remove's all of the set's
   private invalidate(change: Change): void {
+    this.keyIndexes.delete(change.set);
     const byColumns = this.indexes.get(change.set);
     if (!byColumns) return;
     if (change.op !== "update") {
@@ -614,15 +630,41 @@ class Store {
   }
 
   find(setName: string, entityType: EntityType, key: Key): Row | undefined {
-    return this.data[setName].find((row) =>
-      this.matchesKey(entityType, row, key),
-    );
+    // A contained entity's key can come without its parent's
+    if (entityType.parentKeys?.length)
+      return this.data[setName].find((row) =>
+        this.matchesKey(entityType, row, key),
+      );
+    return this.keyIndex(setName, entityType).get(keyName(entityType, key));
+  }
+
+  // The rows of an entity set by key, so that a write of many rows doesn't scan the set for
+  // each. The first of a key is the one find would come to.
+  private keyIndex(setName: string, type: EntityType): Map<string, Row> {
+    let index = this.keyIndexes.get(setName);
+    if (!index) {
+      index = new Map();
+      for (const row of this.data[setName]) {
+        const name = keyName(type, row);
+        if (!index.has(name)) index.set(name, row);
+      }
+      this.keyIndexes.set(setName, index);
+    }
+    return index;
   }
 
   insert(setName: string, row: Row): void {
     this.writable(setName);
     this.data[setName].push(row);
+    const index = this.keyIndexes.get(setName);
     this.record({ op: "insert", set: setName, row });
+    // A new row can't change the others': record dropped the index for the undo's sake
+    const es = this.model.entitySets[setName] as EntitySet | undefined;
+    if (index && es) {
+      const name = keyName(this.model.entityTypes[es.entityType], row);
+      if (!index.has(name)) index.set(name, row);
+      this.keyIndexes.set(setName, index);
+    }
   }
 
   // Sets changes on row, a row of setName, in place, and returns it

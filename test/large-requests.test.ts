@@ -159,3 +159,47 @@ describe("a response too long for a string", () => {
     assert.throws(() => responseText(body), TypeError);
   });
 });
+
+describe("a large write", () => {
+  const COUNT = 40000;
+  const kids = Array.from({ length: COUNT }, (_, i) => ({ ID: i + 1 }));
+  const FAMILIES = path.join(import.meta.dirname, "fixtures", "Families");
+
+  it("takes time in proportion to its rows", async () => {
+    const s = await start(FAMILIES);
+    s.store.audit = false;
+    try {
+      const started = performance.now();
+      const res = await fetch(`${s.v4}/Ps`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ID: 1, Kids: kids }),
+      });
+      assert.equal(res.status, 201);
+      assert.ok(performance.now() - started < 8000);
+      assert.equal((await get(`${s.v4}/Ks(${COUNT})`)).status, 200);
+      assert.equal((await get(`${s.v4}/Ks/$count`)).body, String(COUNT));
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("a key repeated at the end still fails, and undoes it all soon", async () => {
+    const s = await start(FAMILIES);
+    s.store.audit = false;
+    try {
+      const started = performance.now();
+      const res = await fetch(`${s.v4}/Ps`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ID: 1, Kids: [...kids, { ID: 1 }] }),
+      });
+      assert.equal(res.status, 409);
+      assert.ok(performance.now() - started < 8000);
+      assert.equal((await get(`${s.v4}/Ks/$count`)).body, "0");
+      assert.equal((await get(`${s.v4}/Ps(1)`)).status, 404);
+    } finally {
+      await s.close();
+    }
+  });
+});
