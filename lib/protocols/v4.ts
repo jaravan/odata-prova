@@ -96,8 +96,8 @@ function parseLiteral(text: string): Literal {
   if (t === "true" || t === "false")
     return { value: t === "true", type: "Edm.Boolean" };
   if (t === "null") return { value: null, type: null };
-  if ((m = t.match(/^duration'([^']*)'$/i)))
-    return { value: m[1], type: "Edm.Duration" };
+  if ((m = t.match(/^duration'([^']+)'$/i)))
+    return { value: toInternal(m[1], "Edm.Duration"), type: "Edm.Duration" };
   if ((m = t.match(/^binary'([^']*)'$/i)))
     return { value: m[1], type: "Edm.Binary" };
   // An enum's: its member, which the property reads as it does a string

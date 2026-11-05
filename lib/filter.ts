@@ -745,6 +745,13 @@ function compare(l: Value, r: Value): number {
       : withPrecision(value as PropertyValue, fraction);
   const a = toComparable(shown(l.value), type);
   const b = toComparable(shown(r.value), type);
+  // What can't be read as the type isn't null, which it would equal
+  for (const [side, comparable] of [
+    [l, a],
+    [r, b],
+  ] as const)
+    if (comparable === null && !isNull(side))
+      throw new Error(`${str(side)} is not a value of ${type}`);
   if (a === null || b === null) return a === b ? 0 : NaN;
   // Not a - b, which is NaN for INF and INF. NaN itself stays equal to nothing.
   if (
