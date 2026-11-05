@@ -292,3 +292,112 @@ describe("$batch: reading what was sent", () => {
     );
   });
 });
+
+describe("$batch: a request line", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const statuses = (text: string) => batchResponses(text).map((r) => r.status);
+  const raw = async (line: string) => {
+    const res = await fetch(`${s.v4}/$batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed; boundary=b" },
+      body: `--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\n${line}\r\n\r\n\r\n--b--\r\n`,
+    });
+    return batchResponses(await res.text())[0];
+  };
+
+  for (const url of [
+    "PurchaseOrderSet?$orderby=TotalAmount desc",
+    "PurchaseOrderSet?$filter=Status eq 'Open'",
+    "PurchaseOrderSet('4500000001') /Items",
+  ]) {
+    it(`a space in the URL is a 400, not a shorter URL: ${url}`, async () => {
+      const [part] = batchResponses(
+        (await batch(s.v4, [{ method: "GET", url }])).text,
+      );
+      assert.equal(part.status, 400);
+      assert.match(part.body.error.message, /space/);
+    });
+  }
+
+  it("on V2 too", async () => {
+    const res = await batch(s.v2, [
+      { method: "GET", url: "PurchaseOrderSet?$orderby=TotalAmount desc" },
+    ]);
+    assert.deepEqual(statuses(res.text), [400]);
+  });
+
+  it("the other parts of the batch still run", async () => {
+    const res = await batch(s.v4, [
+      { method: "GET", url: "PurchaseOrderSet?$top=1" },
+      { method: "GET", url: "PurchaseOrderSet?$orderby=Status desc" },
+      { method: "GET", url: "PurchaseOrderSet?$top=1" },
+    ]);
+    assert.deepEqual(statuses(res.text), [200, 400, 200]);
+  });
+
+  it("in a changeset it fails the changeset, and undoes what ran", async () => {
+    const res = await batch(s.v4, [
+      [
+        {
+          method: "POST",
+          url: "PurchaseOrderSet",
+          body: { ...ORDER, PurchaseOrderId: "SPACE" },
+        },
+        {
+          method: "PATCH",
+          url: "PurchaseOrderSet('SPACE') x",
+          body: { Status: "New" },
+        },
+      ],
+    ]);
+    assert.deepEqual(statuses(res.text), [400]);
+    assert.equal((await get(`${s.v4}/PurchaseOrderSet('SPACE')`)).status, 404);
+  });
+
+  it("an encoded space is the space it stands for", async () => {
+    const res = await batch(s.v4, [
+      { method: "GET", url: "PurchaseOrderSet?$orderby=TotalAmount%20desc" },
+    ]);
+    const [part] = batchResponses(res.text);
+    const amounts = part.body.value.map((r: { TotalAmount: unknown }) =>
+      Number(r.TotalAmount),
+    );
+    assert.deepEqual(
+      amounts,
+      amounts.toSorted((a: number, b: number) => b - a),
+    );
+  });
+
+  it("a space in a body is the body's", async () => {
+    const res = await batch(s.v4, [
+      [
+        {
+          method: "POST",
+          url: "PurchaseOrderSet",
+          body: { ...ORDER, PurchaseOrderId: "BODY", Supplier: "two words" },
+        },
+      ],
+    ]);
+    assert.deepEqual(statuses(res.text), [201]);
+  });
+
+  it("the HTTP version may be left out", async () => {
+    assert.equal((await raw("GET PurchaseOrderSet?$top=1")).status, 200);
+  });
+
+  it("several spaces between its parts are one", async () => {
+    assert.equal(
+      (await raw("GET  PurchaseOrderSet?$top=1  HTTP/1.1")).body.value.length,
+      1,
+    );
+  });
+
+  it("a third word that is not an HTTP version belongs to the URL", async () => {
+    assert.equal((await raw("GET PurchaseOrderSet x")).status, 400);
+  });
+});

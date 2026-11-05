@@ -10,10 +10,12 @@ import { keepLongNumbers } from "./types.ts";
 import type { ODataService } from "./service.ts";
 import type { Protocol } from "./protocol.ts";
 
-// One application/http part: the request line, its headers (lower-cased) and body
+// One application/http part: the request line, its headers (lower-cased) and body. spaced is
+// the line, when its URL holds a space.
 interface HttpRequestPart {
   method: string;
   rawUrl: string;
+  spaced?: string;
   headers: Record<string, string>;
   bodyText: string;
 }
@@ -79,14 +81,18 @@ function extractBoundary(contentType: string | undefined): string | undefined {
 }
 
 // Parses the "METHOD url HTTP/1.1\r\nHeader: ...\r\n\r\n<body>" text embedded in an
-// application/http batch part.
+// application/http batch part. A URL has no spaces: what follows one isn't dropped, which would
+// run another request than the one sent, say $orderby=Amount for $orderby=Amount desc.
 function parseHttpRequestPart(text: string): HttpRequestPart {
   const [headBlock, bodyText] = splitOnceOnBlankLine(text);
   const lines = headBlock.split(/\r?\n/);
-  const [method, rawUrl] = (lines[0] || "").trim().split(" ");
+  const line = (lines[0] || "").trim();
+  const [method, rawUrl, ...rest] = line.split(/[ \t]+/);
+  const version = rest.length === 1 && /^HTTP\/\d/i.test(rest[0]);
   return {
     method: (method || "GET").toUpperCase(),
     rawUrl: rawUrl || "",
+    spaced: rest.length && !version ? line : undefined,
     headers: parseHeaders(lines.slice(1).join("\r\n")),
     bodyText: bodyText.trim(),
   };
@@ -153,9 +159,14 @@ function createBatchHandler(
 
   // contentIdRefs: { "1": "/odata/v4/Srv/PurchaseOrderSet('x')" } within the current changeset.
   async function executeHttpPart(
-    { method, rawUrl, headers, bodyText }: HttpRequestPart,
+    { method, rawUrl, spaced, headers, bodyText }: HttpRequestPart,
     contentIdRefs: Record<string, string>,
   ): Promise<ODataResponse> {
+    if (spaced)
+      return protocol.error(
+        400,
+        `The URL of "${spaced}" holds a space: write it as %20`,
+      );
     let url = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
