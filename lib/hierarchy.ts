@@ -481,14 +481,15 @@ function relatives(
   // Out from the start nodes a level at a time, up to the distance. Each node is reached once,
   // however deep the hierarchy and however many start nodes are on one path; a cycle ends there.
   const wanted = new Set<string>();
-  let level = [...start];
+  let level = [...start].map((node) => ({ node, from: node }));
   for (let d = 0; level.length && d < (t.distance ?? Infinity); d++) {
-    const reached: string[] = [];
-    for (const node of level)
+    const reached: typeof level = [];
+    for (const { node, from } of level)
       for (const other of next.get(node) ?? [])
-        if (!wanted.has(other)) {
+        // Round a cycle, a node isn't its own relative
+        if (other !== from && !wanted.has(other)) {
           wanted.add(other);
-          reached.push(other);
+          reached.push({ node: other, from });
         }
     level = reached;
   }

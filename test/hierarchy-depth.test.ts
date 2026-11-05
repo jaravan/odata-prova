@@ -84,3 +84,61 @@ describe("a hierarchy of one long chain", () => {
     assert.ok(performance.now() - started < 5000);
   });
 });
+
+describe("a hierarchy with a cycle", () => {
+  let s: TestServer;
+  let dir: string;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "cycle-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(SOURCE, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    const [header] = fs
+      .readFileSync(path.join(SOURCE, "data", "Genres.csv"), "utf8")
+      .split(/\r?\n/);
+    const separator = header.includes(";") ? ";" : ",";
+    const columns = header.split(separator);
+    const row = (id: number, parent: number) =>
+      columns
+        .map((c) =>
+          /^id$/i.test(c)
+            ? id
+            : /parent/i.test(c)
+              ? parent
+              : /name/i.test(c)
+                ? `N${id}`
+                : "",
+        )
+        .join(separator);
+    fs.writeFileSync(
+      path.join(dir, "data", "Genres.csv"),
+      [header, row(1, 3), row(2, 1), row(3, 2)].join("\n"),
+    );
+    s = await start(dir);
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const ids = async (apply: string) => {
+    const res = await fetch(
+      `${s.v4}/Genres?$apply=${encodeURIComponent(apply)}`,
+    );
+    const body = (await res.json()) as { value: { ID: number }[] };
+    assert.equal(res.status, 200, JSON.stringify(body));
+    return body.value.map((n) => n.ID).sort();
+  };
+  const H = "$root/Genres,GenresHierarchy,ID";
+
+  for (const kind of ["ancestors", "descendants"])
+    it(`${kind} of a node leaves it out, without keep start`, async () => {
+      assert.deepEqual(await ids(`${kind}(${H},filter(ID eq 1))`), [2, 3]);
+    });
+
+  it("each of two start nodes is a relative of the other", async () => {
+    assert.deepEqual(await ids(`ancestors(${H},filter(ID lt 3))`), [1, 2, 3]);
+  });
+});
