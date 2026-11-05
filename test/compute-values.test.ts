@@ -4,7 +4,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { get, send, start } from "./helpers.ts";
+import { get, send, start, type TestServer } from "./helpers.ts";
 
 const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const MAX_INT64 = "9223372036854775807";
@@ -95,6 +95,43 @@ describe("integer arithmetic stays in its type's range", () => {
     );
     assert.equal(status, 200);
   });
+});
+
+describe("$compute of a literal", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(FIXTURES, "EdmTypes"));
+  });
+  after(() => s.close());
+
+  const compute = (expression: string) =>
+    get(
+      `${s.v4}/Values(2)?$select=K&$compute=${encodeURIComponent(`${expression} as K`)}`,
+    );
+
+  for (const [expression, expected] of [
+    ["true", true],
+    ["false", false],
+    ["NaN", "NaN"],
+    ["INF", "INF"],
+    ["-INF", "-INF"],
+    ["5", 5],
+    ["1.5", 1.5],
+    ["'x'", "x"],
+    ["2025-01-02", "2025-01-02"],
+  ] as const) {
+    it(`${expression} is its value`, async () => {
+      const { status, body } = await compute(expression);
+      assert.equal(status, 200);
+      assert.equal(body.K, expected);
+    });
+  }
+
+  for (const expression of ["null", "Nope", "Nope/Other", "ID/Other"]) {
+    it(`${expression} is a 400, not a 500`, async () => {
+      assert.equal((await compute(expression)).status, 400);
+    });
+  }
 });
 
 describe("$compute copies a time as fine as its property", () => {

@@ -55,6 +55,20 @@ function pathProperty(
   return prop;
 }
 
+// The property an expression is a copy of, if it is one: a literal looks like a path too
+function copied(
+  svc: QueryHost,
+  type: EntityType,
+  expression: string,
+): Property | undefined {
+  if (!PATH.test(expression)) return undefined;
+  try {
+    return pathProperty(svc, type, expression);
+  } catch {
+    return undefined;
+  }
+}
+
 // A computed value as the store holds a value of its type (see types.ts): Int64 and Decimal
 // as text
 function stored(value: unknown, type: string): PropertyValue {
@@ -138,9 +152,7 @@ function applyCompute(
       isCollection: false,
       computed: true,
       // A copy of a property is written as finely as the property
-      precision: PATH.test(expression)
-        ? pathProperty(svc, type, expression).precision
-        : undefined,
+      precision: copied(svc, type, expression)?.precision,
     };
     return { alias, typed };
   });
