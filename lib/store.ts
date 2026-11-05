@@ -520,7 +520,7 @@ class Store {
   assertKeys(entityType: EntityType, row: Row, source: string): void {
     for (const k of entityType.keys) {
       if (row[k] === null || row[k] === undefined || row[k] === "") {
-        throw new Error(
+        throw seedError(
           `${source}: row is missing key property ${k}: ${JSON.stringify(row)}`,
         );
       }

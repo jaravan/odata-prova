@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createApp } from "../lib/app.ts";
 import { get, start, type TestServer } from "./helpers.ts";
 
 const FAMILIES = path.join(import.meta.dirname, "fixtures", "Families");
@@ -111,5 +112,23 @@ describe("a data file no set reads", () => {
     const found = lines.filter((line) => /no entity set reads it/.test(line));
     assert.equal(found.length, 1);
     assert.match(found[0], /Typo\.json/);
+  });
+});
+
+describe("a row with no key in a data file", () => {
+  it("stops the start with a message of its own, not a stack trace", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nokey-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(FAMILIES, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    fs.writeFileSync(path.join(dir, "data", "Ps.json"), '[{"I1":1}]');
+    assert.throws(
+      () => createApp({ modelDir: dir, log: () => {} }),
+      (e: Error & { code?: string }) =>
+        e.code === "ESEED" && /missing key property ID/.test(e.message),
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
