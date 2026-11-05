@@ -43,8 +43,10 @@ async function start(modelDir = PO_MODEL, options: Partial<AppOptions> = {}) {
   });
   // Every transaction checks that its log undoes all it changed (see Store.audit)
   built.store.audit = true;
+  // On the address the tests call, not every address: another program's listener on
+  // 127.0.0.1 can share a port with one on every address, and would get the requests
   const server = await new Promise<Server>((resolve) => {
-    const s = built.app.listen(0, () => resolve(s));
+    const s = built.app.listen(0, "127.0.0.1", () => resolve(s));
   });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {

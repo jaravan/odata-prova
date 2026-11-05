@@ -78,7 +78,7 @@ describe("both protocols share one store", () => {
     });
     assert.equal(services.length, 1);
     const server = await new Promise<Server>((resolve) => {
-      const x = app.listen(0, () => resolve(x));
+      const x = app.listen(0, "127.0.0.1", () => resolve(x));
     });
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     assert.equal(

@@ -202,7 +202,7 @@ describe("Closing", () => {
     const built = app(f.persistence);
     await built.ready;
     f.events.length = 0;
-    const server = built.app.listen(0);
+    const server = built.app.listen(0, "127.0.0.1");
     await new Promise((resolve) => server.once("listening", resolve));
     try {
       const { port } = server.address() as AddressInfo;
