@@ -70,9 +70,12 @@ function parseLiteral(text: string): Literal {
     return { value: t === "true", type: "Edm.Boolean" };
   if (t === "null") return { value: null, type: null };
   if ((m = t.match(/^(-?\d+)[lL]$/))) return { value: m[1], type: "Edm.Int64" };
-  // Without its L, a number too large for an Int32 is still an Int64
-  if (/^-?\d+$/.test(t) && !inIntegerRange(BigInt(t), "Edm.Int32"))
-    return { value: t, type: "Edm.Int64" };
+  // Without its L, a whole number is an integer, as in V4: an Int64 if it's too large for an
+  // Int32
+  if (/^-?\d+$/.test(t))
+    return inIntegerRange(BigInt(t), "Edm.Int32")
+      ? { value: Number(t), type: "Edm.Int32" }
+      : { value: t, type: "Edm.Int64" };
   if ((m = t.match(/^(-?\d+(?:\.\d+)?)[mM]$/)))
     return { value: m[1], type: "Edm.Decimal" };
   if ((m = t.match(/^(-?INF|NaN)[dDfF]?$/)))
