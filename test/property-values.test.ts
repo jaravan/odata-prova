@@ -186,3 +186,32 @@ describe("a binary's /$value in a $batch", () => {
     }
   });
 });
+
+describe("time() of a moment", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(STAMPS);
+    await send("POST", `${s.v4}/Rs`, { ID: 1, At: `2025-01-01T12:00:00.123Z` });
+    await send("POST", `${s.v4}/Rs`, { ID: 2, At: `2025-01-01T12:00:00Z` });
+    await send("POST", `${s.v4}/Rs`, {
+      ID: 3,
+      At: `2025-01-01T12:00:00.1234567Z`,
+    });
+  });
+  after(() => s.close());
+
+  const ids = async (filter: string) =>
+    (
+      await get(`${s.v4}/Rs?$select=ID&$filter=${encodeURIComponent(filter)}`)
+    ).body.value.map((r: { ID: number }) => r.ID);
+
+  it("keeps the fraction, to its last digit", async () => {
+    assert.deepEqual(await ids("time(At) eq 12:00:00.123"), [1]);
+    assert.deepEqual(await ids("time(At) eq 12:00:00"), [2]);
+    assert.deepEqual(await ids("time(At) eq 12:00:00.1234567"), [3]);
+  });
+
+  it("orders by it", async () => {
+    assert.deepEqual(await ids("time(At) gt 12:00:00"), [1, 3]);
+  });
+});

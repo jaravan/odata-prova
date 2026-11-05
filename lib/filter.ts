@@ -893,7 +893,13 @@ function callFunction(name: string, args: Value[]): Value {
       return { value: date(0).toISOString().slice(0, 10), type: "Edm.Date" };
     case "time":
       return {
-        value: date(0).toISOString().slice(11, 19),
+        // As fine as the moment: Date's milliseconds, or the digits past them in its text
+        value: (
+          String(args[0].value).match(/T(\d{2}:\d{2}:\d{2}\.\d{4,})/)?.[1] ??
+          date(0).toISOString().slice(11, 23)
+        ).replace(/\.(\d*?)0*$/, (_, digits: string) =>
+          digits ? `.${digits}` : "",
+        ),
         type: "Edm.TimeOfDay",
       };
     case "now":
