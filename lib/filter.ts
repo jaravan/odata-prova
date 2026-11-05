@@ -455,11 +455,7 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
       );
     return resolve.aggregate(node.these);
   }
-  if ("not" in node)
-    return {
-      value: !truthy(evaluate(node.expr, row, resolve)),
-      type: "Edm.Boolean",
-    };
+  if ("not" in node) return not(evaluate(node.expr, row, resolve));
   if ("neg" in node) {
     const v = evaluate(node.expr, row, resolve);
     return arithmetic("sub", { value: 0, type: v.type }, v);
@@ -481,15 +477,9 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   }
   switch (node.op) {
     case "and":
-      return {
-        value: truthy(l) && truthy(evaluate(node.right, row, resolve)),
-        type: "Edm.Boolean",
-      };
+      return logical(false, l, () => evaluate(node.right, row, resolve));
     case "or":
-      return {
-        value: truthy(l) || truthy(evaluate(node.right, row, resolve)),
-        type: "Edm.Boolean",
-      };
+      return logical(true, l, () => evaluate(node.right, row, resolve));
   }
   const r = evaluate(node.right, row, resolve);
   switch (node.op) {
@@ -691,11 +681,31 @@ function evaluateLambda(
 function truthy(v: Value): boolean {
   return v.value === true;
 }
+function isNull(v: Value): boolean {
+  return v.value === null || v.value === undefined;
+}
+// null is unknown: not null is null
+function not(v: Value): Value {
+  return { value: isNull(v) ? null : !truthy(v), type: "Edm.Boolean" };
+}
+// and, or. decides: the value that settles it whatever the other side is, null included (false
+// for and, true for or). Otherwise a null leaves it unknown, and the right side isn't read
+// once the left one has settled it.
+function logical(decides: boolean, l: Value, right: () => Value): Value {
+  const settles = (v: Value) => !isNull(v) && truthy(v) === decides;
+  if (settles(l)) return { value: decides, type: "Edm.Boolean" };
+  const r = right();
+  if (settles(r)) return { value: decides, type: "Edm.Boolean" };
+  return {
+    value: isNull(l) || isNull(r) ? null : !decides,
+    type: "Edm.Boolean",
+  };
+}
 function num(v: Value): number {
   return Number(v.value);
 }
 function str(v: Value): string {
-  return v.value === null || v.value === undefined ? "" : String(v.value);
+  return String(v.value);
 }
 
 // The type two sides compare in. Between numbers the widest, so that a Decimal keeps its
@@ -735,8 +745,8 @@ function compare(l: Value, r: Value): number {
 }
 
 // Whether an enum's value holds all the members of another: a flags value is several, Read,Write
-function hasFlags(l: Value, r: Value): boolean {
-  if (l.value === null || r.value === null) return false;
+function hasFlags(l: Value, r: Value): boolean | null {
+  if (isNull(l) || isNull(r)) return null;
   const held = String(l.value).split(",");
   return String(r.value)
     .split(",")
@@ -744,6 +754,9 @@ function hasFlags(l: Value, r: Value): boolean {
 }
 
 function callFunction(name: string, args: Value[]): Value {
+  // The spec's rule for all of them. Round, floor and ceiling give their argument's type.
+  if (args.some(isNull))
+    return { value: null, type: own(FUNCTION_TYPES, name) ?? args[0].type };
   const S = (i: number) => str(args[i]);
   const N = (i: number) => num(args[i]);
   const bool = (value: boolean): Value => ({ value, type: "Edm.Boolean" });

@@ -278,7 +278,8 @@ describe("$filter on enums and times of day", () => {
     assert.deepEqual(await ids("Perms has Sh.Perm'Write'"), [1]);
     assert.deepEqual(await ids("Perms has Sh.Perm'Read'"), [1, 2]);
     assert.deepEqual(await ids("Perms has Sh.Perm'Read,Write'"), [1]);
-    assert.deepEqual(await ids("not (Perms has Sh.Perm'Write')"), [2, 3]);
+    // 3 has no Perms: has with a null is null, and so is not of that
+    assert.deepEqual(await ids("not (Perms has Sh.Perm'Write')"), [2]);
   });
 
   it("an enum literal in a key, which the server writes back", async () => {
