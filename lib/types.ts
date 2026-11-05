@@ -406,18 +406,19 @@ function elementToInternal(value: unknown, prop: Property): PropertyValue {
   return internal;
 }
 
+// A moment as ISO 8601 text. A year outside 0000 to 9999, which a time zone can move one to,
+// takes a form no literal reads, so that an entity with it as a key couldn't be found again.
+function isoText(moment: Date, value: unknown, type: string): string {
+  const text = Number.isNaN(moment.getTime()) ? "" : moment.toISOString();
+  if (!/^\d{4}-/.test(text)) throw invalid(value, type);
+  return text;
+}
+
 function toIsoDateTime(value: unknown, type: string): string {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) throw invalid(value, type);
-    return value.toISOString();
-  }
+  if (value instanceof Date) return isoText(value, value, type);
   const s = String(value).trim();
   const v2 = s.match(V2_DATE);
-  if (v2) {
-    const d = new Date(Number(v2[1]));
-    if (Number.isNaN(d.getTime())) throw invalid(value, type);
-    return d.toISOString();
-  }
+  if (v2) return isoText(new Date(Number(v2[1])), value, type);
   const m = s.match(ISO_DATE_TIME);
   if (!m) throw invalid(value, type);
   const [, y, mo, d, h = "00", mi = "00", sec = "00", frac = "", zone] = m;
@@ -447,7 +448,7 @@ function toIsoDateTime(value: unknown, type: string): string {
       ? 0
       : (zone[0] === "-" ? -1 : 1) *
         (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)));
-  return new Date(utc - offset * 60000).toISOString();
+  return isoText(new Date(utc - offset * 60000), value, type);
 }
 
 // Internal -> value comparable in $filter / $orderby (numbers for numeric types, ms for
