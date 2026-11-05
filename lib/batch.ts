@@ -7,6 +7,7 @@ import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
 import { HttpError, decodeUrl, own } from "./query.ts";
 import { keepLongNumbers } from "./types.ts";
+import { MAX_RESPONSE, responseText, tooMuch } from "./work.ts";
 import type { ODataService } from "./service.ts";
 import type { Protocol } from "./protocol.ts";
 
@@ -287,6 +288,15 @@ function createBatchHandler(
     };
   }
 
+  // Turns a result's body to text, leaving the rows behind it to be freed, and returns its size
+  function asText(result: ODataResponse): number {
+    if (result.status === 204 || result.body === undefined) return 0;
+    if (Buffer.isBuffer(result.body)) return result.body.length;
+    if (typeof result.body !== "string")
+      result.body = responseText(result.body);
+    return (result.body as string).length;
+  }
+
   function buildBatchResponseBody(
     processedParts: ProcessedPart[],
     boundary: string,
@@ -343,8 +353,28 @@ function createBatchHandler(
     // a changeset is saved before the next runs, and sees what the ones before it saved
     const processedParts = await service.queue.run(async () => {
       const out: ProcessedPart[] = [];
-      for (const part of splitMultipart(bodyText, boundary))
-        out.push(await processBatchPart(part));
+      let size = 0;
+      for (const part of splitMultipart(bodyText, boundary)) {
+        const processed = await processBatchPart(part);
+        out.push(processed);
+        try {
+          for (const { result } of processed.results) size += asText(result);
+        } catch (e) {
+          if (!(e instanceof HttpError)) throw e;
+          size = Infinity;
+          processed.results.length = 0;
+          out.pop();
+        }
+        // The parts after it aren't run: their answers wouldn't fit either
+        if (size > MAX_RESPONSE) {
+          const { status, message, code } = tooMuch();
+          out.push({
+            changeset: false,
+            results: [{ result: protocol.error(status, message, code) }],
+          });
+          break;
+        }
+      }
       return out;
     });
 

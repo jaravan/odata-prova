@@ -13,6 +13,8 @@ import {
   start,
   type TestServer,
 } from "./helpers.ts";
+import { responseText } from "../lib/work.ts";
+import type { HttpError } from "../lib/query.ts";
 
 const METADATA = `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EntityType Name="V"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Text" Type="Edm.String"/><Property Name="Big" Type="Edm.Int64"/><Property Name="Amount" Type="Edm.Decimal"/></EntityType><EntityContainer Name="C"><EntitySet Name="Values" EntityType="N.V"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
 
@@ -88,5 +90,72 @@ describe("a very large group", () => {
       await s.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a $batch that reads more than a response can hold", () => {
+  it("is cut off with a refusal, and the server goes on", async () => {
+    const wide = "x".repeat(2000);
+    const dir = modelWith(
+      Array.from({ length: 20000 }, (_, i) => ({ ID: i, Text: wide })),
+    );
+    const s = await start(dir);
+    try {
+      const reads = Array.from({ length: 600 }, () => ({
+        method: "GET",
+        url: "Values",
+      }));
+      const { status, text } = await batch(s.v4, reads);
+      assert.equal(status, 200);
+      const parts = batchResponses(text);
+      assert.ok(parts.length < 600);
+      const last = parts.at(-1)!;
+      assert.equal(last.status, 400);
+      assert.equal(last.body.error.code, "TooMuchWork");
+      assert.equal((await get(`${s.v4}/Values(1)`)).status, 200);
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a few reads are all answered", async () => {
+    const dir = modelWith([{ ID: 1 }]);
+    const s = await start(dir);
+    try {
+      const reads = Array.from({ length: 50 }, () => ({
+        method: "GET",
+        url: "Values",
+      }));
+      const parts = batchResponses((await batch(s.v4, reads)).text);
+      assert.equal(parts.length, 50);
+      assert.ok(parts.every((p) => p.status === 200));
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a response too long for a string", () => {
+  it("is a refusal, not a 500", () => {
+    const body = {
+      toJSON() {
+        throw new RangeError("Invalid string length");
+      },
+    };
+    assert.throws(
+      () => responseText(body),
+      (e: HttpError) => e.status === 400 && e.code === "TooMuchWork",
+    );
+  });
+
+  it("any other mistake is left as it is", () => {
+    const body = {
+      toJSON() {
+        throw new TypeError("mine");
+      },
+    };
+    assert.throws(() => responseText(body), TypeError);
   });
 });

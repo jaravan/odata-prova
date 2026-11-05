@@ -23,6 +23,7 @@ import { resolveMockRules } from "./mock-rules.ts";
 import { liveRules } from "./live-rules.ts";
 import type { Model, ODataResponse } from "./model.ts";
 import { createBatchHandler } from "./batch.ts";
+import { responseText } from "./work.ts";
 import { ETAG_MODES } from "./etag.ts";
 import type { ETagMode } from "./etag.ts";
 import { JOIN_MODES } from "./navigations.ts";
@@ -366,14 +367,14 @@ function createApp({
     // setHeader + end rather than res.type()/res.send(): express would lowercase the
     // parameters and append a charset, and UI5 looks for IEEE754Compatible=true in the
     // response Content-Type as is.
+    const body =
+      typeof result.body === "string" || Buffer.isBuffer(result.body)
+        ? result.body
+        : responseText(result.body);
     res
       .status(result.status)
       .setHeader("Content-Type", result.contentType || "application/json");
-    return res.end(
-      typeof result.body === "string" || Buffer.isBuffer(result.body)
-        ? result.body
-        : JSON.stringify(result.body),
-    );
+    return res.end(body);
   }
 
   // Express treats "$", "(" and ")" specially in string patterns, so match on a prefix
