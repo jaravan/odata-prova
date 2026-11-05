@@ -218,7 +218,7 @@ class Store {
   private begun: Record<string, Row[]> | undefined;
   // Rows by the values of some of their columns, per set and columns (see lookup). Built when
   // first asked for, dropped by a change to the set that could move a row between buckets.
-  private indexes: Record<string, Map<string, Map<string, Row[]>>> = {};
+  private indexes = new Map<string, Map<string, Map<string, Row[]>>>();
   // The sets a saved commit, or a write outside a transaction, has changed: a generated one
   // that isn't in it is the generator's still, so regenerate may replace its rows
   private changed = new Set<string>();
@@ -227,7 +227,7 @@ class Store {
   mockRules: MockRules;
   // What the generated sets are generated from: the other sets' rows as seeded, before any
   // write (see regenerate)
-  private seed: Record<string, Row[]> = {};
+  private seed = Object.create(null) as Record<string, Row[]>;
   // Per generated set, the fingerprint of what generating it from the seed gave, when its
   // rows were generated: a change to it (the rules, --mock-rows, the generator, a data file)
   // is what regenerates a set, never a write to another one (see regenerate)
@@ -251,7 +251,7 @@ class Store {
     this.generated = [];
     this.generatedLinks = [];
     const dataDir = path.join(modelDir, "data");
-    const files: Record<string, string | undefined> = {};
+    const files = Object.create(null) as Record<string, string | undefined>;
     for (const es of Object.values(model.entitySets)) {
       const et = model.entityTypes[es.entityType];
       const { file, rows } = loadSeedFile(dataDir, [
@@ -430,7 +430,7 @@ class Store {
       this.generated.map((name) => [name, fingerprint(fresh[name])]),
     );
     const due = this.generated.filter(
-      (name) => from[name] !== this.generatedFrom[name],
+      (name) => from[name] !== own(this.generatedFrom, name),
     );
     const untouched = (name: string) =>
       this.generated.includes(name) && !this.changed.has(name);
@@ -451,7 +451,7 @@ class Store {
       });
       if (!lost) break;
       // Rows untouched follow the keys; rows with writes keep the set as it is
-      if (untouched(lost.from) && !(lost.from in kept))
+      if (untouched(lost.from) && !Object.hasOwn(kept, lost.from))
         sets = [...sets, lost.from];
       else {
         kept[lost.set] = lost.from;
@@ -470,7 +470,7 @@ class Store {
       this.data[name] = links;
       regenerated.push(name);
     }
-    this.indexes = {};
+    this.indexes.clear();
     this.mockRules = rules;
     this.generatedFrom = from;
     return {
@@ -527,8 +527,8 @@ class Store {
     if (this.marks.length || this.held)
       throw new Error("state loaded inside a transaction");
     for (const [setName, rows] of Object.entries(state))
-      if (setName in this.data) this.data[setName] = [...rows];
-    this.indexes = {};
+      if (Object.hasOwn(this.data, setName)) this.data[setName] = [...rows];
+    this.indexes.clear();
   }
 
   // The rows of setName whose columns hold values, in the set's order: what
@@ -539,7 +539,11 @@ class Store {
     columns: string[],
     values: PropertyValue[],
   ): readonly Row[] {
-    const byColumns = (this.indexes[setName] ||= new Map());
+    let byColumns = this.indexes.get(setName);
+    if (!byColumns) {
+      byColumns = new Map();
+      this.indexes.set(setName, byColumns);
+    }
     const name = JSON.stringify(columns);
     let index = byColumns.get(name);
     if (!index) {
@@ -558,10 +562,10 @@ class Store {
   // Drops the indexes change may have made wrong: an update's on the columns it set, an
   // insert's or a remove's all of the set's
   private invalidate(change: Change): void {
-    const byColumns = this.indexes[change.set];
+    const byColumns = this.indexes.get(change.set);
     if (!byColumns) return;
     if (change.op !== "update") {
-      delete this.indexes[change.set];
+      this.indexes.delete(change.set);
       return;
     }
     const changed = [...Object.keys(change.before), ...change.absent];
@@ -580,7 +584,7 @@ class Store {
     return (
       entityType.keys.every(same) &&
       (entityType.parentKeys ?? []).every(
-        (k) => !(k in key) || joinText(row[k]) === joinText(key[k]),
+        (k) => !Object.hasOwn(key, k) || joinText(row[k]) === joinText(key[k]),
       )
     );
   }
@@ -603,7 +607,7 @@ class Store {
     const before: Row = {};
     const absent: string[] = [];
     for (const name of Object.keys(changes))
-      if (name in row) before[name] = row[name];
+      if (Object.hasOwn(row, name)) before[name] = row[name];
       else absent.push(name);
     Object.assign(row, changes);
     this.record({ op: "update", set: setName, row, before, absent });

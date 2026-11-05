@@ -28,7 +28,7 @@ import type {
 } from "./model.ts";
 import type { Qualify, Xml } from "./metadata.ts";
 import type { Store } from "./store.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { renewETag } from "./etag.ts";
 import { checkRequired, create } from "./writes.ts";
 import type { WriteHost } from "./writes.ts";
@@ -615,7 +615,7 @@ class Drafts {
     if (!body || typeof body !== "object") return body;
     const out: Record<string, unknown> = { ...body };
     for (const name of DRAFT_COLUMNS)
-      if (name in type.properties) out[name] = row[name];
+      if (Object.hasOwn(type.properties, name)) out[name] = row[name];
     return out;
   }
 
@@ -686,7 +686,8 @@ class Drafts {
   ): Row {
     const key: Row = {};
     for (const k of type.keys) {
-      if (input[k] !== undefined && input[k] !== null) continue;
+      const given = own(input, k);
+      if (given !== undefined && given !== null) continue;
       const prop = type.properties[k];
       if (
         prop.type === "Edm.Guid" ||

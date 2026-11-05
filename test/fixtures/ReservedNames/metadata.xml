@@ -7,19 +7,33 @@
         <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
         <Property Name="ParentID" Type="Edm.Int32"/>
         <Property Name="constructor" Type="Edm.String"/>
-        <NavigationProperty Name="Parent" Type="R.Parent">
+        <Property Name="valueOf" Type="Edm.Int32"/>
+        <Property Name="Where" Type="R.Place"/>
+        <NavigationProperty Name="hasOwnProperty" Type="R.Parent" Partner="toString">
           <ReferentialConstraint Property="ParentID" ReferencedProperty="ID"/>
         </NavigationProperty>
       </EntityType>
+      <ComplexType Name="Place">
+        <Property Name="constructor" Type="Edm.String"/>
+        <Property Name="City" Type="Edm.String"/>
+      </ComplexType>
       <EntityType Name="Parent">
         <Key><PropertyRef Name="ID"/></Key>
         <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <NavigationProperty Name="toString" Type="Collection(R.Kid)" Partner="hasOwnProperty"/>
       </EntityType>
+      <Function Name="Find">
+        <Parameter Name="valueOf" Type="Edm.Int32" Nullable="false"/>
+        <ReturnType Type="Edm.Int32"/>
+      </Function>
       <EntityContainer Name="C">
+        <FunctionImport Name="Find" Function="R.Find"/>
         <EntitySet Name="constructor" EntityType="R.Kid">
-          <NavigationPropertyBinding Path="Parent" Target="toString"/>
+          <NavigationPropertyBinding Path="hasOwnProperty" Target="toString"/>
         </EntitySet>
-        <EntitySet Name="toString" EntityType="R.Parent"/>
+        <EntitySet Name="toString" EntityType="R.Parent">
+          <NavigationPropertyBinding Path="toString" Target="constructor"/>
+        </EntitySet>
       </EntityContainer>
     </Schema>
   </edmx:DataServices>

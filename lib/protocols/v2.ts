@@ -23,6 +23,7 @@ import {
 import { expandLink } from "../paging.ts";
 import {
   HttpError,
+  own,
   newNode,
   addExpandPath,
   addSelectPath,
@@ -126,7 +127,7 @@ function toWire(value: PropertyValue | undefined, prop: Property): unknown {
       __metadata: { type: prop.complexType.fullName },
     };
     for (const p of Object.values(prop.complexType.properties))
-      if (!p.v2Omit) out[p.name] = toWire(fields[p.name], p);
+      if (!p.v2Omit) out[p.name] = toWire(own(fields, p.name), p);
     return out;
   }
   // Internal date and time values are ISO strings

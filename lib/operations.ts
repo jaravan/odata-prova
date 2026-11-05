@@ -135,7 +135,7 @@ function operationParameters(
       checkProperty(p, value);
     }
     for (const p of op.parameters)
-      params[p.name] = propToInternal(input[p.name], p);
+      params[p.name] = propToInternal(own(input, p.name), p);
     return params;
   }
   let raw: Record<string, unknown> = query;
@@ -158,7 +158,7 @@ function operationParameters(
     // A function's parameters are all in its path (OData 4.0 has no optional ones): one that
     // can't be null can't be left out either
     for (const p of op.parameters)
-      if (raw[p.name] === undefined && !p.nullable)
+      if (own(raw, p.name) === undefined && !p.nullable)
         throw new HttpError(
           400,
           `${op.name} needs its parameter ${p.name}`,
@@ -167,7 +167,7 @@ function operationParameters(
   }
   for (const p of op.parameters) {
     // Text from the query string or the path (a repeated query parameter isn't supported)
-    const text = raw[p.name] as string | undefined;
+    const text = own(raw, p.name) as string | undefined;
     if (text === undefined) params[p.name] = null;
     else if (text.startsWith("@"))
       throw new HttpError(

@@ -16,7 +16,7 @@ import type {
 import { fingerprint, type Change, type Store } from "./store.ts";
 import { regenerationNotes } from "./mock-rules.ts";
 import { ADMIN } from "./draft.ts";
-import { HttpError } from "./query.ts";
+import { HttpError, own } from "./query.ts";
 import { propToInternal } from "./types.ts";
 
 // What a commit changed in one set: the rows to write, as they are now, and the rows to
@@ -252,7 +252,7 @@ function adapt(
   const state: Record<string, Row[]> = {};
   const notes: string[] = [];
   for (const [set, rows] of Object.entries(saved)) {
-    const before = was.sets[set];
+    const before = own(was.sets, set);
     const after = now.sets[set];
     if (!after) {
       notes.push(
@@ -280,14 +280,15 @@ function adapt(
       ? { ...type.properties, ...(type.hiddenKeys ?? {}) }
       : {};
     const gone = Object.keys(before.properties).filter(
-      (p) => !(p in after.properties),
+      (p) => !Object.hasOwn(after.properties, p),
     );
     const added = Object.keys(after.properties).filter(
-      (p) => !(p in before.properties),
+      (p) => !Object.hasOwn(before.properties, p),
     );
     const retyped = Object.keys(after.properties).filter(
       (p) =>
-        p in before.properties && before.properties[p] !== after.properties[p],
+        Object.hasOwn(before.properties, p) &&
+        before.properties[p] !== after.properties[p],
     );
     let emptied = 0;
     state[set] = rows.map((row) => {

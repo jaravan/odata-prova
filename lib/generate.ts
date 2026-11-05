@@ -457,7 +457,7 @@ function generationOrder(
   fks: ForeignKey[],
 ): string[] {
   const order: string[] = [];
-  const state: Record<string, string> = {};
+  const state = Object.create(null) as Record<string, string>;
   const visit = (set: string) => {
     if (state[set]) return;
     state[set] = "visiting";

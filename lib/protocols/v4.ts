@@ -173,7 +173,7 @@ function elementToWire(
     const fields = value as Record<string, PropertyValue>;
     const out: Record<string, unknown> = {};
     for (const p of Object.values(prop.complexType.properties))
-      out[p.name] = toWire(fields[p.name], p, opts);
+      out[p.name] = toWire(own(fields, p.name), p, opts);
     return out;
   }
   const type = prop.elementType || prop.type;
@@ -233,7 +233,7 @@ function expandAll(
       ...Object.keys(type.navigations),
       ...Object.keys(type.draftNavigations ?? {}),
     ])
-      if (!(name in expand) && !own(type.disabledNavigations, name))
+      if (!Object.hasOwn(expand, name) && !own(type.disabledNavigations, name))
         expand[name] = newNode();
   return { ...node, expand };
 }
@@ -602,7 +602,7 @@ const v4: Protocol = {
         return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
-        if (p.name in r)
+        if (Object.hasOwn(r, p.name))
           setPath(
             out,
             p.name,

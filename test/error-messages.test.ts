@@ -2,11 +2,8 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import path from "node:path";
 import { parseMetadata } from "../lib/metadata.ts";
-import { get, send, start, type TestServer } from "./helpers.ts";
-
-const RESERVED = path.join(import.meta.dirname, "fixtures", "ReservedNames");
+import { get, start, type TestServer } from "./helpers.ts";
 
 // What a message has no business saying
 const INTERNALS =
@@ -116,40 +113,6 @@ describe("a function called with the wrong arguments", () => {
     );
     assert.equal(status, 400);
     assert.match(body.error.message, /\$compute.*tolower takes/);
-  });
-});
-
-describe("names that mean something to JavaScript", () => {
-  let s: TestServer;
-  before(async () => {
-    s = await start(RESERVED);
-  });
-  after(() => s.close());
-
-  it("a set named constructor, with a foreign key, is a set", async () => {
-    assert.equal((await get(`${s.v4}/constructor`)).status, 200);
-    const { status } = await send("POST", `${s.v4}/constructor`, {
-      ID: 900,
-      constructor: "x",
-    });
-    assert.equal(status, 201);
-    assert.equal((await get(`${s.v4}/constructor(900)`)).body.constructor, "x");
-  });
-
-  it("a set named toString is a set", async () => {
-    assert.equal((await get(`${s.v4}/toString`)).status, 200);
-    const { status } = await send("POST", `${s.v4}/toString`, { ID: 900 });
-    assert.equal(status, 201);
-    assert.equal((await get(`${s.v4}/toString(900)`)).status, 200);
-  });
-
-  it("the service lists both, on both protocols", async () => {
-    const { body } = await get(`${s.v4}/`);
-    assert.deepEqual(body.value.map((v: { name: string }) => v.name).sort(), [
-      "constructor",
-      "toString",
-    ]);
-    assert.equal((await fetch(`${s.v2}/$metadata`)).status, 200);
   });
 });
 

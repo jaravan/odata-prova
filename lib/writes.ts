@@ -295,7 +295,7 @@ function insertTree(
   // Deep insert: navigation payloads become related entities with the foreign key filled
   // in. V4 sends arrays, V2 either arrays or { results: [...] }.
   for (const nav of Object.values(entityType.navigations)) {
-    const payload = fields[nav.name];
+    const payload = own(fields, nav.name);
     if (!payload || binds.some((b) => b.field === nav.name)) continue;
     const children: unknown[] = nav.isCollection
       ? Array.isArray(payload)
