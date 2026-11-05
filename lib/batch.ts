@@ -148,7 +148,7 @@ function withContentIds(body: unknown, refs: Record<string, string>): unknown {
   return Object.fromEntries(
     Object.entries(body).map(([name, value]: [string, unknown]) => [
       name,
-      !name.endsWith("@odata.bind")
+      !/@(?:odata\.)?bind$/.test(name)
         ? value
         : Array.isArray(value)
           ? value.map(resolve)
