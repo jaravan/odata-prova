@@ -257,12 +257,19 @@ function adapt(
     }
     const typeOf = (shape: typeof before, c: string) =>
       shape.properties[c] ?? "";
+    // The same columns: then it's their types that differ, which is what to say
+    const sameColumns =
+      JSON.stringify(before.identity) === JSON.stringify(after.identity);
+    const identityText = (shape: typeof before) =>
+      shape.identity
+        .map((c) => (sameColumns ? `${c} (${typeOf(shape, c)})` : c))
+        .join(", ");
     if (
       JSON.stringify(before.identity) !== JSON.stringify(after.identity) ||
       after.identity.some((c) => typeOf(before, c) !== typeOf(after, c))
     )
       throw new Error(
-        `${set}'s rows are told apart by ${after.identity.join(", ")} now, by ${before.identity.join(", ")} when they were saved: start over with --persist-reset`,
+        `${set}'s rows are told apart by ${identityText(after)} now, by ${identityText(before)} when they were saved: start over with --persist-reset`,
       );
     // A link set or the draft administrative data has no properties to adapt
     const es = model.entitySets[set] as EntitySet | undefined;
