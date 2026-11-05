@@ -75,7 +75,6 @@ for (const [what, given, url] of CASES) {
 
     it("a reference by its full URL", async () => {
       const res = await send("POST", `${v4()}/Lines`, {
-        No: "L",
         Pos: "1",
         "Doc@odata.bind": `${s.base}${url}/v4/Docs('%231')`,
       });

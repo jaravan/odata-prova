@@ -364,6 +364,43 @@ function checkNoDelta(fields: Record<string, unknown>): void {
       throw new HttpError(501, `${name}: a delta in a body is not supported`);
 }
 
+// A foreign key sent with a link to the entity it should hold, which it has to name. Which of
+// the two was meant can't be told otherwise.
+function checkBoundKeys(
+  fields: Record<string, unknown>,
+  binds: ReturnType<typeof bindsOf>,
+): void {
+  for (const { field, nav, targets } of binds) {
+    if (nav.links || nav.dependentSide !== "source" || !targets.length)
+      continue;
+    for (const [src, tgt] of nav.join)
+      checkAgrees(fields, src, targets[0][tgt], field);
+  }
+}
+
+// A value the body sends against the one its context gives: agreeing is fine, and so is
+// leaving it out
+function checkAgrees(
+  fields: Record<string, unknown>,
+  name: string,
+  value: unknown,
+  context: string,
+): void {
+  const sent = own(fields, name);
+  if (
+    sent !== undefined &&
+    sent !== null &&
+    value !== undefined &&
+    value !== null &&
+    joinText(sent) !== joinText(value)
+  )
+    throw new HttpError(
+      400,
+      `${name} is ${String(sent)}, and ${context} says ${String(value)}`,
+      "InvalidValue",
+    );
+}
+
 // A single-valued navigation has one entity: bound and given inline, which was meant can't be
 // told. A collection can take both.
 function checkOneOfBindAndInline(
@@ -401,6 +438,9 @@ function insertTree(
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
   checkOneOfBindAndInline(fields, binds);
+  checkBoundKeys(fields, binds);
+  for (const [name, value] of Object.entries(presetValues))
+    checkAgrees(fields, name, value, "where it's created");
   const given = { ...fields, ...presetValues };
   const row = svc.store.normalize(entityType, {
     ...body,

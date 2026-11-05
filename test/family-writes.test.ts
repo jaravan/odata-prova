@@ -231,4 +231,42 @@ describe("what a create says twice", () => {
     assert.equal(parent.status, 201);
     assert.equal((await get(`${s.v4}/Ks(1)`)).body.PID, 812);
   });
+
+  it("a foreign key against a bind is a 400", async () => {
+    const res = await send("POST", `${s.v4}/Ks`, {
+      ID: 2,
+      PID: 811,
+      "Parent@odata.bind": "Ps(810)",
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error.message, /PID/);
+  });
+
+  it("the same foreign key is fine", async () => {
+    const res = await send("POST", `${s.v4}/Ks`, {
+      ID: 3,
+      PID: 810,
+      "Parent@odata.bind": "Ps(810)",
+    });
+    assert.equal(res.status, 201);
+  });
+
+  it("a nested kid's against its new parent is a 400, and creates nothing", async () => {
+    const res = await send("POST", `${s.v4}/Ps`, {
+      ID: 813,
+      Kids: [{ ID: 4, PID: 810 }],
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await get(`${s.v4}/Ps(813)`)).status, 404);
+  });
+
+  it("against the parent in the URL too", async () => {
+    const res = await send("POST", `${s.v4}/Ps(811)/Kids`, { ID: 5, PID: 810 });
+    assert.equal(res.status, 400);
+    const fine = await send("POST", `${s.v4}/Ps(811)/Kids`, {
+      ID: 6,
+      PID: 811,
+    });
+    assert.equal(fine.status, 201);
+  });
 });
