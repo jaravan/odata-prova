@@ -115,6 +115,36 @@ describe("a data file no set reads", () => {
   });
 });
 
+describe("a data file in another case", () => {
+  const onCaseInsensitive = fs.existsSync(path.join(FAMILIES, "METADATA.XML"));
+
+  it(
+    "isn't called unread when the set read it",
+    { skip: !onCaseInsensitive },
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "case-"));
+      fs.mkdirSync(path.join(dir, "data"));
+      fs.copyFileSync(
+        path.join(FAMILIES, "metadata.xml"),
+        path.join(dir, "metadata.xml"),
+      );
+      fs.writeFileSync(path.join(dir, "data", "ps.json"), '[{"ID":1}]');
+      const lines: string[] = [];
+      const s = await start(dir, { log: (line) => lines.push(line) });
+      try {
+        assert.equal((await get(`${s.v4}/Ps(1)`)).status, 200);
+        assert.deepEqual(
+          lines.filter((line) => /: ignored,/.test(line)),
+          [],
+        );
+      } finally {
+        await s.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
 describe("a row with no key in a data file", () => {
   it("stops the start with a message of its own, not a stack trace", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nokey-"));

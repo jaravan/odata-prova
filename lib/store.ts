@@ -280,12 +280,13 @@ class Store {
     this.generatedLinks = [];
     const dataDir = path.join(modelDir, "data");
     const files = Object.create(null) as Record<string, string | undefined>;
-    const names = new Set(Object.keys(model.linkSets));
     for (const es of Object.values(model.entitySets)) {
       const et = model.entityTypes[es.entityType];
-      const candidates = [es.name, et.fullName, `${et.namespace}-${et.name}`];
-      for (const name of candidates) names.add(name);
-      const { file, rows } = loadSeedFile(dataDir, candidates);
+      const { file, rows } = loadSeedFile(dataDir, [
+        es.name,
+        et.fullName,
+        `${et.namespace}-${et.name}`,
+      ]);
       files[es.name] = file;
       const ignored = et.openType ? [] : ignoredColumns(et, rows as Row[]);
       if (ignored.length)
@@ -316,11 +317,6 @@ class Store {
           file,
         );
     }
-
-    // Not read by any set, which is then empty or generated: maybe a typo
-    for (const name of fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [])
-      if (/\.(csv|json)$/.test(name) && !names.has(path.parse(name).name))
-        log(`  ${path.join(dataDir, name)}: ignored, no entity set reads it`);
 
     if (mockRows > 0) {
       this.generated = Object.keys(files).filter((name) => !files[name]);
@@ -364,6 +360,23 @@ class Store {
         this.data[set.name] = generateLinks(model, this.data, set);
         this.generatedLinks.push(set.name);
       }
+    }
+
+    // What no set read, which is then empty or generated: maybe a typo. By the file itself, not
+    // its name: a filesystem may not tell Rows.json from rows.json.
+    const fileId = (file: string) => {
+      const { dev, ino } = fs.statSync(file);
+      return `${dev}:${ino}`;
+    };
+    const read = new Set(
+      Object.values(files)
+        .filter((file) => file !== undefined)
+        .map(fileId),
+    );
+    for (const name of fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : []) {
+      const file = path.join(dataDir, name);
+      if (/\.(csv|json)$/.test(name) && !read.has(fileId(file)))
+        log(`  ${file}: ignored, no entity set reads it`);
     }
 
     for (const [name, file] of Object.entries(files)) {
