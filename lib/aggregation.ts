@@ -43,7 +43,9 @@ import { HttpError, own } from "./query.ts";
 import { topLevels, relatives, traverse } from "./hierarchy.ts";
 import { applyCompute, typedExpression } from "./compute.ts";
 import {
+  DECIMAL_DIGITS,
   compareValues,
+  decimalUnits,
   distinctKey,
   isNumericType,
   toComparable,
@@ -356,23 +358,63 @@ function ranked(
       row,
       value: toComparable(valueOf(row), valueType),
       // What it adds to a sum: the comparable form of a decimal is in smaller units
-      amount: Number(valueOf(row)),
+      amount: valueOf(row),
     }))
     .filter((r) => r.value !== null && !Number.isNaN(r.value))
     .sort((a, b) => sign * compareValues(a.value, b.value));
-  if (counting) return valued.slice(0, t.value).map((r) => r.row);
+  const amounts = valued.map((r) => r.amount);
+  const kept = counting
+    ? t.value
+    : ((/Double|Single/.test(valueType)
+        ? undefined
+        : rowsToReachExactly(amounts, t)) ??
+      rowsToReach(amounts.map(Number), t));
+  return valued.slice(0, kept).map((r) => r.row);
+}
+
+// How many amounts from the start add up to a rank's sum or percentage: none for 0
+function rowsToReach(
+  amounts: number[],
+  t: Extract<Transformation, { kind: "rank" }>,
+): number {
   const target = t.method.endsWith("percent")
-    ? (valued.reduce((s, r) => s + r.amount, 0) * t.value) / 100
+    ? (amounts.reduce((s, a) => s + a, 0) * t.value) / 100
     : t.value;
-  // The fewest rows from the start whose values add up to the target: none for 0
-  const kept: Row[] = [];
   let sum = 0;
-  for (const r of valued) {
+  let rows = 0;
+  for (const amount of amounts) {
     if (sum >= target) break;
-    kept.push(r.row);
-    sum += r.amount;
+    sum += amount;
+    rows++;
   }
-  return kept;
+  return rows;
+}
+
+// The same with every digit: doubles would cancel out a large amount and its negative, and
+// lose what's between them. undefined when one is too long for a decimal, as a sum may be.
+function rowsToReachExactly(
+  amounts: unknown[],
+  t: Extract<Transformation, { kind: "rank" }>,
+): number | undefined {
+  const units = amounts.map(decimalUnits);
+  const goal = decimalUnits(t.value);
+  if (goal === undefined || units.includes(undefined)) return undefined;
+  const exact = units as bigint[];
+  // sum / total >= goal / 100, multiplied out: a division would round
+  const [scale, target] = t.method.endsWith("percent")
+    ? [
+        100n * 10n ** BigInt(DECIMAL_DIGITS),
+        goal * exact.reduce((s, u) => s + u, 0n),
+      ]
+    : [1n, goal];
+  let sum = 0n;
+  let rows = 0;
+  for (const amount of exact) {
+    if (sum * scale >= target) break;
+    sum += amount;
+    rows++;
+  }
+  return rows;
 }
 
 // What rows are ranked by: a property or path (Supplier/Rating), or an expression
