@@ -48,6 +48,14 @@ const INTEGER_RANGES: Record<string, [number, number]> = {
 };
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
+
+// Whether an integer is a value of an integer type
+function inIntegerRange(value: bigint, type: string): boolean {
+  const [min, max] =
+    type === "Edm.Int64" ? [INT64_MIN, INT64_MAX] : INTEGER_RANGES[type];
+  return value >= min && value <= max;
+}
+
 // The most digits a decimal may have on either side of the point when its metadata doesn't
 // say: HANA's and ABAP's largest, and far more than 1e400 needs to be refused
 const DECIMAL_DIGITS = 38;
@@ -529,6 +537,7 @@ export {
   enumNamed,
   enumValue,
   INTEGER_RANGES,
+  inIntegerRange,
   keepLongNumbers,
   keyText,
   withPrecision,

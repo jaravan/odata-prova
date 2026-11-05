@@ -13,7 +13,13 @@ import type {
 } from "../model.ts";
 import type { ODataService } from "../service.ts";
 import type { Protocol } from "../protocol.ts";
-import { toInternal, toMillis, timeOfDayToV2, specialFloat } from "../types.ts";
+import {
+  inIntegerRange,
+  toInternal,
+  toMillis,
+  timeOfDayToV2,
+  specialFloat,
+} from "../types.ts";
 import { expandLink } from "../paging.ts";
 import {
   HttpError,
@@ -63,8 +69,8 @@ function parseLiteral(text: string): Literal {
     return { value: t === "true", type: "Edm.Boolean" };
   if (t === "null") return { value: null, type: null };
   if ((m = t.match(/^(-?\d+)[lL]$/))) return { value: m[1], type: "Edm.Int64" };
-  // Without its L, a number a double would round is still an Int64
-  if (/^-?\d+$/.test(t) && !Number.isSafeInteger(Number(t)))
+  // Without its L, a number too large for an Int32 is still an Int64
+  if (/^-?\d+$/.test(t) && !inIntegerRange(BigInt(t), "Edm.Int32"))
     return { value: t, type: "Edm.Int64" };
   if ((m = t.match(/^(-?\d+(?:\.\d+)?)[mM]$/)))
     return { value: m[1], type: "Edm.Decimal" };

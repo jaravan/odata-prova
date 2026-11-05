@@ -22,6 +22,7 @@ import {
   INT64,
   decimalText,
   decimalUnits,
+  inIntegerRange,
   enumNamed,
   enumValue,
   isNumericType,
@@ -530,7 +531,8 @@ function arithmeticType(
 }
 
 // An integer result, every digit kept: an Int64 is text internally (see toInternal), and JS's
-// / and % on bigints round towards zero and keep the dividend's sign, as OData's do
+// / and % on bigints round towards zero and keep the dividend's sign, as OData's do. One that
+// isn't a value of its type is an error, as in a database.
 function integerArithmetic(
   op: string,
   a: bigint,
@@ -549,6 +551,8 @@ function integerArithmetic(
           : op === "mod"
             ? a % b
             : a / b;
+  if (!inIntegerRange(value, type))
+    throw new Error(`${a} ${op} ${b} is out of range for ${type}`);
   return type === "Edm.Int64" ? String(value) : Number(value);
 }
 

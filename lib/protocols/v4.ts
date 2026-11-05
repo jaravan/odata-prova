@@ -13,7 +13,12 @@ import type {
 } from "../model.ts";
 import type { ODataService } from "../service.ts";
 import type { Protocol } from "../protocol.ts";
-import { toInternal, specialFloat, withPrecision } from "../types.ts";
+import {
+  inIntegerRange,
+  toInternal,
+  specialFloat,
+  withPrecision,
+} from "../types.ts";
 import {
   HttpError,
   own,
@@ -104,7 +109,7 @@ function parseLiteral(text: string): Literal {
   // Numbers. Decimal/Int64 literals stay strings internally, so keep the text when it has a
   // fraction and let the comparison coerce. The property's type prevails
   if (/^-?\d+$/.test(t))
-    return Number.isSafeInteger(Number(t))
+    return inIntegerRange(BigInt(t), "Edm.Int32")
       ? { value: Number(t), type: "Edm.Int32" }
       : { value: t, type: "Edm.Int64" };
   if (/^-?\d+\.\d+$/.test(t)) return { value: t, type: "Edm.Decimal" };
