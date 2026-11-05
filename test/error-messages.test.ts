@@ -168,6 +168,20 @@ describe("metadata that can't be read says so", () => {
       assert.throws(() => parseMetadata(xml(schema)), /named __proto__/);
   });
 
+  it("a property with an empty Type is named", () => {
+    assert.throws(
+      () =>
+        parseMetadata(
+          xml(
+            type("A", `<Property Name="T" Type=""/>`) + container(set("N.A")),
+          ),
+        ),
+      (e: Error) =>
+        /metadata\.xml.*T has no Type/.test(e.message) &&
+        !INTERNALS.test(e.message),
+    );
+  });
+
   it("a property with no Type is named", () => {
     assert.throws(
       () =>

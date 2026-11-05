@@ -609,8 +609,9 @@ function resolveTypeNames(schemas: Xml[]): void {
     if (!node || typeof node !== "object") return;
     for (const attr of TYPE_ATTRIBUTES)
       if (typeof node[attr] === "string") node[attr] = qualified(node[attr]);
-    if (typeof node.Type === "string") {
-      const m = node.Type.match(/^(Collection\()?(.+?)(\))?$/);
+    // An empty one is for checkAttributes to say
+    if (typeof node.Type === "string" && node.Type) {
+      const m = node.Type.match(/^(Collection\()?(.+?)(\))?$/)!;
       const td = definitions.get(m[2]);
       if (td) {
         node.Type = `${m[1] ?? ""}${qualified(td.UnderlyingType)}${m[3] ?? ""}`;
