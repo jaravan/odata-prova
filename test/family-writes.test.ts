@@ -133,3 +133,31 @@ describe("families", () => {
     });
   });
 });
+
+describe("a to-one link and what a create can't mean", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(FAMILIES);
+    await send("POST", `${s.v4}/Ps`, { ID: 800 });
+    await send("POST", `${s.v4}/Ps`, { ID: 801 });
+    await send("POST", `${s.v4}/Ks`, { ID: 998, PID: 800 });
+  });
+  afterEach(() => s.close());
+
+  const parent = async () => (await get(`${s.v4}/Ks(998)`)).body.PID;
+
+  it("$id naming another parent is a 404, and the link stays", async () => {
+    const url = `${s.v4}/Ks(998)/Parent/$ref?$id=Ps(801)`;
+    assert.equal((await send("DELETE", url)).status, 404);
+    assert.equal(await parent(), 800);
+  });
+
+  it("$id naming its parent unlinks, and so does no $id", async () => {
+    const url = `${s.v4}/Ks(998)/Parent/$ref`;
+    assert.equal((await send("DELETE", `${url}?$id=Ps(800)`)).status, 204);
+    assert.equal(await parent(), null);
+    await send("PATCH", `${s.v4}/Ks(998)`, { PID: 800 });
+    assert.equal((await send("DELETE", url)).status, 204);
+    assert.equal(await parent(), null);
+  });
+});

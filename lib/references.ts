@@ -252,6 +252,13 @@ function referenceRequest(
       return { status: 204 };
     case "DELETE": {
       if (!nav.isCollection) {
+        if (
+          query.$id !== undefined &&
+          !svc
+            .related(row, type, nav)
+            .rows.includes(resolveReference(svc, query.$id, nav))
+        )
+          throw new HttpError(404, `${targetType.name} not found`);
         unlink(svc, setName, type, row, nav);
         return { status: 204 };
       }
