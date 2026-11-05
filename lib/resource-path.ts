@@ -108,6 +108,11 @@ function parseKey(
   }
   for (const part of parts) {
     const eq = part.indexOf("=");
+    if (eq === -1)
+      throw new HttpError(
+        400,
+        `${part.trim()} has no name: a key of several values is written Name=value,Name=value`,
+      );
     const name = decodeUrl(part.slice(0, eq).trim(), decodeURIComponent);
     const prop = own(entityType.properties, name);
     if (!prop || !entityType.keys.includes(name))

@@ -206,13 +206,13 @@ function rejectUnsupported(
 const NAME = "[\\p{L}_][\\p{L}\\p{M}\\p{N}_]*";
 
 function parseInt10(text: unknown, name: string): number | undefined {
-  if (text === undefined || text === "") return undefined;
+  if (text === undefined) return undefined;
   if (!/^\d+$/.test(String(text)))
     throw new HttpError(400, `Invalid ${name}: ${text}`);
   return Number(text);
 }
 
-// $count's value, true or false in either case. Like a blank number, a blank one isn't given.
+// $count's value, true or false in either case. A blank one isn't given.
 function parseBoolean(text: string | undefined, name: string): boolean {
   if (!text) return false;
   if (!/^(?:true|false)$/i.test(text))

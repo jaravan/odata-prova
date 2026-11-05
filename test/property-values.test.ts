@@ -99,6 +99,27 @@ describe("a property's value", () => {
   });
 });
 
+describe("what a URL can't mean", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(STAMPS);
+  });
+  after(() => s.close());
+
+  it("two values for one key say so, not that 50 is a property", async () => {
+    const { status, body } = await get(`${s.v4}/Rs(500,1)`);
+    assert.equal(status, 400);
+    assert.doesNotMatch(body.error.message, /is not a key property/);
+    assert.match(body.error.message, /Name=value/);
+  });
+
+  for (const option of ["$top", "$skip"])
+    it(`${option} with no value is a 400`, async () => {
+      assert.equal((await get(`${s.v4}/Rs?${option}=`)).status, 400);
+      assert.equal((await get(`${s.v2}/Rs?${option}=`)).status, 400);
+    });
+});
+
 describe("a binary's /$value in a $batch", () => {
   it("is base64, and says so", async () => {
     const s = await start(STAMPS);
