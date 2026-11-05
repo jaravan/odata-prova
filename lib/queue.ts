@@ -5,6 +5,7 @@
 // One queue per store, shared by the services that serve it.
 
 import { HttpError } from "./query.ts";
+import { startWork } from "./work.ts";
 
 // How long a task may wait for its turn, once the queue is ready: one that waited longer isn't
 // run, but answered 503, as its client has likely given up on it. Under more load than the
@@ -53,7 +54,12 @@ class Queue {
             503,
             `The server is busy: the request waited ${Math.round(waited / 1000)}s for its turn, and wasn't run`,
           );
-        return this.turn ? this.turn(task, writes) : task();
+        // A $batch is one turn, so its parts share what it may do (see work.ts)
+        const counted = () => {
+          startWork();
+          return task();
+        };
+        return this.turn ? this.turn(counted, writes) : counted();
       });
     this.tail = result.catch(() => undefined);
     return result;

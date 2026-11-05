@@ -29,6 +29,7 @@ import {
   toMillis,
   withPrecision,
 } from "./types.ts";
+import { spend } from "./work.ts";
 
 // What a protocol module supplies: how its literals are spelled
 export interface LiteralSyntax {
@@ -441,6 +442,7 @@ class Parser {
 // ourselves - that's what `resolve(row, path)` is for, since only the caller knows the
 // entity type and how to "walk" a navigation property to get there.
 function evaluate(node: Node, row: Row, resolve: Resolve): Value {
+  spend();
   if ("literal" in node) return { value: node.literal, type: node.type };
   // Before node.path: lambda nodes also have a path (the collection)
   if ("lambda" in node)
@@ -515,6 +517,8 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   }
   throw new Error(`Unsupported operator ${node.op}`);
 }
+
+const LAMBDA_WORK = 50;
 
 const INTEGER = /^Edm\.(Byte|SByte|Int16|Int32|Int64)$/;
 
@@ -638,6 +642,8 @@ function evaluateLambda(
 ): boolean {
   const coll = resolve.collection(row, node.path);
   const items: unknown[] = "rows" in coll ? coll.rows : coll.values;
+  // Following a navigation is far more than a step of an expression (see work.ts)
+  spend(LAMBDA_WORK);
   const { variable, predicate } = node;
   if (!variable || !predicate) return items.length > 0;
   const prop = "prop" in coll ? coll.prop : undefined;
@@ -769,6 +775,7 @@ function callFunction(name: string, args: Value[]): Value {
     case "indexof":
       return number(S(0).indexOf(S(1)));
     case "concat":
+      spend(S(0).length + S(1).length);
       return string(S(0) + S(1));
     case "substring":
       return string(
@@ -776,8 +783,14 @@ function callFunction(name: string, args: Value[]): Value {
           ? S(0).substring(N(1), N(1) + N(2))
           : S(0).substring(N(1)),
       );
-    case "replace":
-      return string(S(0).split(S(1)).join(S(2)));
+    case "replace": {
+      // Before the split as well as the join: a split of text long enough ends the process,
+      // beyond any catch
+      spend(S(0).length);
+      const parts = S(0).split(S(1));
+      spend((parts.length - 1) * S(2).length);
+      return string(parts.join(S(2)));
+    }
     case "year":
       return number(date(0).getUTCFullYear());
     case "month":

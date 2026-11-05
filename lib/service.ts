@@ -41,6 +41,11 @@ import type {
 import type { Change, Store } from "./store.ts";
 import type { Queue } from "./queue.ts";
 import { netChanges, type Persistence } from "./persistence.ts";
+import { spend } from "./work.ts";
+
+// What an expanded row costs (see work.ts): reading it, its related rows and its JSON are far
+// more than a step of an expression
+const ROW_WORK = 50;
 
 export interface ServiceOptions {
   model: Model;
@@ -216,6 +221,7 @@ class ODataService {
       ...node,
       count: node.count,
     });
+    spend(results.length * ROW_WORK);
     if (!page || !nav.isCollection) return { rows: results, count, type };
     const paged = paging(
       results,

@@ -50,6 +50,7 @@ One model, parsed once at startup, backs a V2 service and a V4 service. Both sha
 | `store.ts`, `generate.ts`, `mock-data.ts`                                        | the rows and their transactions; data files, generated mock data                     |
 | `config.ts`, `mock-rules.ts`, `sap-fields.ts`, `explain.ts`, `live-rules.ts`     | `config.json` and its mock rules, SAP's field names, `--explain`, rules changed live |
 | `queue.ts`, `persistence.ts`, `sqlite.ts`, `postgres.ts`                         | requests one at a time; saving the data, in a SQLite file or PostgreSQL              |
+| `work.ts`                                                                        | how much work a request may do                                                       |
 | `types.ts`, `model.ts`                                                           | Edm values, the model's types                                                        |
 
 The sources are TypeScript, in `lib/`, and `model.ts` describes the model they all share. `yarn build` compiles them to `dist/`, which is what the npm package and the Docker image run. The tests run on the sources directly (Node 22.18 or later strips the types).
@@ -111,6 +112,7 @@ The store in memory still answers every request. The file or database only keeps
 - **Rows by identity.** An entity's keys, with a contained entity's parent's keys too; a link's columns; a draft's `DraftUUID`.
 - **Saved before it's answered.** `persistence.commit()` writes the changes in one database transaction. Until it succeeds, the store holds them (`store.commit()`, then `store.settle()`). If it fails, they're undone with the same log, and the request answers `500`. Memory and the file never disagree.
 - **One request at a time.** Saving is async. While one request's changes are being saved, another must not see them, since they may yet be undone. So `queue.ts` runs the requests of every service on a store one at a time, each after the one before it has been saved.
+- **A limit on the work of a request.** One at a time means one slow request holds up the rest, and a short URL can ask for a lot: each level of a `replace` multiplies its text, and lambdas and `$expand`s that go round a navigation cycle read the rows again at each level. So `work.ts` counts the work as it's done, from what each turn in the queue starts with, and stops the request with a `400` when it has done too much. A `$batch` is one turn, so its parts share what it may do.
 - **Reads wait too,** because a GET can write: a function with a `config.json` rule. They wait only while a save runs, about a millisecond with SQLite.
 - **A `$batch`** takes one turn for all its parts. A changeset is saved once, at its end.
 

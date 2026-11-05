@@ -421,6 +421,7 @@ An error answers in the protocol's shape: `{"error":{"code":...,"message":...}}`
 | `ETagRequired`     | `428`  | `ETAGS=strict`, and an update or delete sends no `If-Match`           |
 | `DeltaLinkExpired` | `410`  | a delta link no longer kept: read the entity set again                |
 | `InvalidReference` | `400`  | a link names no entity of its navigation's target, or can't change    |
+| `TooMuchWork`      | `400`  | the request would take too much work: ask for less at a time          |
 
 Any other error's code is its status's: `BadRequest` (`400`), `NotFound` (`404`), `MethodNotAllowed` (`405`), `Conflict` (`409`), `PayloadTooLarge` (`413`), `NotImplemented` (`501`) or `InternalError` (`500`).
 
