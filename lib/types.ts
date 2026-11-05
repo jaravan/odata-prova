@@ -144,6 +144,26 @@ function decimalUnits(value: unknown): bigint | undefined {
   return negative ? -units : units;
 }
 
+// A decimal's place among decimals, for comparing: in halves of decimalUnits' units, so that a
+// literal too long for a decimal has one too, between the two it falls between. Its digits
+// aren't lost to a double, which would also be in other units.
+function decimalOrder(value: unknown): bigint | number {
+  const units = decimalUnits(value);
+  if (units !== undefined) return units * 2n;
+  const n = numberOf(value);
+  if (!Number.isFinite(n)) return n; // text that's no number, or beyond any decimal
+  const scale = 10n ** BigInt(DECIMAL_DIGITS);
+  const m = String(value)
+    .trim()
+    .match(/^([+-]?)(\d+)(?:\.(\d*))?$/);
+  if (!m) return BigInt(Math.trunc(n)) * scale * 2n; // an exponent
+  const [, sign, whole, fraction = ""] = m;
+  const kept = fraction.slice(0, DECIMAL_DIGITS).padEnd(DECIMAL_DIGITS, "0");
+  const between = /[1-9]/.test(fraction.slice(DECIMAL_DIGITS)) ? 1n : 0n;
+  const order = BigInt(whole + kept) * 2n + between;
+  return sign === "-" ? -order : order;
+}
+
 // A whole number of 10^-scale as a decimal's text
 function decimalText(units: bigint, scale: number): string {
   const negative = units < 0n;
@@ -485,7 +505,7 @@ function toComparable(
   // number exactly, so a literal of another numeric type compares with it too.
   if (type === "Edm.Int64" && INT64.test(String(value)))
     return BigInt(String(value));
-  if (type === "Edm.Decimal") return decimalUnits(value) ?? Number(value);
+  if (type === "Edm.Decimal") return decimalOrder(value);
   if (type && isNumericType(type)) return Number(value);
   // Hex digits, in either case
   if (type === "Edm.Guid") return String(value).toLowerCase();
