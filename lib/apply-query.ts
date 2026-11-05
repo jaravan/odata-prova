@@ -4,7 +4,12 @@
 import { compareValues, toComparable } from "./types.ts";
 import { compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
-import type { Collection, LiteralSyntax, Resolve } from "./filter.ts";
+import type {
+  Collection,
+  LiteralSyntax,
+  PathScope,
+  Resolve,
+} from "./filter.ts";
 import { HttpError, own } from "./query.ts";
 import type {
   AnyNavigation,
@@ -101,6 +106,42 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
   return resolve;
 }
 
+// Checks paths against a type alone, as resolver reads them from a row: a mistake is a 400
+// whatever rows there are.
+function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
+  // Where the single-valued navigations in parts lead
+  const walk = (parts: string[], path: string): EntityType => {
+    let at = entityType;
+    for (const part of parts) {
+      const nav = svc.navigation(at, part);
+      if (!nav || nav.isCollection)
+        throw new HttpError(400, `Cannot filter on path ${path}`);
+      at = svc.model.entityTypes[nav.targetType];
+    }
+    return at;
+  };
+  return {
+    check(path) {
+      const name = path.replace(/^\$it\//, "");
+      if (own(entityType.properties, name)) return;
+      const parts = name.split("/");
+      const at = walk(parts.slice(0, -1), path);
+      if (!own(at.properties, parts[parts.length - 1]))
+        throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
+    },
+    collection(path) {
+      const parts = path.split("/");
+      const last = parts[parts.length - 1];
+      const at = walk(parts.slice(0, -1), path);
+      const nav = svc.navigation(at, last);
+      if (nav?.isCollection)
+        return pathScope(svc, svc.model.entityTypes[nav.targetType]);
+      if (own(at.properties, last)?.isCollection) return undefined;
+      throw new HttpError(400, `${path} is not a collection: any/all need one`);
+    },
+  };
+}
+
 // opts: { filter, orderby, top, skip, count, search } (a parsed query or an $expand node).
 // aggregate: what $these/aggregate(...) in the filter gives, in a groupby's filter in $apply
 function applyQuery(
@@ -121,6 +162,7 @@ function applyQuery(
         opts.filter,
         svc.protocol,
         scopeOf(svc.model, entityType),
+        pathScope(svc, entityType),
       );
     } catch (e) {
       if (e instanceof HttpError) throw e;
@@ -156,6 +198,7 @@ function applyQuery(
           400,
           `Invalid $orderby: ${t.trim()} (write a property, then asc or desc)`,
         );
+      pathScope(svc, entityType).check(path);
       return { path, desc: dir.toLowerCase() === "desc" };
     });
     results = [...results].sort((a, b) => {

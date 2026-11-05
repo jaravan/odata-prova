@@ -44,6 +44,14 @@ export interface LiteralSyntax {
 // A value while evaluating: a property's or a literal's, with its Edm type
 type Value = Literal;
 
+// What the paths of an expression are checked against: a type's (see pathScope in
+// apply-query.ts). collection gives the scope of a collection's items, undefined when they're
+// a collection property's.
+export interface PathScope {
+  check(path: string): void;
+  collection(path: string): PathScope | undefined;
+}
+
 // Reads a property path off a row (the caller knows the entity type and how to follow a
 // navigation); .collection reads a path that ends in a collection, for the lambda operators;
 // .aggregate gives $these/aggregate(<expression>), the aggregate over the rows being
@@ -913,11 +921,51 @@ function compileFilter(
   text: string,
   protocol: LiteralSyntax,
   scope?: Scope,
+  paths?: PathScope,
 ): (row: Row, resolve: Resolve) => boolean {
   const ast = bounded(() =>
     new Parser(tokenize(text, protocol, scope)).parse(),
   );
+  if (paths) bounded(() => checkPaths(ast, paths, new Map()));
   return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
+}
+
+// Throws on a path no row could have: from the text alone, as evaluating gets to a path only
+// when a row does, and when and and or haven't settled without it.
+function checkPaths(
+  node: Node,
+  root: PathScope,
+  variables: Map<string, PathScope | undefined>,
+): void {
+  // Where a path starts, as evaluateLambda reads it: its first part may be a lambda's variable
+  // or $it. undefined for an item of a collection property, which has no paths to check here.
+  const from = (path: string): { scope?: PathScope; rest: string } => {
+    const [head, ...parts] = path.split("/");
+    const rest = parts.join("/");
+    if (variables.has(head)) return { scope: variables.get(head), rest };
+    return head === "$it" ? { scope: root, rest } : { scope: root, rest: path };
+  };
+  const check = (child: Node) => checkPaths(child, root, variables);
+  if ("lambda" in node) {
+    const { scope, rest } = from(node.path);
+    const items = scope && rest ? scope.collection(rest) : undefined;
+    if (node.variable && node.predicate)
+      checkPaths(
+        node.predicate,
+        root,
+        new Map(variables).set(node.variable, items),
+      );
+  } else if ("path" in node) {
+    const { scope, rest } = from(node.path);
+    if (scope && rest) scope.check(rest);
+  } else if ("op" in node) {
+    check(node.left);
+    check(node.right);
+  } else if ("in" in node) {
+    check(node.left);
+    node.list.forEach(check);
+  } else if ("expr" in node) check(node.expr);
+  else if ("func" in node) node.args.forEach(check);
 }
 
 // The Edm type each function gives; round, floor and ceiling give their argument's
