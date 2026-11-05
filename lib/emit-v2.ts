@@ -11,6 +11,7 @@ import type {
   TypedElement,
 } from "./model.ts";
 import { CANONICAL_TO_V2 } from "./types.ts";
+import { own } from "./query.ts";
 import { annotationsV2 } from "./annotations-v2.ts";
 import type { AnnotationsV2 } from "./annotations-v2.ts";
 import { setsByType } from "./navigations.ts";
@@ -47,7 +48,7 @@ function v2TypeName(p: TypedElement): string {
       ? p.elementType
       : p.enumType
         ? "Edm.String"
-        : CANONICAL_TO_V2[p.elementType] || p.elementType;
+        : own(CANONICAL_TO_V2, p.elementType) || p.elementType;
   return p.isCollection ? `Collection(${element})` : element;
 }
 

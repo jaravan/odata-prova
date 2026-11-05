@@ -182,6 +182,15 @@ describe("metadata that can't be read says so", () => {
     );
   });
 
+  for (const name of ["constructor", "toString", "__proto__"])
+    it(`V2's Type="${name}" starts, as an unknown type does`, () => {
+      const v2 = `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"><edmx:DataServices m:DataServiceVersion="2.0"><Schema Namespace="N" xmlns="http://schemas.microsoft.com/ado/2008/09/edm"><EntityType Name="A"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="D" Type="${name}"/></EntityType><EntityContainer Name="C" m:IsDefaultEntityContainer="true"><EntitySet Name="As" EntityType="N.A"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
+      assert.equal(
+        parseMetadata(v2).entityTypes["N.A"].properties.D.type,
+        name,
+      );
+    });
+
   it("a property with no Type is named", () => {
     assert.throws(
       () =>

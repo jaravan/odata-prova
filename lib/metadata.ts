@@ -809,10 +809,10 @@ function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
   let type: string = p.Type,
     v2Type: string;
   if (isV4) {
-    v2Type = CANONICAL_TO_V2[type] || type;
+    v2Type = own(CANONICAL_TO_V2, type) || type;
   } else {
     v2Type = type;
-    type = V2_TO_CANONICAL[type] || type;
+    type = own(V2_TO_CANONICAL, type) || type;
     if (v2Type === "Edm.DateTime" && sap["display-format"] === "Date")
       type = "Edm.Date";
   }
