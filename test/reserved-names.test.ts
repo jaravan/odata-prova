@@ -259,3 +259,21 @@ describe("generated rows for names every JavaScript object has", () => {
       assert.match(explain(model, 5, true), /toString/);
     });
 });
+
+describe("V2 creating through a parent, with navigations named like object members", () => {
+  it("answers with the entity", async () => {
+    const s = await start(RESERVED);
+    try {
+      await send("POST", `${s.v4}/toString`, { ID: 1000 });
+      const { status, body } = await send(
+        "POST",
+        `${s.v2}/toString(1000)/toString`,
+        { ID: 901, constructor: "x", valueOf: 3 },
+      );
+      assert.equal(status, 201, JSON.stringify(body));
+      assert.equal(body.d.ID, 901);
+    } finally {
+      await s.close();
+    }
+  });
+});

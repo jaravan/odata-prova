@@ -237,7 +237,7 @@ function serialize(
   for (const nav of Object.values(navs)) {
     // Containment isn't in V2 (see resolveContainment in navigations.ts)
     if ("contained" in nav && nav.contained) continue;
-    const expanded = nav.name in node.expand;
+    const expanded = Object.hasOwn(node.expand, nav.name);
     if (!selectAll && !node.select?.has(nav.name) && !expanded) continue;
     if (expanded) {
       const child = node.expand[nav.name];

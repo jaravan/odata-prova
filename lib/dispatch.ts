@@ -45,7 +45,7 @@ function deepInsertExpand(
   const fields = body as Record<string, unknown>;
   const expand = { ...node.expand };
   for (const nav of Object.values(type.navigations)) {
-    let value = fields[nav.name];
+    let value = own(fields, nav.name);
     if (
       value &&
       typeof value === "object" &&

@@ -451,7 +451,9 @@ function contextSet(
 // without one has every property, and no list.
 function selectList(node: QueryNode): string {
   if (!node.select) return "";
-  const names = [...node.select].filter((name) => !(name in node.expand));
+  const names = [...node.select].filter(
+    (name) => !Object.hasOwn(node.expand, name),
+  );
   for (const [name, child] of Object.entries(node.expand))
     names.push(`${name}(${selectList(child).slice(1, -1)})`);
   return `(${names.join(",")})`;
