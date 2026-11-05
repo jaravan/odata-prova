@@ -45,3 +45,81 @@ describe("$select is checked against the type", () => {
       assert.equal((await get(url)).status, 200, url);
   });
 });
+
+describe("$select through a navigation", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const ITEMS = "PurchaseOrderItemSet?$top=1";
+  const fields = (row: object) =>
+    Object.keys(row).filter((k) => !k.startsWith("@") && k !== "__metadata");
+
+  for (const query of [
+    `${ITEMS}&$select=PurchaseOrder/Status`,
+    `${ITEMS}&$select=Material,PurchaseOrder/Status`,
+    `${ITEMS}&$expand=PurchaseOrder&$select=PurchaseOrder/Status`,
+    "PurchaseOrderSet?$select=Items/Material",
+    "PurchaseOrderSet?$expand=Items($select=PurchaseOrder/Status)",
+  ]) {
+    it(`V4: ${query} is a 400 saying how to write it`, async () => {
+      const r = await get(`${s.v4}/${query}`);
+      assert.equal(r.status, 400);
+      assert.match(r.body.error.message, /\$expand=.*\$select=/);
+    });
+  }
+
+  it("V4: $expand with a $select narrows it", async () => {
+    const r = await get(
+      `${s.v4}/${ITEMS}&$select=Material&$expand=PurchaseOrder($select=Status)`,
+    );
+    const [row] = r.body.value;
+    assert.deepEqual(fields(row), ["Material", "PurchaseOrder"]);
+    assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
+  });
+
+  it("V4: a navigation may end a $select", async () => {
+    const r = await get(`${s.v4}/${ITEMS}&$select=Material,PurchaseOrder`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(fields(r.body.value[0]), ["Material"]);
+  });
+
+  it("V2: only what was selected, at each level", async () => {
+    const r = await get(
+      `${s.v2}/${ITEMS}&$expand=PurchaseOrder&$select=PurchaseOrder/Status`,
+    );
+    const [row] = r.body.d.results;
+    assert.deepEqual(fields(row), ["PurchaseOrder"]);
+    assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
+  });
+
+  it("V2: with a property of its own", async () => {
+    const r = await get(
+      `${s.v2}/${ITEMS}&$expand=PurchaseOrder&$select=Material,PurchaseOrder/Status`,
+    );
+    const [row] = r.body.d.results;
+    assert.deepEqual(fields(row), ["Material", "PurchaseOrder"]);
+    assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
+  });
+
+  it("V2: two levels down", async () => {
+    const r = await get(
+      `${s.v2}/PurchaseOrderSet('4500000001')?$expand=Items/PurchaseOrder&$select=Items/PurchaseOrder/Status`,
+    );
+    assert.deepEqual(fields(r.body.d), ["Items"]);
+    const [item] = r.body.d.Items.results;
+    assert.deepEqual(fields(item), ["PurchaseOrder"]);
+    assert.deepEqual(fields(item.PurchaseOrder), ["Status"]);
+  });
+
+  it("V2: * with a path keeps every property", async () => {
+    const r = await get(
+      `${s.v2}/${ITEMS}&$expand=PurchaseOrder&$select=*,PurchaseOrder/Status`,
+    );
+    const [row] = r.body.d.results;
+    assert.ok(fields(row).includes("Material"));
+    assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
+  });
+});

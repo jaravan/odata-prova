@@ -188,6 +188,18 @@ function elementToWire(
 }
 
 // "$expand=Items($select=Material;$top=2;$expand=PurchaseOrder),Other" -> node tree.
+// One item of a $select. V4 has no path through a navigation, which $expand's own $select does
+// instead (V2 does, see addSelectPath). Only a complex property may go on, which isn't served.
+function addSelect(node: QueryNode, item: string): void {
+  const [first, ...rest] = item.trim().split("/");
+  if (rest.length)
+    throw new HttpError(
+      400,
+      `$select can't go through ${first}: for a navigation, write $expand=${first}($select=${rest.join("/")})`,
+    );
+  addSelectPath(node, first);
+}
+
 function parseExpand(text: string | undefined, node: QueryNode): void {
   for (const item of splitTopLevel(text || "", ",")) {
     const open = item.indexOf("(");
@@ -246,7 +258,7 @@ function applyNestedOptions(node: QueryNode, text: string): void {
       value = opt.slice(eq + 1).trim();
     switch (name) {
       case "$select":
-        for (const p of splitTopLevel(value, ",")) addSelectPath(node, p);
+        for (const p of splitTopLevel(value, ",")) addSelect(node, p);
         break;
       case "$expand":
         parseExpand(value, node);
@@ -316,7 +328,7 @@ function parseQueryOptions(query: Record<string, unknown>): QueryNode {
   const root = newNode();
   parseExpand(q.$expand, root);
   if (q.$select)
-    for (const p of splitTopLevel(q.$select, ",")) addSelectPath(root, p);
+    for (const p of splitTopLevel(q.$select, ",")) addSelect(root, p);
   return {
     filter: q.$filter,
     orderby: q.$orderby,

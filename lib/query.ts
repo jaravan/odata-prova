@@ -97,8 +97,9 @@ function addExpandPath(root: QueryNode, path: string): QueryNode {
   return node;
 }
 
-// "Material" -> root.select; "Items/Material" -> node(Items).select. A path's intermediate
-// segments must be expanded to matter, but recording them is harmless if they are not.
+// "Material" -> root.select; "Items/Material" -> node(Items).select, and Items in root.select:
+// each level has what was selected of it, V2's way of selecting through a navigation. A path's
+// intermediate segments must be expanded to matter, but recording them is harmless if not.
 function addSelectPath(root: QueryNode, path: string): void {
   const segs = path
     .split("/")
@@ -106,7 +107,10 @@ function addSelectPath(root: QueryNode, path: string): void {
     .filter(Boolean);
   if (segs.length === 0) return;
   let node = root;
-  for (const seg of segs.slice(0, -1)) node = node.expand[seg] ||= newNode();
+  for (const seg of segs.slice(0, -1)) {
+    (node.select ||= new Set()).add(seg);
+    node = node.expand[seg] ||= newNode();
+  }
   (node.select ||= new Set()).add(segs[segs.length - 1]);
 }
 
