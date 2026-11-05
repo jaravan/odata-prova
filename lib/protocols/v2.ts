@@ -212,8 +212,6 @@ function serialize(
     if (!p.v2Omit && (selectAll || node.select?.has(p.name)))
       out[p.name] = toWire(row[p.name], p);
   }
-  // Unknown $expand names are ignored as before; a disabled navigation is a 501
-  for (const name of Object.keys(node.expand)) svc.navigation(type, name);
   const navs = { ...type.navigations, ...type.draftNavigations };
   for (const nav of Object.values(navs)) {
     // Containment isn't in V2 (see resolveContainment in navigations.ts)

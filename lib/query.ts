@@ -114,9 +114,10 @@ function addSelectPath(root: QueryNode, path: string): void {
   (node.select ||= new Set()).add(segs[segs.length - 1]);
 }
 
-// $select names that are neither a property nor a navigation of `type` are a 400, like an
-// unknown $expand. "*" and qualified names (V4 operations, Namespace.*) pass. The protocols
-// check once per response rather than per row, so an empty result is checked too.
+// $select names that are neither a property nor a navigation of `type` are a 400, as are
+// $expand names that aren't a navigation. "*" and qualified names (V4 operations, Namespace.*)
+// pass. The protocols check once per response rather than per row, so an empty result is
+// checked too.
 // svc: the service, of which only these two are used
 interface Lookup {
   model: Model;
@@ -135,7 +136,12 @@ function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
   }
   for (const [name, child] of Object.entries(node.expand)) {
     const nav = svc.navigation(type, name);
-    const target = nav && svc.model.entityTypes[nav.targetType];
+    if (!nav)
+      throw new HttpError(
+        400,
+        `${name} is not a navigation property of ${type.name}`,
+      );
+    const target = svc.model.entityTypes[nav.targetType];
     if (target) checkSelect(svc, target, child);
   }
 }
