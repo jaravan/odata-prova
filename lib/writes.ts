@@ -2,7 +2,7 @@
 // rollback, links to existing entities (see references.ts), and cascading deletes. Drafts
 // write through here too (see draft.ts).
 
-import { isNumericType, propToInternal } from "./types.ts";
+import { isNumericType, joinText, propToInternal } from "./types.ts";
 import { HttpError, own } from "./query.ts";
 import { nextETag } from "./etag.ts";
 import type {
@@ -253,6 +253,56 @@ function create(
   }
 }
 
+// Whether a navigation's foreign key is on the entity it's in
+const keptOnThisSide = (nav: Navigation) =>
+  !nav.isCollection && !nav.links && nav.dependentSide === "source";
+
+// Deep insert through a navigation whose foreign key is on the entity: what it leads to is
+// created first, and gives the key. A foreign key sent as well may name it, and may not name
+// another: which of the two was meant can't be told. given: the entity's values so far.
+function insertPrincipals(
+  svc: WriteHost,
+  type: EntityType,
+  fields: Record<string, unknown>,
+  binds: ReturnType<typeof bindsOf>,
+  given: Record<string, unknown>,
+  draft: boolean,
+): Row {
+  const values: Row = {};
+  for (const nav of Object.values(type.navigations)) {
+    const payload = own(fields, nav.name);
+    if (!payload || !keptOnThisSide(nav)) continue;
+    if (binds.some((b) => b.field === nav.name)) continue;
+    const preset: Row = {};
+    for (const [src, tgt] of nav.join) {
+      const key = own(given, src);
+      if (key === undefined || key === null) continue;
+      const sent = own(payload as Record<string, unknown>, tgt);
+      if (
+        sent !== undefined &&
+        sent !== null &&
+        joinText(sent) !== joinText(key)
+      )
+        throw new HttpError(
+          400,
+          `${src} is ${String(key)}, and ${nav.name} is the entity whose ${tgt} is ${String(sent)}`,
+          "InvalidValue",
+        );
+      preset[tgt] = key as Row[string];
+    }
+    const made = insertTree(
+      svc,
+      nav.targetSet,
+      svc.entitySet(nav.targetSet).type,
+      payload,
+      preset,
+      draft,
+    );
+    for (const [src, tgt] of nav.join) values[src] = made[tgt];
+  }
+  return values;
+}
+
 function insertTree(
   svc: WriteHost,
   setName: string,
@@ -268,9 +318,11 @@ function insertTree(
   // Links to existing entities: a foreign key on this side before the required values are
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
+  const given = { ...fields, ...presetValues };
   const row = svc.store.normalize(entityType, {
     ...body,
     ...boundValues(binds),
+    ...insertPrincipals(svc, entityType, fields, binds, given, draft),
     ...presetValues,
   });
   for (const k of entityType.keys) {
@@ -296,7 +348,12 @@ function insertTree(
   // in. V4 sends arrays, V2 either arrays or { results: [...] }.
   for (const nav of Object.values(entityType.navigations)) {
     const payload = own(fields, nav.name);
-    if (!payload || binds.some((b) => b.field === nav.name)) continue;
+    if (
+      !payload ||
+      keptOnThisSide(nav) ||
+      binds.some((b) => b.field === nav.name)
+    )
+      continue;
     const children: unknown[] = nav.isCollection
       ? Array.isArray(payload)
         ? payload

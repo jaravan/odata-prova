@@ -89,6 +89,16 @@ describe("a navigation with a key of its own", () => {
     );
     assert.equal((await get(`${s.v4}/People('ann')/Photo`)).body.Id, 2);
   });
+
+  it("is filled by a deep insert through the navigation", async () => {
+    const r = await send("POST", `${s.v4}/People`, {
+      UserName: "deep",
+      Photo: { Id: "77", Name: "nested" },
+    });
+    assert.equal(r.status, 201);
+    const { body } = await get(`${s.v4}/People('deep')/Photo`);
+    assert.equal(body.Name, "nested");
+  });
 });
 
 describe("a key of its own in generated data", () => {

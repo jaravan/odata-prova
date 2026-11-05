@@ -348,7 +348,7 @@ A body with no closing delimiter is a `400`, since what's after the last delimit
 
 ## Deep insert
 
-A create can hold related entities, nested under their navigation: an array for a collection (V2: `{"results": [...]}`), an object for a single-valued one. They are created with it, in one transaction: if one fails, nothing is kept. The response has them, as the server created them, expanded as deep as the request was.
+A create can hold related entities, nested under their navigation: an array for a collection (V2: `{"results": [...]}`), an object for a single-valued one. They are created with it, in one transaction: if one fails, nothing is kept. A single-valued one whose foreign key is on the entity is created first, and gives the key: a foreign key sent as well that names another entity is a `400`. The response has them, as the server created them, expanded as deep as the request was.
 
 ## Links between entities
 
