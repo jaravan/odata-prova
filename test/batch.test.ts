@@ -401,3 +401,80 @@ describe("$batch: a request line", () => {
     assert.equal((await raw("GET PurchaseOrderSet x")).status, 400);
   });
 });
+
+describe("$batch: the service's own $ resources", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const one = async (root: string, url: string) =>
+    batchResponses((await batch(root, [{ method: "GET", url }])).text)[0];
+
+  for (const version of ["v4", "v2"] as const) {
+    it(`${version}: $metadata answers as it does outside a $batch`, async () => {
+      const direct = await (await fetch(`${s[version]}/$metadata`)).text();
+      const part = await one(s[version], "$metadata");
+      assert.equal(part.status, 200);
+      assert.match(part.headers["content-type"], /application\/xml/);
+      assert.equal(part.body, direct);
+    });
+  }
+
+  it("$metadata takes a query", async () => {
+    assert.equal((await one(s.v4, "$metadata?sap-language=EN")).status, 200);
+  });
+
+  it("its full URL means the same", async () => {
+    assert.equal(
+      (await one(s.v4, `${new URL(s.v4).pathname}/$metadata`)).status,
+      200,
+    );
+  });
+
+  for (const url of [
+    "$all",
+    "$crossjoin(PurchaseOrderSet,PurchaseOrderItemSet)",
+    "$entity?$id=PurchaseOrderSet('4500000001')",
+  ]) {
+    it(`${url} gets the answer it gets outside a $batch`, async () => {
+      const direct = await fetch(`${s.v4}/${url}`);
+      const part = await one(s.v4, url);
+      assert.equal(part.status, direct.status);
+      assert.deepEqual(part.body, await direct.json());
+    });
+  }
+
+  it("a $batch in a $batch runs nothing", async () => {
+    const res = await batch(s.v4, [
+      { method: "POST", url: "$batch", body: {} },
+    ]);
+    assert.equal(batchResponses(res.text)[0].status, 404);
+  });
+
+  it("a Content-ID of that name is still the request's", async () => {
+    const res = await batch(s.v4, [
+      [
+        {
+          method: "POST",
+          url: "PurchaseOrderSet",
+          contentId: "metadata",
+          body: { ...ORDER, PurchaseOrderId: "NAMED" },
+        },
+        { method: "PATCH", url: "$metadata", body: { Status: "New" } },
+      ],
+    ]);
+    assert.equal(batchResponses(res.text)[0].status, 201);
+    const { body } = await get(`${s.v4}/PurchaseOrderSet('NAMED')`);
+    assert.equal(body.Status, "New");
+  });
+
+  for (const url of ["$metadata2", "$batchs", "$9", "$all(1)"]) {
+    it(`${url} is still an unknown Content-ID`, async () => {
+      const part = await one(s.v4, url);
+      assert.equal(part.status, 400);
+      assert.match(part.body.error.message, /Unknown Content-ID/);
+    });
+  }
+});

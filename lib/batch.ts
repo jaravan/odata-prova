@@ -152,6 +152,10 @@ function withContentIds(body: unknown, refs: Record<string, string>): unknown {
   );
 }
 
+// What $name is in a URL when no request of the changeset has that Content-ID: the service's
+// own resource, answered as it is outside a $batch, not a mistaken reference
+const SERVICE_RESOURCE = /^(?:metadata|batch|all|entity|crossjoin(?:\(.*\))?)$/;
+
 function createBatchHandler(
   service: ODataService,
 ): (req: Request, res: Response) => Promise<void> {
@@ -171,9 +175,9 @@ function createBatchHandler(
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
       const target = own(contentIdRefs, ref[1]);
-      if (!target)
+      if (target) url = target + ref[2];
+      else if (!SERVICE_RESOURCE.test(ref[1]))
         return protocol.error(400, `Unknown Content-ID reference $${ref[1]}`);
-      url = target + ref[2];
     }
     if (!url.startsWith("/")) url = `${service.servicePath}/${url}`;
     // Only the first ? starts the query: one in a value is the value's

@@ -344,7 +344,7 @@ A `POST` with `X-HTTP-Method: PUT`, `PATCH`, `MERGE` or `DELETE` is that method,
 
 ## `$batch`
 
-A body with no closing delimiter is a `400`, since what's after the last delimiter may be half a request: none of it runs. A changeset without one fails alone. A space in a request's URL is a `400` for that request, as it is outside a `$batch`: write it as `%20`. An `@odata.bind` may name an earlier request of the changeset by its Content-ID, `"Parent@odata.bind": "$1"`, as a URL can.
+A body with no closing delimiter is a `400`, since what's after the last delimiter may be half a request: none of it runs. A changeset without one fails alone. A space in a request's URL is a `400` for that request, as it is outside a `$batch`: write it as `%20`. An `@odata.bind` may name an earlier request of the changeset by its Content-ID, `"Parent@odata.bind": "$1"`, as a URL can. A request can read `$metadata` from inside a `$batch`, unless an earlier request of its changeset has `metadata` as its Content-ID.
 
 ## Deep insert
 
