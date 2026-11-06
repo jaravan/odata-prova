@@ -681,7 +681,7 @@ function entityRequest(
         setName,
         type,
         svc.keyOf(type, row),
-        draft ? svc.drafts.beforeUpdate(type, row, body) : body,
+        draft ? svc.drafts.beforeUpdate(setName, type, row, body) : body,
         method === "PUT",
         !!draft,
       );

@@ -1,4 +1,4 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -973,5 +973,135 @@ describe("a draft POST with the key of an active entity", () => {
   it("with a new key it's a new draft", async () => {
     const res = await send("POST", `${s.v4}/Books`, { title: "new" });
     assert.equal(res.status, 201);
+  });
+});
+
+describe("a draft child", () => {
+  const CHAPTER = "c0000000-0000-4000-8000-000000000001";
+  const OTHER = "c0000000-0000-4000-8000-000000000002";
+  const chapter = (id: string, active: boolean) =>
+    `Chapters(ID=${id},IsActiveEntity=${active})`;
+  const edit = () =>
+    send("POST", `${s.v4}/${book()}/${ACTION("draftEdit")}`, {
+      PreserveChanges: true,
+    });
+  let s: TestServer;
+  beforeEach(async () => (s = await start(DRAFT_MODEL)));
+  afterEach(() => s.close());
+
+  it("stays in its draft through a PUT, and activating keeps the active one", async () => {
+    await edit();
+    const put = await send("PUT", `${s.v4}/${chapter(CHAPTER, false)}`, {
+      title: "Renamed",
+    });
+    assert.equal(put.status, 204);
+    const draft = (await get(`${s.v4}/${chapter(CHAPTER, false)}`)).body;
+    assert.equal(draft.book_ID, BOOK);
+    assert.equal(draft.title, "Renamed");
+    assert.equal(draft.pages, null);
+    const r = await send(
+      "POST",
+      `${s.v4}/${book(false)}/${ACTION("draftActivate")}`,
+      {},
+    );
+    assert.equal(r.status, 200);
+    assert.equal(
+      (await get(`${s.v4}/${chapter(CHAPTER, true)}`)).body.title,
+      "Renamed",
+    );
+    assert.equal(
+      (await get(`${s.v4}/Chapters?$filter=IsActiveEntity eq false`)).body.value
+        .length,
+      0,
+    );
+  });
+
+  for (const body of [{ book_ID: null }, { book_ID: CHAPTER }])
+    it(`stays in its draft through a PATCH of ${JSON.stringify(body)}`, async () => {
+      await edit();
+      await send("PATCH", `${s.v4}/${chapter(CHAPTER, false)}`, body);
+      assert.equal(
+        (await get(`${s.v4}/${chapter(CHAPTER, false)}`)).body.book_ID,
+        BOOK,
+      );
+    });
+
+  it("deleted, then discarded, leaves no active chapter saying it has a draft", async () => {
+    await edit();
+    await send("DELETE", `${s.v4}/${chapter(CHAPTER, false)}`);
+    assert.equal((await send("DELETE", `${s.v4}/${book(false)}`)).status, 204);
+    for (const id of [CHAPTER, OTHER])
+      assert.equal(
+        (await get(`${s.v4}/${chapter(id, true)}`)).body.HasDraftEntity,
+        false,
+      );
+    const list = await get(
+      `${s.v4}/Chapters?$filter=book_ID eq ${BOOK} and HasDraftEntity eq false`,
+    );
+    assert.equal(list.body.value.length, 2);
+  });
+
+  for (const [method, url] of [
+    ["PUT", () => chapter(CHAPTER, false)],
+    ["PATCH", () => chapter(CHAPTER, false)],
+    ["PUT", () => book(false)],
+    ["POST", () => "Books"],
+    ["POST", () => `${book(false)}/chapters`],
+  ] as const)
+    for (const json of ["[]", "12345678901234567890123"])
+      it(`${method} ${json} on ${url().slice(0, 8)} is a 400, and changes nothing`, async () => {
+        await edit();
+        const count = async () =>
+          (await get(`${s.v4}/Chapters?$filter=IsActiveEntity eq false`)).body
+            .value.length;
+        const before = await count();
+        const res = await fetch(`${s.v4}/${url()}`, {
+          method,
+          headers: { "content-type": "application/json" },
+          body: json,
+        });
+        assert.equal(res.status, 400);
+        assert.equal(await count(), before);
+        const after = (await get(`${s.v4}/${chapter(CHAPTER, false)}`)).body;
+        assert.equal(after.title, "Chapter I");
+        assert.equal(
+          (await get(`${s.v4}/${book(false)}`)).body.title,
+          "Wuthering Heights",
+        );
+      });
+});
+
+describe("a draft child, in V2", () => {
+  let s: TestServer;
+  before(async () => (s = await start(DRAFT_V2_MODEL)));
+  after(() => s.close());
+
+  it("stays in its draft through a PUT, and activating keeps the active one", async () => {
+    await send(
+      "POST",
+      `${s.v2}/TravelEdit?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=true&PreserveChanges=true`,
+      undefined,
+    );
+    const list = await get(`${s.v2}/${travel(false)}/to_Booking`, JSON_ACCEPT);
+    const { BookingUUID, BookingID } = list.body.d.results[0];
+    const url = (active: boolean) =>
+      `Booking(BookingUUID=guid'${BookingUUID}',IsActiveEntity=${active})`;
+    const put = await send("PUT", `${s.v2}/${url(false)}`, { BookingID: "9" });
+    assert.equal(put.status, 204);
+    assert.notEqual(BookingID, "9");
+    assert.equal(
+      (await get(`${s.v2}/${url(false)}`, JSON_ACCEPT)).body.d.TravelUUID,
+      TRAVEL,
+    );
+    const done = await send(
+      "POST",
+      `${s.v2}/TravelActivate?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=false`,
+      undefined,
+    );
+    assert.equal(done.status, 200);
+    assert.equal(
+      (await get(`${s.v2}/${url(true)}`, JSON_ACCEPT)).body.d.BookingID,
+      "9",
+    );
   });
 });

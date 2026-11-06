@@ -572,12 +572,12 @@ class Drafts {
 
   // Removes a draft tree; its active entities have no draft any more
   discard(setName: string, type: EntityType, draft: Row): void {
-    for (const n of this.tree(setName, type, draft)) {
-      this.store.remove(n.setName, n.type, this.svc.keyOf(n.type, n.row));
-      const active = this.sibling(n.setName, n.type, n.row, true);
-      if (active)
-        this.store.update(n.setName, active, { HasDraftEntity: false });
-    }
+    this.removeTree(setName, type, draft);
+    // The active tree, not the draft's: a child deleted in the draft is in that one only
+    const active = this.sibling(setName, type, draft, true);
+    if (active)
+      for (const n of this.tree(setName, type, active))
+        this.store.update(n.setName, n.row, { HasDraftEntity: false });
     this.removeAdmin(draft[UUID]);
   }
 
@@ -605,9 +605,25 @@ class Drafts {
     });
   }
 
-  // PATCH/PUT: drafts only. The draft columns are the server's to set: they keep their
-  // values, a PUT included. Returns the body to apply.
-  beforeUpdate(type: EntityType, row: Row, body: unknown): unknown {
+  // The columns that hold a draft node in its parent's composition
+  parentColumns(setName: string): string[] {
+    return Object.values(this.model.entityTypes).flatMap((type) =>
+      Object.values(type.navigations).flatMap((nav) =>
+        nav.draft === "composition" && nav.targetSet === setName
+          ? nav.join.map(([, column]) => column)
+          : [],
+      ),
+    );
+  }
+
+  // PATCH/PUT: drafts only. The draft columns are the server's to set, and so is what holds a
+  // node in its draft: they keep their values, a PUT included. Returns the body to apply.
+  beforeUpdate(
+    setName: string,
+    type: EntityType,
+    row: Row,
+    body: unknown,
+  ): unknown {
     if (row.IsActiveEntity)
       throw new HttpError(
         400,
@@ -615,7 +631,7 @@ class Drafts {
       );
     if (!isObject(body)) return body;
     const out: Record<string, unknown> = { ...body };
-    for (const name of DRAFT_COLUMNS)
+    for (const name of [...DRAFT_COLUMNS, ...this.parentColumns(setName)])
       if (Object.hasOwn(type.properties, name)) out[name] = row[name];
     return out;
   }
