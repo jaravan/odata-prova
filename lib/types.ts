@@ -447,15 +447,43 @@ function enumNamed(model: Model, name: string): EnumType | undefined {
 // An enum's value as its member's name, given by name or by number; several, for flags
 function enumValue(value: unknown, type: EnumType): string {
   const given = String(value);
-  return (type.isFlags ? given.split(",") : [given])
-    .map((text) => {
-      const member = type.members.find(
-        (m) => m.name === text.trim() || String(m.value) === text.trim(),
+  const found = new Set<EnumType["members"][number]>();
+  for (const part of type.isFlags ? given.split(",") : [given]) {
+    const text = part.trim();
+    const member = type.members.find(
+      (m) => m.name === text || String(m.value) === text,
+    );
+    const bits = Number(text);
+    if (member) found.add(member);
+    else if (type.isFlags && /^\d+$/.test(text)) {
+      // A combined value, 3 for R,W: its members have to make it up
+      const parts = type.members.filter(
+        (m) => m.value && (bits & Number(m.value)) === Number(m.value),
       );
-      if (!member) throw invalid(value, type.name);
-      return member.name;
-    })
+      if (parts.reduce((all, m) => all | Number(m.value), 0) !== bits)
+        throw invalid(value, type.name);
+      parts.forEach((m) => found.add(m));
+    } else throw invalid(value, type.name);
+  }
+  // One spelling for one value: compared, grouped and counted as text
+  return [...found]
+    .sort((a, b) => Number(a.value) - Number(b.value))
+    .map((m) => m.name)
     .join(",");
+}
+
+// An enum's value as a number, which is what orders and compares it: a member, several for a
+// flags type, or the number itself
+function enumNumber(value: unknown, type: EnumType): number {
+  return String(value)
+    .split(",")
+    .reduce((all, part) => {
+      const text = part.trim();
+      const member = type.members.find((m) => m.name === text);
+      if (!member && !/^-?\d+$/.test(text)) throw invalid(value, type.name);
+      const n = Number(member ? member.value : text);
+      return type.isFlags ? all | n : n;
+    }, 0);
 }
 
 function elementToInternal(value: unknown, prop: Property): PropertyValue {
@@ -622,6 +650,7 @@ export {
   LongNumber,
   keepLongNumbers,
   keyText,
+  enumNumber,
   isNumberText,
   binaryBytes,
   withPrecision,

@@ -1,7 +1,7 @@
 // Applies a request's query options to rows: $filter, $search, $count, $orderby, $skip and
 // $top, for a collection or an $expand node.
 
-import { compareValues, toComparable } from "./types.ts";
+import { compareValues, enumNumber, toComparable } from "./types.ts";
 import { ROW_READ, sortWork, spend } from "./work.ts";
 import { compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
@@ -71,7 +71,7 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
           type: prop.type,
           fraction: prop.precision ?? "0",
         }
-      : { value: row[prop.name], type: prop.type };
+      : { value: row[prop.name], type: prop.type, enumOf: prop.enumType };
   const resolve = (row: Row, path: string): Literal => {
     // A path that is a property of its own: $apply's result for a groupby on a path
     const itself = own(entityType.properties, path.replace(/^\$it\//, ""));
@@ -211,8 +211,12 @@ function applyQuery(
       for (const { path, desc } of terms) {
         const va = resolve(a, path),
           vb = resolve(b, path);
-        const ca = toComparable(va.value, va.type),
-          cb = toComparable(vb.value, vb.type);
+        const order = ({ value, type, enumOf }: Literal) =>
+          enumOf && value !== null && value !== undefined
+            ? enumNumber(value, enumOf)
+            : toComparable(value, type);
+        const ca = order(va),
+          cb = order(vb);
         let cmp = 0;
         if (ca === null && cb !== null) cmp = -1;
         else if (ca !== null && cb === null) cmp = 1;

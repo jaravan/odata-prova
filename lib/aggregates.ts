@@ -9,6 +9,7 @@ import {
   isIntegerType,
   isNumericType,
   decimalText,
+  enumNumber,
   toComparable,
 } from "./types.ts";
 import type {
@@ -275,9 +276,14 @@ function aggregateValues(
     case "min":
     case "max": {
       let best: PrimitiveValue = null;
+      const { enumType } = input;
+      const order = (v: PrimitiveValue) =>
+        enumType && v !== null
+          ? enumNumber(v, enumType)
+          : toComparable(v, input.type);
       for (const v of values) {
-        const c = toComparable(v, input.type);
-        const b = toComparable(best, input.type);
+        const c = order(v);
+        const b = order(best);
         if (
           best === null ||
           compareValues(c, b) * (method === "min" ? -1 : 1) > 0

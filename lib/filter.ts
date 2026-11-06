@@ -27,6 +27,7 @@ import {
   enumValue,
   isNumericType,
   toComparable,
+  enumNumber,
   isNumberText,
   toMillis,
   withPrecision,
@@ -767,6 +768,13 @@ const longText = (value: unknown) =>
 // a full timestamp, without the caller having to know or care.
 function compare(l: Value, r: Value): number {
   spend(longText(l.value) + longText(r.value));
+  // An enum is its number, whatever its members are called
+  const enumOf = l.enumOf ?? r.enumOf;
+  if (enumOf && !isNull(l) && !isNull(r)) {
+    const a = enumNumber(l.value, enumOf),
+      b = enumNumber(r.value, enumOf);
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
   const type = comparedAs(l.type, r.type);
   const fraction = l.fraction ?? r.fraction;
   const shown = (value: unknown) =>
@@ -799,6 +807,10 @@ const COMPARISONS = ["eq", "ne", "gt", "ge", "lt", "le"];
 // Whether an enum's value holds all the members of another: a flags value is several, Read,Write
 function hasFlags(l: Value, r: Value): boolean | null {
   if (isNull(l) || isNull(r)) return null;
+  if (l.enumOf) {
+    const flags = enumNumber(r.value, l.enumOf);
+    return (enumNumber(l.value, l.enumOf) & flags) === flags;
+  }
   const held = String(l.value).split(",");
   return String(r.value)
     .split(",")
