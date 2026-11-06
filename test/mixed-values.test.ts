@@ -916,3 +916,48 @@ describe("a body that isn't an object, in a $batch", () => {
     assert.equal((await get(`${s.v4}/Kids(7)`)).body.ItemID, 1);
   });
 });
+
+describe("read options on a write", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "mine", Qty: 5 });
+  });
+  afterEach(() => s.close());
+
+  for (const method of ["PUT", "PATCH"])
+    for (const option of [
+      "$select=Nope",
+      "$expand=Nope",
+      "$expand=Kids($select=Nope)",
+    ])
+      it(`${method} ?${option} is a 400, and writes nothing`, async () => {
+        const res = await send(method, `${s.v4}/Items(1)?${option}`, {
+          Qty: 9,
+        });
+        assert.equal(res.status, 400);
+        assert.equal((await get(`${s.v4}/Items(1)`)).body.Qty, 5);
+      });
+
+  it("POST ?$select=Nope too, when it wants no body back", async () => {
+    const res = await fetch(`${s.v4}/Items?$select=Nope`, {
+      method: "POST",
+      headers: { ...JSON_TYPE, prefer: "return=minimal" },
+      body: JSON.stringify({ ID: 2 }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await get(`${s.v4}/Items(2)`)).status, 404);
+  });
+
+  it("one that names what's there still works", async () => {
+    const res = await fetch(`${s.v4}/Items(1)?$select=Qty`, {
+      method: "PATCH",
+      headers: { ...JSON_TYPE, prefer: "return=representation" },
+      body: JSON.stringify({ Qty: 9 }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.Qty, 9);
+    assert.equal(body.Name, undefined);
+  });
+});

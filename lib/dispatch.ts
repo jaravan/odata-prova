@@ -590,6 +590,7 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
     }
     case "POST": {
       checkOneEntity(q);
+      checkSelect(svc, type, q);
       const parent = parentForCreate;
       const preset: Row = parent
         ? Object.fromEntries(
@@ -674,6 +675,7 @@ function entityRequest(
     case "PUT":
     case "PATCH":
     case "MERGE": {
+      checkSelect(svc, type, q);
       const draft = svc.model.entitySets[setName].draft;
       checkIfMatch(svc.model, setName, row, headers, svc.etags, !draft);
       const updated = update(
