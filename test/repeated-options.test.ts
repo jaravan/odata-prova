@@ -98,4 +98,15 @@ describe("overloads, in V2 and by type", () => {
     assert.equal(other.status, 200, JSON.stringify(other.body));
     assert.doesNotMatch(JSON.stringify(other.body), /:0\b/);
   });
+
+  it("the overload nearest the entity's type wins", async () => {
+    const { status, body } = await get(`${s.v4}/Ders(1)/N.Inh()`);
+    assert.equal(status, 200);
+    assert.equal(body.value, 0);
+  });
+
+  it("the base type gets its own", async () => {
+    const { body } = await get(`${s.v4}/Rs(1)/N.Inh()`);
+    assert.equal(body.value, "");
+  });
 });

@@ -98,12 +98,20 @@ function boundOperation(
   const namespace = own(svc.model.aliases, name.slice(0, Math.max(dot, 0)));
   const qualified = namespace ? `${namespace}${name.slice(dot)}` : name;
   // A bound operation has a binding parameter (see parseOperations)
-  const [first, ...others] = svc.operations.bound.filter(
-    (op) =>
-      (op.fullName === qualified || op.name === name) &&
-      types.has(op.binding!.elementType) &&
-      op.binding!.isCollection === onCollection,
-  );
+  const near = [...types];
+  const [first, ...others] = svc.operations.bound
+    .filter(
+      (op) =>
+        (op.fullName === qualified || op.name === name) &&
+        types.has(op.binding!.elementType) &&
+        op.binding!.isCollection === onCollection,
+    )
+    // The entity's own type first, then its bases: a derived type's overload wins
+    .sort(
+      (a, b) =>
+        near.indexOf(a.binding!.elementType) -
+        near.indexOf(b.binding!.elementType),
+    );
   return others.length ? { ...first, overloads: others } : first;
 }
 

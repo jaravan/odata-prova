@@ -43,8 +43,18 @@
         <Parameter Name="b" Type="Edm.String"/>
         <ReturnType Type="Edm.Int32"/>
       </Function>
+      <EntityType Name="Der" BaseType="N.R"/>
+      <Function Name="Inh" IsBound="true">
+        <Parameter Name="it" Type="N.R"/>
+        <ReturnType Type="Edm.String"/>
+      </Function>
+      <Function Name="Inh" IsBound="true">
+        <Parameter Name="it" Type="N.Der"/>
+        <ReturnType Type="Edm.Int32"/>
+      </Function>
       <EntityContainer Name="C">
         <EntitySet Name="Rs" EntityType="N.R"/>
+        <EntitySet Name="Ders" EntityType="N.Der"/>
         <FunctionImport Name="Lookup" Function="N.Lookup" EntitySet="Rs"/>
         <FunctionImport Name="Score" Function="N.Score"/>
         <FunctionImport Name="Optional" Function="N.Optional"/>
