@@ -357,14 +357,17 @@ function createBatchHandler(
       for (const part of splitMultipart(bodyText, boundary)) {
         const processed = await processBatchPart(part);
         out.push(processed);
+        let answer = 0;
         try {
-          for (const { result } of processed.results) size += asText(result);
+          for (const { result } of processed.results) answer += asText(result);
         } catch (e) {
           if (!(e instanceof HttpError)) throw e;
-          size = Infinity;
-          processed.results.length = 0;
-          out.pop();
+          answer = Infinity;
         }
+        size += answer;
+        // Alone past the limit, it can't go in the answer: every part is below it, so what's
+        // left joins into one text
+        if (answer > MAX_RESPONSE) out.pop();
         // The parts after it aren't run: their answers wouldn't fit either
         if (size > MAX_RESPONSE) {
           const { status, message, code } = tooMuch();

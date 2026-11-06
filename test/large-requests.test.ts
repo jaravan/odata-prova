@@ -326,6 +326,33 @@ describe("a $batch of reads that are small to answer and long to do", () => {
   });
 });
 
+describe("a part too long for the rest of the $batch", () => {
+  it("is refused, and what came before it still answers", async () => {
+    const wide = "x".repeat(2000);
+    const dir = modelWith(
+      Array.from({ length: 40000 }, (_, i) => ({ ID: i, Text: wide })),
+    );
+    const s = await start(dir);
+    try {
+      const { status, text } = await batch(s.v4, [
+        { method: "GET", url: "Values(1)" },
+        { method: "GET", url: "Values" },
+        { method: "GET", url: "Values(2)" },
+      ]);
+      assert.equal(status, 200);
+      const parts = batchResponses(text);
+      assert.deepEqual(
+        parts.map((p) => p.status),
+        [200, 400],
+      );
+      assert.equal(parts[1].body.error.code, "TooMuchWork");
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("updates and deletes on a large set", () => {
   it("don't search it again for each", async () => {
     const dir = modelWith(
