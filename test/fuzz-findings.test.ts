@@ -304,3 +304,45 @@ describe("length, indexof and substring count characters, as MaxLength does", ()
       assert.equal((await get(url)).body.value.length, 5);
     });
 });
+
+describe("a JSON number a double can't hold", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(fixture("EdmTypes"));
+  });
+  after(() => s.close());
+
+  const raw = (body: string) =>
+    fetch(`${s.v4}/Values`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+
+  it("past its range, for a Double -> 400, not INF", async () => {
+    assert.equal((await raw('{"ID":900,"V":1e400}')).status, 400);
+    assert.equal((await raw('{"ID":901,"V":-1e400}')).status, 400);
+    assert.equal((await raw('{"ID":902,"V":"1e400"}')).status, 400);
+  });
+
+  it("INF as itself is still a Double's", async () => {
+    assert.equal((await raw('{"ID":903,"V":"INF"}')).status, 201);
+  });
+
+  it("too small, for a Double -> the nearest it holds", async () => {
+    const r = await raw('{"ID":904,"V":1e-400}');
+    assert.equal(r.status, 201);
+    assert.equal(((await r.json()) as { V: number }).V, 0);
+  });
+
+  it("too small, for a Decimal -> its digits, or a 400, never a silent 0", async () => {
+    const r = await raw('{"ID":905,"Price":1e-400}');
+    assert.equal(r.status, 400);
+    assert.equal((await get(`${s.v4}/Values(905)`)).status, 404);
+  });
+
+  it("a zero stays one, however it's written", async () => {
+    const r = await raw('{"ID":906,"V":0e400,"Price":0.0e-5}');
+    assert.equal(r.status, 201);
+  });
+});

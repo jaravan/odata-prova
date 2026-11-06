@@ -21,6 +21,7 @@ Writes and data files are checked against the metadata. Each of these is a `400`
   - a number written other than in decimal (`0x10`), or an enum value that isn't a member, by name or by value (several, for an `IsFlags` type: `Read,Write`)
   - a string with half a surrogate pair, which has no form in a URL or a header
   - an integer outside its type's range: `Edm.Byte` 0 to 255, `Edm.SByte`, `Edm.Int16`, `Edm.Int32` and `Edm.Int64` theirs
+  - a number past the range of an `Edm.Double` or `Edm.Single`: `1e400` isn't `INF`, which is written `"INF"`. One too small for a double is the nearest it holds, `0`
   - a decimal with more digits than its `Precision`, or more after the point than its `Scale` (`Scale="variable"`, or none: any, up to the `Precision`). One with an exponent is kept as the digits it stands for: `1.5e2` is `150`
   - a date or time that isn't ISO 8601 (`2025-03-07`, `2025-03-07T10:00:00Z`, with an offset or without, which is UTC), or that isn't in the calendar (`2025-02-30`), or that its time zone moves past a year of four digits in UTC (`9999-12-31T23:59:59-14:00`). A space for the `T`, and slashes in the date (`2025/03/07`), as spreadsheets write them, are read too, as are V2's `/Date(ms)/`. Nothing else is guessed at: `07.03.2025` and `03/07/2025` are refused rather than read in the server's timezone
   - a time of day past `23:59:59`, a GUID that isn't `8-4-4-4-12` hex digits, a duration that isn't a day-time duration (`P1DT2H`, `PT0.5S`), or binary that isn't base64 or base64url

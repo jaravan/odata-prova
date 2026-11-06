@@ -248,19 +248,21 @@ function keyText(value: unknown, prop: Property): string {
 // its digits, and still a number to the check of a body's JSON types (see checkValue)
 class LongNumber extends String {}
 
-// A JSON.parse reviver for a request's body: a number with more digits than a double holds
-// (9007199254740993, an Int64) is read as its text, which the property's type then reads.
-// The source text is the reviver's third argument (Node 21 and later).
+// A JSON.parse reviver for a request's body: a number a double can't hold, with more digits
+// (9007199254740993, an Int64) or past its range (1e400, or 1e-400, which it reads as 0), is
+// read as its text, which the property's type then reads. The source text is the reviver's
+// third argument (Node 21 and later).
 const keepLongNumbers = ((
   _key: string,
   value: unknown,
   context?: { source?: string },
-) =>
-  typeof value === "number" &&
-  context?.source !== undefined &&
-  context.source.replace(/e.*$|[-.]/gi, "").replace(/^0+/, "").length > 15
+) => {
+  if (typeof value !== "number" || context?.source === undefined) return value;
+  const digits = context.source.replace(/e.*$|[-.]/gi, "").replace(/^0+/, "");
+  return digits.length > 15 || !Number.isFinite(value) || (!value && digits)
     ? new LongNumber(context.source)
-    : value) as (key: string, value: unknown) => unknown;
+    : value;
+}) as (key: string, value: unknown) => unknown;
 
 // Any inbound value (CSV cell, JSON body field, parsed URL literal) -> internal.
 // An empty string is a value of a string, which ABAP's blank is, and of nothing else, where
@@ -291,8 +293,14 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
       if (typeof value === "string" && Object.hasOwn(SPECIAL_FLOATS, value))
         return SPECIAL_FLOATS[value];
       const n = numberOf(value);
-      // The number NaN is a literal's, and text that's no number isn't one
-      if (Number.isNaN(n) && !Number.isNaN(value)) throw invalid(value, type);
+      // The number NaN is a literal's, and text that's no number isn't one. INF is written
+      // so: 1e400 is a number past a double's range
+      if (
+        Number.isNaN(n)
+          ? !Number.isNaN(value)
+          : !Number.isFinite(n) && typeof value !== "number"
+      )
+        throw invalid(value, type);
       if (
         type === "Edm.Single" &&
         Number.isFinite(n) &&
