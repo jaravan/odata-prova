@@ -334,10 +334,16 @@ class ODataService {
     query: Record<string, unknown> = {},
     body?: unknown,
     headers: RequestHeaders = {},
+    gone: () => boolean = () => false,
   ): Promise<ODataResponse> {
+    const writes = method !== "GET" && method !== "HEAD";
     return this.queue.run(
-      () => this.execute(method, path, query, body, headers),
-      method !== "GET" && method !== "HEAD",
+      // A read nobody is waiting for isn't worth its turn. A write stands: it was asked for.
+      () =>
+        !writes && gone()
+          ? { status: 204 }
+          : this.execute(method, path, query, body, headers),
+      writes,
     );
   }
 

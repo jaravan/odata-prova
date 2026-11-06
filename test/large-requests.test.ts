@@ -1,7 +1,7 @@
 // A request's size doesn't decide how long it takes: a long literal is read for every row, and
 // counts as the work it is. And a group has no size past which it stops adding up.
 
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -395,6 +395,38 @@ describe("updates and deletes on a large set", () => {
       assert.equal(find(5), undefined);
       s.store.rollback(mark);
       assert.equal(find(5), row);
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a read whose client has gone", () => {
+  it("isn't run when its turn comes", async () => {
+    const dir = modelWith([{ ID: 1 }]);
+    const s = await start(dir);
+    try {
+      const service = s.services.find((x) => x.protocol.version === "4.0")!;
+      let release = () => {};
+      const held = service.queue.run(
+        () => new Promise<void>((r) => (release = r)),
+      );
+      const runs = mock.method(service, "execute");
+      const stop = new AbortController();
+      const read = fetch(`${s.v4}/Values`, { signal: stop.signal }).catch(
+        () => "aborted",
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      stop.abort();
+      assert.equal(await read, "aborted");
+      await new Promise((r) => setTimeout(r, 100));
+      release();
+      await held;
+      await service.queue.idle();
+      assert.equal(runs.mock.callCount(), 0);
+      assert.equal((await get(`${s.v4}/Values(1)`)).status, 200);
+      assert.equal(runs.mock.callCount(), 1);
     } finally {
       await s.close();
       fs.rmSync(dir, { recursive: true, force: true });

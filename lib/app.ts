@@ -392,6 +392,7 @@ function createApp({
             req.query,
             req.body,
             req.headers,
+            () => req.socket.destroyed,
           ),
         );
       },
