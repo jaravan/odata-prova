@@ -704,15 +704,28 @@ class Store {
   insert(setName: string, row: Row): void {
     this.writable(setName);
     this.data[setName].push(row);
-    const index = this.keyIndexes.get(setName);
-    this.record({ op: "insert", set: setName, row });
-    // A new row can't change the others': record dropped the index for the undo's sake
+    const type = this.typeOf(setName);
+    this.keepingKeyIndex(setName, () =>
+      this.record({ op: "insert", set: setName, row }),
+    )?.set(type ? keyName(type, row) : "", row);
+  }
+
+  private typeOf(setName: string): EntityType | undefined {
     const es = this.model.entitySets[setName] as EntitySet | undefined;
-    if (index && es) {
-      const name = keyName(this.model.entityTypes[es.entityType], row);
-      if (!index.has(name)) index.set(name, row);
-      this.keyIndexes.set(setName, index);
-    }
+    return es && this.model.entityTypes[es.entityType];
+  }
+
+  // Runs what records a change, which drops the set's key index for an undo's sake, and keeps
+  // the index for a change that hasn't made it wrong, or that the caller corrects. Rebuilding
+  // it for every write would walk the set for each.
+  private keepingKeyIndex(
+    setName: string,
+    record: () => void,
+  ): Map<string, Row> | undefined {
+    const index = this.keyIndexes.get(setName);
+    record();
+    if (index) this.keyIndexes.set(setName, index);
+    return index;
   }
 
   // Sets changes on row, a row of setName, in place, and returns it
@@ -723,8 +736,12 @@ class Store {
     for (const name of Object.keys(changes))
       if (Object.hasOwn(row, name)) before[name] = row[name];
       else absent.push(name);
+    const type = this.typeOf(setName);
+    const sameKey = type && !type.keys.some((k) => Object.hasOwn(changes, k));
     Object.assign(row, changes);
-    this.record({ op: "update", set: setName, row, before, absent });
+    const change: Change = { op: "update", set: setName, row, before, absent };
+    if (sameKey) this.keepingKeyIndex(setName, () => this.record(change));
+    else this.record(change);
     return row;
   }
 
@@ -740,7 +757,12 @@ class Store {
     const index = this.data[setName].indexOf(row);
     if (index === -1) return;
     this.data[setName].splice(index, 1);
-    this.record({ op: "remove", set: setName, row, index });
+    const type = this.typeOf(setName);
+    const keys = this.keepingKeyIndex(setName, () =>
+      this.record({ op: "remove", set: setName, row, index }),
+    );
+    const name = type ? keyName(type, row) : "";
+    if (keys?.get(name) === row) keys.delete(name);
   }
 
   // --- Transactions ---
