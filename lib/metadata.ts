@@ -11,6 +11,7 @@ import type {
   EntityType,
   Model,
   NavigationProperty,
+  EnumType,
   Operation,
   Property,
   TypedElement,
@@ -89,6 +90,16 @@ function readMetadata(file: string): string {
     .subarray(2)
     .toString("utf16le");
   return text.replace(/^(<\?xml[^>]*encoding=["'])utf-16/i, "$1utf-8");
+}
+
+// An enum's members, each with its number: one with no Value follows the one before, from 0
+function enumMembers(members: Xml[]): EnumType["members"] {
+  let next = 0n;
+  return members.map((m) => {
+    const value = m.Value ?? String(next);
+    next = /^-?\d+$/.test(value) ? BigInt(value) + 1n : next + 1n;
+    return { name: m.Name, value };
+  });
 }
 
 function parseMetadata(
@@ -197,10 +208,7 @@ function parseMetadata(
         namespace: ns,
         underlyingType: en.UnderlyingType,
         isFlags: en.IsFlags === "true",
-        members: (en.Member || []).map((m: Xml) => ({
-          name: m.Name,
-          value: m.Value,
-        })),
+        members: enumMembers(en.Member || []),
       };
     }
 

@@ -482,6 +482,74 @@ describe("smaller mistakes", () => {
   });
 });
 
+describe("enums, further", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    for (const row of [
+      { ID: 1, Au: "One", Bg: "Top", Cm: "R,W", Cols: ["Blue", "Red"] },
+      { ID: 2, Au: "Two", Bg: "Hi", Cm: "RW", Perms: ["R,W"] },
+      { ID: 3, Au: "Six", Bg: "Lo,Hi", Cm: "3", Cols: ["Red"] },
+      { ID: 4, Au: "Five", Bg: "4294967297", Cm: "RW,X", Perms: ["W"] },
+    ])
+      assert.equal((await send("POST", `${s.v4}/Items`, row)).status, 201);
+  });
+  after(() => s.close());
+
+  const ids = async (filter: string) => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$select=ID&$filter=${encodeURIComponent(filter)}`,
+    );
+    assert.equal(status, 200, filter);
+    return body.value.map((r: { ID: number }) => r.ID);
+  };
+
+  for (const [filter, expected] of [
+    ["Au eq F.Auto'Two'", [2]],
+    ["Au eq 0", [1]],
+    ["Au eq 1", [2]],
+    ["Au eq 6", [3]],
+    ["Au gt F.Auto'Two'", [3, 4]],
+    ["Bg has F.Big'Hi'", [2, 3, 4]],
+    ["Bg has F.Big'Top'", [1]],
+    ["Bg eq F.Big'4294967297'", [3, 4]],
+    ["Cols/any(c:c gt F.Color'Red')", [1]],
+    ["Cols/any(c:c eq 4)", [1]],
+    ["Perms/any(p:p has 1)", [2]],
+    ["Cm eq F.Combo'RW'", [1, 2, 3]],
+    ["Cm eq F.Combo'R,W'", [1, 2, 3]],
+    ["Cm has F.Combo'R'", [1, 2, 3, 4]],
+  ] as const)
+    it(`${filter}`, async () => {
+      assert.deepEqual(await ids(filter), expected);
+    });
+
+  it("a value with a combined member groups as one", async () => {
+    const { body } = await get(
+      `${s.v4}/Items?$filter=ID lt 4&$apply=${encodeURIComponent("groupby((Cm))")}`.replace(
+        "$filter=ID lt 4&",
+        "",
+      ),
+    );
+    assert.equal(body.value.length, 2);
+  });
+
+  it("max by value on 64 bits", async () => {
+    const { body } = await get(
+      `${s.v4}/Items?$apply=${encodeURIComponent("aggregate(Bg with max as M,Au with max as A)")}`,
+    );
+    assert.equal(body.value[0].M, "Top");
+    assert.equal(body.value[0].A, "Six");
+  });
+
+  it("sorted by 64 bits", async () => {
+    const { body } = await get(
+      `${s.v4}/Items?$orderby=${encodeURIComponent("Bg desc,ID")}&$select=ID&$top=1`,
+    );
+    assert.equal(body.value[0].ID, 1);
+  });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);

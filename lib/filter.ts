@@ -676,12 +676,21 @@ function evaluateLambda(
   };
   // Value of a collection-valued property's item: the item, or a field of a complex item
   const itemValue = (item: unknown, rest: string): Value => {
-    if (!rest) return { value: item, type: prop?.elementType ?? null };
+    if (!rest)
+      return {
+        value: item,
+        type: prop?.elementType ?? null,
+        enumOf: prop?.enumType,
+      };
     const field = prop?.complexType && own(prop.complexType.properties, rest);
     if (!field)
       throw new Error(`Unknown property ${node.variable}/${rest} in $filter`);
     const fields = item as Record<string, unknown> | null | undefined;
-    return { value: fields?.[rest] ?? null, type: field.type };
+    return {
+      value: fields?.[rest] ?? null,
+      type: field.type,
+      enumOf: field.enumType,
+    };
   };
   const scoped = (item: unknown): Resolve => {
     const inner = (_: Row, path: string): Value => {

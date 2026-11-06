@@ -119,7 +119,8 @@ export interface EnumType {
   namespace: string;
   underlyingType?: string;
   isFlags: boolean;
-  members: { name: string; value?: string }[];
+  // value: its number, as text; one is always given (see enumMembers in metadata.ts)
+  members: { name: string; value: string }[];
 }
 
 // A property, as normalizeProperty reads it and resolveTypeRef completes it

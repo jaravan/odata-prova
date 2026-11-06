@@ -447,44 +447,51 @@ function enumNamed(model: Model, name: string): EnumType | undefined {
 
 // An enum's value as its member's name, given by name or by number; several, for flags
 function enumValue(value: unknown, type: EnumType): string {
-  const given = String(value);
-  const found = new Set<EnumType["members"][number]>();
-  for (const part of type.isFlags ? given.split(",") : [given]) {
-    const text = part.trim();
+  if (!type.isFlags) {
+    const text = String(value).trim();
     const member = type.members.find(
-      (m) => m.name === text || String(m.value) === text,
+      (m) => m.name === text || m.value === text,
     );
-    const bits = Number(text);
-    if (member) found.add(member);
-    else if (type.isFlags && /^\d+$/.test(text)) {
-      // A combined value, 3 for R,W: its members have to make it up
-      const parts = type.members.filter(
-        (m) => m.value && (bits & Number(m.value)) === Number(m.value),
-      );
-      if (parts.reduce((all, m) => all | Number(m.value), 0) !== bits)
-        throw invalid(value, type.name);
-      parts.forEach((m) => found.add(m));
-    } else throw invalid(value, type.name);
+    if (!member) throw invalid(value, type.name);
+    return member.name;
   }
-  // One spelling for one value: compared, grouped and counted as text
-  return [...found]
-    .sort((a, b) => Number(a.value) - Number(b.value))
+  // One spelling for one value, as it's compared, grouped and counted as text: the largest
+  // members that make it up, so R,W and RW are one where a member stands for both
+  const bits = enumNumber(value, type);
+  const members = type.members
+    .map((m) => ({ name: m.name, bits: BigInt(m.value) }))
+    .sort((a, b) => (a.bits < b.bits ? 1 : a.bits > b.bits ? -1 : 0));
+  if (bits === 0n) {
+    const none = members.find((m) => m.bits === 0n);
+    if (!none) throw invalid(value, type.name);
+    return none.name;
+  }
+  let left = bits;
+  const used = members.filter((m) => {
+    if (!m.bits || (bits & m.bits) !== m.bits || !(left & m.bits)) return false;
+    left &= ~m.bits;
+    return true;
+  });
+  if (left) throw invalid(value, type.name);
+  return used
+    .reverse()
     .map((m) => m.name)
     .join(",");
 }
 
 // An enum's value as a number, which is what orders and compares it: a member, several for a
-// flags type, or the number itself
-function enumNumber(value: unknown, type: EnumType): number {
+// flags type, or the number itself. A bigint: flags go up to 64 bits, past what | keeps of a
+// number, and past a double's digits.
+function enumNumber(value: unknown, type: EnumType): bigint {
   return String(value)
     .split(",")
     .reduce((all, part) => {
       const text = part.trim();
       const member = type.members.find((m) => m.name === text);
       if (!member && !/^-?\d+$/.test(text)) throw invalid(value, type.name);
-      const n = Number(member ? member.value : text);
+      const n = BigInt(member ? member.value : text);
       return type.isFlags ? all | n : n;
-    }, 0);
+    }, 0n);
 }
 
 function elementToInternal(value: unknown, prop: Property): PropertyValue {
