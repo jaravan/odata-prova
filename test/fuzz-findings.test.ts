@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, send, type TestServer } from "./helpers.ts";
+import { start, get, send, ORDER, type TestServer } from "./helpers.ts";
 
 // What fuzzing the server found, each the smallest request that shows it
 
@@ -133,4 +133,52 @@ describe("an update that says two things of a foreign key", () => {
     assert.equal(r.status, 400);
     assert.match(r.body.error.message, /removes the link/);
   });
+});
+
+describe("a next link is one the server can read", () => {
+  let s: TestServer;
+  const order = { ...ORDER };
+  const item = (n: number) => ({
+    ItemPosition: `000${n}`,
+    Material: "M",
+    Description: "d",
+    Quantity: "1.000",
+    Unit: "EA",
+    NetPrice: "1.00",
+    Currency: "EUR",
+  });
+
+  before(async () => {
+    s = await start(undefined, { pageSize: 1 });
+  });
+  after(() => s.close());
+
+  for (const id of ["a/b", "50%", "é x"])
+    it(`of a navigation under the key ${id}`, async () => {
+      const created = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+        ...order,
+        PurchaseOrderId: id,
+      });
+      assert.equal(created.status, 201);
+      const url = `${s.base}${created.headers.get("location")}`;
+      for (const n of [1, 2])
+        assert.equal(
+          (
+            await send("POST", `${url}/Items`, {
+              ...item(n),
+              PurchaseOrderId: id,
+            })
+          ).status,
+          201,
+        );
+      const nav = await get(`${url}/Items`);
+      assert.equal(nav.status, 200);
+      const next = await get(`${s.base}${nav.body["@odata.nextLink"]}`);
+      assert.equal(next.status, 200);
+      assert.equal(next.body.value[0].ItemPosition, "0002");
+
+      const expanded = await get(`${url}?$expand=Items`);
+      const link = expanded.body["Items@odata.nextLink"];
+      assert.equal((await get(`${s.base}${link}`)).status, 200);
+    });
 });

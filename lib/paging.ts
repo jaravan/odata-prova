@@ -3,6 +3,7 @@
 // delta.ts).
 
 import type { ODataVersion, QueryNode, ResponseOptions, Row } from "./model.ts";
+import { serviceUrlPath } from "./query.ts";
 
 // Server-driven paging: a response holds at most a page of the rows the query options
 // leave, and links to the next page with a $skiptoken, the offset where it starts among
@@ -24,8 +25,9 @@ function paging(
 }
 
 // The request's URL with some of its query options changed (undefined: left out): its path
-// from the root, and its query options as they came, which are kept readable ($, commas,
-// slashes and colons unescaped)
+// from the root, with the escapes it keeps as they are (a key's %2F, see decodePath), and its
+// query options as they came, which are kept readable ($, commas, slashes and colons
+// unescaped).
 function requestLink(
   path: string,
   query: Record<string, unknown>,
@@ -34,7 +36,7 @@ function requestLink(
   const options = Object.entries({ ...query, ...changes })
     .filter(([, value]) => value !== undefined)
     .map(([name, value]) => `${name}=${optionValue(value)}`);
-  return `${encodeURI(path)}?${options.join("&")}`;
+  return `${serviceUrlPath(path)}?${options.join("&")}`;
 }
 
 // A query option's value in a link, kept readable: $, commas, slashes and colons unescaped
@@ -45,7 +47,8 @@ function optionValue(value: unknown): string {
 }
 
 // The link to the rest of an expanded collection: the navigation under its entity's URL,
-// with the expand's own options (options) and the $skiptoken of the next page
+// with the expand's own options (options) and the $skiptoken of the next page. entityUri has
+// its key's escapes already.
 function expandLink(
   entityUri: string,
   navigation: string,
@@ -55,7 +58,7 @@ function expandLink(
   const query = [...options, ["$skiptoken", String(skiptoken)]].map(
     ([name, value]) => `${name}=${optionValue(value)}`,
   );
-  return `${encodeURI(`${entityUri}/${navigation}`)}?${query.join("&")}`;
+  return `${serviceUrlPath(`${entityUri}/${navigation}`)}?${query.join("&")}`;
 }
 
 // The page size of a GET (see paging): the server's, or the smaller one a V4 client asks for
