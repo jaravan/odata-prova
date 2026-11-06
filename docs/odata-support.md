@@ -311,6 +311,8 @@ Creating and editing work the way Fiori Elements drives them, with the actions t
 | `DELETE` on a draft root                           | Discards the draft.                                                                                                                                                                                                                                                                                                                                    |
 | `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                                                                                                                                                                                                                           |
 
+A link changes what a `PATCH` does, so it meets the same rules: `$ref`, `$links` or a bind that changes an active entity is a `400`, and a draft child stays in the draft it was created in.
+
 Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`.
 
 Each of these requests is atomic, and inside a `$batch` changeset it rolls back with the rest. There is one user, `anonymous`, who owns every draft. `DraftAdministrativeData` says so, and is read-only.

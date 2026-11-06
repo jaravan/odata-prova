@@ -97,6 +97,25 @@ function compositionColumns(model: Model, setName: string): string[] {
   );
 }
 
+// A link changes the same rows a PATCH does, so it meets what a PATCH meets (see beforeUpdate in
+// draft.ts): an active entity changes through its draft, and what holds a node in its draft is
+// the server's. columns: what the link writes on row.
+function checkDraftRow(
+  model: Model,
+  setName: string,
+  type: EntityType,
+  row: Row,
+  columns: string[] = [],
+): void {
+  if (!model.entitySets[setName]?.draft) return;
+  if (row.IsActiveEntity)
+    throw invalid(
+      `${type.name} is draft-enabled: change its draft, not the active entity`,
+    );
+  if (compositionColumns(model, setName).some((c) => columns.includes(c)))
+    throw invalid(`${type.name} stays in the draft it was created in`);
+}
+
 // Clears columns that hold a link, which they must be able to: a key or a required property
 // can't be null, so the link can only be replaced
 function clear(
@@ -127,11 +146,26 @@ function link(
   target: Row,
 ): void {
   const nav = changeable(type, anyNav);
+  const targetType = svc.entitySet(nav.targetSet).type;
+  const sourceColumns = nav.join.map(([src]) => src);
+  checkDraftRow(
+    svc.model,
+    setName,
+    type,
+    row,
+    nav.dependentSide === "source" ? sourceColumns : [],
+  );
+  checkDraftRow(
+    svc.model,
+    nav.targetSet,
+    targetType,
+    target,
+    nav.dependentSide === "target" ? nav.join.map(([, tgt]) => tgt) : [],
+  );
   if (nav.links) {
     addLink(svc.model, svc.store, nav, row, target);
     return;
   }
-  const targetType = svc.entitySet(nav.targetSet).type;
   if (nav.dependentSide === "source") {
     // A foreign key in the entity's key (an item's order) is set when it's created, by
     // boundValues in writes.ts, and can't change after
@@ -174,13 +208,9 @@ function unlinkTarget(
   targetType: EntityType,
   target: Row,
 ): void {
-  clear(
-    svc.store,
-    nav.targetSet,
-    targetType,
-    target,
-    nav.join.map(([, tgt]) => tgt),
-  );
+  const columns = nav.join.map(([, tgt]) => tgt);
+  checkDraftRow(svc.model, nav.targetSet, targetType, target, columns);
+  clear(svc.store, nav.targetSet, targetType, target, columns);
   renewETag(svc.store, nav.targetSet, targetType, target);
 }
 
@@ -196,6 +226,13 @@ function unlink(
 ): void {
   const nav = changeable(type, anyNav);
   const targets = target ? [target] : svc.related(row, type, nav).rows;
+  checkDraftRow(
+    svc.model,
+    setName,
+    type,
+    row,
+    nav.dependentSide === "source" ? nav.join.map(([src]) => src) : [],
+  );
   if (nav.links) {
     for (const t of targets) removeLink(svc.model, svc.store, nav, row, t);
     return;
