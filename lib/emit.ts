@@ -22,7 +22,8 @@ interface NamespaceTypes {
 }
 
 function typesByNamespace(model: Model): Record<string, NamespaceTypes> {
-  const out: Record<string, NamespaceTypes> = {};
+  // No prototype: a namespace is any name, constructor included
+  const out = Object.create(null) as Record<string, NamespaceTypes>;
   const ns = (name: string) =>
     (out[name] ||= { enumTypes: [], complexTypes: [], entityTypes: [] });
   for (const t of Object.values(model.enumTypes))

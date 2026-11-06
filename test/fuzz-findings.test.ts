@@ -1,5 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   start,
@@ -10,6 +12,7 @@ import {
   ORDER,
   type TestServer,
 } from "./helpers.ts";
+import { createApp } from "../lib/app.ts";
 
 // What fuzzing the server found, each the smallest request that shows it
 
@@ -345,4 +348,33 @@ describe("a JSON number a double can't hold", () => {
     const r = await raw('{"ID":906,"V":0e400,"Price":0.0e-5}');
     assert.equal(r.status, 201);
   });
+});
+
+describe("startup, from what an editor or a metadata.xml may hold", () => {
+  const model = (files: Record<string, string>) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "odata-prova-"));
+    for (const [name, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+      fs.writeFileSync(path.join(dir, name), text);
+    }
+    return dir;
+  };
+  const metadata = (namespace: string) =>
+    `<?xml version="1.0"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="${namespace}" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EntityType Name="T"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType><EntityContainer Name="C"><EntitySet Name="Ts" EntityType="${namespace}.T"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
+
+  for (const namespace of ["hasOwnProperty", "constructor", "toString"])
+    it(`a namespace named ${namespace} starts`, () => {
+      const dir = model({ "metadata.xml": metadata(namespace) });
+      try {
+        const { model: parsed } = createApp({
+          modelDir: dir,
+          v2Path: "/2",
+          v4Path: "/4",
+          log: () => {},
+        });
+        assert.ok(parsed.entitySets.Ts);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
 });
