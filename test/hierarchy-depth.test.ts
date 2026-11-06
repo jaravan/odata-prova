@@ -133,12 +133,54 @@ describe("a hierarchy with a cycle", () => {
   };
   const H = "$root/Genres,GenresHierarchy,ID";
 
-  for (const kind of ["ancestors", "descendants"])
-    it(`${kind} of a node leaves it out, without keep start`, async () => {
-      assert.deepEqual(await ids(`${kind}(${H},filter(ID eq 1))`), [2, 3]);
+  // The cycle 1 -> 3 -> 2 -> 1 is cut as TopLevels cuts it: at the first row, so 1 is the root
+  for (const [apply, expected] of [
+    [`ancestors(${H},filter(ID eq 1))`, []],
+    [`ancestors(${H},filter(ID eq 3))`, [1, 2]],
+    [`descendants(${H},filter(ID eq 1))`, [2, 3]],
+    [`descendants(${H},filter(ID eq 3))`, []],
+  ] as const)
+    it(`${apply.slice(0, 44)} agrees with TopLevels`, async () => {
+      assert.deepEqual(await ids(apply), expected);
     });
 
-  it("each of two start nodes is a relative of the other", async () => {
-    assert.deepEqual(await ids(`ancestors(${H},filter(ID lt 3))`), [1, 2, 3]);
+  it("a node hanging off a cycle keeps its parent", async () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "cycle-"));
+    fs.mkdirSync(path.join(other, "data"));
+    fs.copyFileSync(
+      path.join(SOURCE, "metadata.xml"),
+      path.join(other, "metadata.xml"),
+    );
+    const [header] = fs
+      .readFileSync(path.join(SOURCE, "data", "Genres.csv"), "utf8")
+      .split(/\r?\n/);
+    const separator = header.includes(";") ? ";" : ",";
+    const columns = header.split(separator);
+    const row = (id: number, parent: number) =>
+      columns
+        .map((c) =>
+          /^id$/i.test(c)
+            ? id
+            : /parent/i.test(c)
+              ? parent
+              : /name/i.test(c)
+                ? `N${id}`
+                : "",
+        )
+        .join(separator);
+    fs.writeFileSync(
+      path.join(other, "data", "Genres.csv"),
+      [header, row(9, 1), row(1, 2), row(2, 1)].join("\n"),
+    );
+    const c = await start(other);
+    try {
+      const apply = encodeURIComponent(`ancestors(${H},filter(ID eq 9))`);
+      const res = await fetch(`${c.v4}/Genres?$apply=${apply}`);
+      const body = (await res.json()) as { value: { ID: number }[] };
+      assert.ok(body.value.some((n) => n.ID === 1));
+    } finally {
+      await c.close();
+      fs.rmSync(other, { recursive: true, force: true });
+    }
   });
 });

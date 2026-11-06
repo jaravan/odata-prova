@@ -390,15 +390,26 @@ function forestOf(
     }
   };
   roots.forEach(reach);
-  for (const row of rows)
-    if (!reached.has(row)) {
-      const siblings = children.get(parentOf.get(row)!)!;
-      siblings.splice(siblings.indexOf(row), 1);
-      roots.push(row);
-      reach(row);
-    }
-  // Roots in the rows' order, those that broke a cycle included
+  // What's left leads up to a cycle, which is cut at its first row: not at a node that only
+  // hangs off it, whose parent is fine
   const index = new Map(rows.map((r, i) => [r, i]));
+  for (const row of rows) {
+    if (reached.has(row)) continue;
+    const seen = new Set<Row>();
+    let at = row;
+    while (!seen.has(at)) {
+      seen.add(at);
+      at = parentOf.get(at)!;
+    }
+    let first = at;
+    for (let on = parentOf.get(at)!; on !== at; on = parentOf.get(on)!)
+      if (index.get(on)! < index.get(first)!) first = on;
+    const siblings = children.get(parentOf.get(first)!)!;
+    siblings.splice(siblings.indexOf(first), 1);
+    roots.push(first);
+    reach(first);
+  }
+  // Roots in the rows' order, those that broke a cycle included
   roots.sort((a, b) => index.get(a)! - index.get(b)!);
   for (const root of roots) parentOf.delete(root);
   return { roots, children, byId, parentOf };
@@ -464,32 +475,28 @@ function relatives(
   const h = hierarchyOf(svc, type, t);
   const id = (row: Row) => String(row[h.nodeProperty]);
   const start = new Set(run(rows, t.transformations).rows.map(id));
-  // Each node's parent in the whole hierarchy
-  const nav = svc.navigation(type, h.parentNavigation)!;
+  // The whole hierarchy, cycles cut as for TopLevels, so that the two agree
+  const whole = forestOf(svc, svc.store.rows(t.set), type, h);
   const next = new Map<string, string[]>();
   const follow = (from: string, to: string) => {
     const known = next.get(from);
     if (known) known.push(to);
     else next.set(from, [to]);
   };
-  for (const row of svc.store.rows(t.set)) {
-    const parent = svc.related(row, type, nav).rows[0];
-    if (!parent || id(parent) === id(row)) continue;
+  for (const [row, parent] of whole.parentOf)
     if (t.kind === "ancestors") follow(id(row), id(parent));
     else follow(id(parent), id(row));
-  }
   // Out from the start nodes a level at a time, up to the distance. Each node is reached once,
-  // however deep the hierarchy and however many start nodes are on one path; a cycle ends there.
+  // however deep the hierarchy and however many start nodes are on one path.
   const wanted = new Set<string>();
-  let level = [...start].map((node) => ({ node, from: node }));
+  let level = [...start];
   for (let d = 0; level.length && d < (t.distance ?? Infinity); d++) {
-    const reached: typeof level = [];
-    for (const { node, from } of level)
+    const reached: string[] = [];
+    for (const node of level)
       for (const other of next.get(node) ?? [])
-        // Round a cycle, a node isn't its own relative
-        if (other !== from && !wanted.has(other)) {
+        if (!wanted.has(other)) {
           wanted.add(other);
-          reached.push({ node: other, from });
+          reached.push(other);
         }
     level = reached;
   }
