@@ -92,3 +92,45 @@ describe("a link is held to what a PATCH is, in a draft", () => {
     assert.equal(chapter.book_ID, BOOK);
   });
 });
+
+describe("an update that says two things of a foreign key", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(fixture("Families"), { mockRows: 4 });
+  });
+  after(() => s.close());
+
+  it("a foreign key that disagrees with a bind -> 400, nothing changes", async () => {
+    const kid = (s.store.rows("Ks") as { ID: number; PID: number }[])[0];
+    const was = kid.PID;
+    const other = was === 1 ? 2 : 1;
+    const r = await send("PATCH", `${s.v4}/Ks(${kid.ID})`, {
+      PID: was,
+      "Parent@odata.bind": `Ps(${other})`,
+    });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error.code, "InvalidValue");
+    assert.equal(kid.PID, was);
+  });
+
+  it("one that agrees -> the link moves", async () => {
+    const kid = (s.store.rows("Ks") as { ID: number; PID: number }[])[0];
+    const other = kid.PID === 1 ? 2 : 1;
+    const r = await send("PATCH", `${s.v4}/Ks(${kid.ID})`, {
+      PID: other,
+      "Parent@odata.bind": `Ps(${other})`,
+    });
+    assert.equal(r.status, 204);
+    assert.equal(kid.PID, other);
+  });
+
+  it("a foreign key with a bind that removes the link -> 400", async () => {
+    const kid = (s.store.rows("Ks") as { ID: number; PID: number }[])[0];
+    const r = await send("PATCH", `${s.v4}/Ks(${kid.ID})`, {
+      PID: kid.PID,
+      "Parent@odata.bind": null,
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.body.error.message, /removes the link/);
+  });
+});

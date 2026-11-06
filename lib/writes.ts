@@ -399,10 +399,17 @@ function checkBoundKeys(
   binds: ReturnType<typeof bindsOf>,
 ): void {
   for (const { field, nav, targets } of binds) {
-    if (nav.links || nav.dependentSide !== "source" || !targets.length)
-      continue;
-    for (const [src, tgt] of nav.join)
-      checkAgrees(type, fields, src, targets[0][tgt], field);
+    if (nav.links || nav.dependentSide !== "source") continue;
+    for (const [src, tgt] of nav.join) {
+      if (targets.length)
+        checkAgrees(type, fields, src, targets[0][tgt], field);
+      else if (own(fields, src) !== undefined && own(fields, src) !== null)
+        throw new HttpError(
+          400,
+          `${src} is ${String(own(fields, src))}, and ${field} removes the link`,
+          "InvalidValue",
+        );
+    }
   }
 }
 
@@ -581,6 +588,7 @@ function update(
   // collection's besides the others. Resolved before anything changes, so a bad one changes
   // nothing.
   const binds = bindsOf(svc, entityType, fields);
+  checkBoundKeys(entityType, fields, binds);
   checkNoInline(svc, entityType, row, fields, binds);
   svc.store.update(setName, row, changes);
   for (const { nav, targets } of binds) {
