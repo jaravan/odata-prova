@@ -1,7 +1,15 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send, ORDER, type TestServer } from "./helpers.ts";
+import {
+  start,
+  get,
+  send,
+  batch,
+  batchResponses,
+  ORDER,
+  type TestServer,
+} from "./helpers.ts";
 
 // What fuzzing the server found, each the smallest request that shows it
 
@@ -222,5 +230,14 @@ describe("$ in a path may be escaped", () => {
       (await get(`${s.v4}/PurchaseOrderSet('a%2524b')`)).status,
       404,
     );
+  });
+
+  it("$batch by any other method -> 405, a $batch in a $batch stays what it was", async () => {
+    assert.equal((await get(`${s.v4}/$batch`)).status, 405);
+    assert.equal((await send("DELETE", `${s.v4}/$batch`)).status, 405);
+    const res = await batch(s.v4, [
+      { method: "POST", url: "$batch", body: {} },
+    ]);
+    assert.equal(batchResponses(res.text)[0].status, 404);
   });
 });

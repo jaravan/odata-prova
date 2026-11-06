@@ -139,6 +139,9 @@ function handle(
     if (method !== "GET") throw new HttpError(405, "Method not allowed");
     return protocol.serviceDocument(svc);
   }
+  // A POST has its own route: one here is inside a $batch, where it names nothing
+  if (resourcePath === "$batch" && method !== "POST")
+    throw new HttpError(405, "$batch is a POST");
   if (resourcePath === "$metadata") {
     if (method !== "GET") throw new HttpError(405, "Method not allowed");
     return {
