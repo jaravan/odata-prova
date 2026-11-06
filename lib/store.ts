@@ -119,7 +119,7 @@ const keepDigits = ((
     : value) as (key: string, value: unknown) => unknown;
 
 function jsonRows(text: string): Record<string, unknown>[] {
-  const rows: unknown = JSON.parse(text, keepDigits);
+  const rows: unknown = JSON.parse(text.replace(/^\uFEFF/, ""), keepDigits);
   if (!Array.isArray(rows))
     throw new Error('a JSON data file is a list of rows: [{ "ID": 1 }, ...]');
   rows.forEach((row, i) => {

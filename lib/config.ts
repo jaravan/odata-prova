@@ -156,7 +156,10 @@ function readChain(file: string, shared: boolean, chain: string[]): Config {
     );
   let config: { [key: string]: Json };
   try {
-    config = JSON.parse(fs.readFileSync(file, "utf8")) as typeof config;
+    // A byte order mark starts what Notepad saves, as in a data file (see store.ts)
+    config = JSON.parse(
+      fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""),
+    ) as typeof config;
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     const reason =

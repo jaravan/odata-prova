@@ -399,4 +399,19 @@ describe("startup, from what an editor or a metadata.xml may hold", () => {
         fs.rmSync(dir, { recursive: true, force: true });
       }
     });
+
+  it("a JSON data file and config.json may start with a byte order mark", async () => {
+    const dir = model({
+      "metadata.xml": metadata("N"),
+      "data/Ts.json": '﻿[{"ID":7}]',
+      "config.json": '﻿{"mock":{}}',
+    });
+    try {
+      const s = await start(dir);
+      assert.equal((await get(`${s.v4}/Ts(7)`)).status, 200);
+      await s.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
