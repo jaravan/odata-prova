@@ -528,6 +528,10 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
           status: 204,
           headers: {
             Location: location,
+            // With no body, this is what says which entity it is, in V4
+            ...(protocol.version === "4.0"
+              ? { "OData-EntityId": location }
+              : {}),
             "Preference-Applied": "return=minimal",
           },
         };

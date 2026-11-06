@@ -270,3 +270,32 @@ describe("what a create says twice", () => {
     assert.equal(fine.status, 201);
   });
 });
+
+describe("a create answered with no content", () => {
+  it("says which entity with OData-EntityId, in V4", async () => {
+    const s = await start(FAMILIES);
+    try {
+      const res = await send(
+        "POST",
+        `${s.v4}/Ps`,
+        { ID: 1 },
+        { prefer: "return=minimal" },
+      );
+      assert.equal(res.status, 204);
+      assert.equal(
+        res.headers.get("odata-entityid"),
+        res.headers.get("location"),
+      );
+      assert.match(res.headers.get("odata-entityid")!, /Ps\(1\)$/);
+      const v2 = await send(
+        "POST",
+        `${s.v2}/Ps`,
+        { ID: 2 },
+        { prefer: "return=minimal" },
+      );
+      assert.equal(v2.headers.get("odata-entityid"), null);
+    } finally {
+      await s.close();
+    }
+  });
+});
