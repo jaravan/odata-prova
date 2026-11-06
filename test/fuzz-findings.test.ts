@@ -278,3 +278,29 @@ describe("$skiptoken is a collection's", () => {
     }
   });
 });
+
+describe("length, indexof and substring count characters, as MaxLength does", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  for (const filter of [
+    "length('😀') eq 1",
+    "length('😀b') eq 2",
+    "indexof('😀b','b') eq 1",
+    "indexof('😀b','x') eq -1",
+    "substring('😀b',1) eq 'b'",
+    "substring('😀b',0,1) eq '😀'",
+    "substring('a😀b',1,1) eq '😀'",
+    "substring('😀b',-1) eq '😀b'",
+    "substring('😀b',5) eq ''",
+    "length('abc') eq 3",
+    "substring('abc',1,1) eq 'b'",
+  ])
+    it(filter, async () => {
+      const url = `${s.v4}/PurchaseOrderSet?$filter=${encodeURIComponent(filter)}`;
+      assert.equal((await get(url)).body.value.length, 5);
+    });
+});

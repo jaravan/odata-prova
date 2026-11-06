@@ -98,6 +98,8 @@ A `$select` of something that is neither a property nor a navigation of the type
 
 Integers and decimals in `$filter` and `$compute` keep every digit: comparisons, and `add`, `sub`, `mul` and `mod`. A quotient of decimals has no end, so `div` and `divby` give 15 significant digits. A `Double` on either side compares as a double. Sums and averages in `$apply` are exact. The spec doesn't say what happens to an integer result outside its type, so it's a `400`, as a database would refuse it: `Edm.Int32` unless an operand is an `Edm.Int64`, and a number too large for an `Edm.Int32` is one.
 
+`length`, `indexof` and `substring` count characters, as `MaxLength` does: an emoji, which is a pair of surrogates, is one, and `substring` doesn't cut it in half.
+
 A time property compares as a response shows it: on V4, to its `Precision`, none if it has none. A GUID foreign key finds its parent in either case.
 
 Arithmetic in `$filter` follows the spec's numeric promotion:

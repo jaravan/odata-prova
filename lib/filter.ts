@@ -914,6 +914,22 @@ function rounded(name: string, v: Value): Value {
   };
 }
 
+// A character as MaxLength counts it: a pair of surrogates is one, which substring doesn't cut
+// in half. Text without any, by far most of it, is read as it is.
+const SURROGATE = /[\ud800-\udfff]/;
+
+function charCount(text: string): number {
+  if (!SURROGATE.test(text)) return text.length;
+  spend(text.length);
+  return [...text].length;
+}
+
+function substring(text: string, start: number, end?: number): string {
+  if (!SURROGATE.test(text)) return text.substring(start, end);
+  spend(text.length);
+  return [...text].slice(Math.max(start, 0), end).join("");
+}
+
 function callFunction(name: string, args: Value[]): Value {
   for (const arg of args)
     if (typeof arg.value === "object" && !isNull(arg))
@@ -954,17 +970,19 @@ function callFunction(name: string, args: Value[]): Value {
     case "trim":
       return string(S(0).trim());
     case "length":
-      return number(S(0).length);
-    case "indexof":
-      return number(S(0).indexOf(S(1)));
+      return number(charCount(S(0)));
+    case "indexof": {
+      const at = S(0).indexOf(S(1));
+      return number(at === -1 ? -1 : charCount(S(0).slice(0, at)));
+    }
     case "concat":
       spend(S(0).length + S(1).length);
       return string(S(0) + S(1));
     case "substring":
       return string(
         args.length > 2
-          ? S(0).substring(N(1), N(1) + Math.max(N(2), 0)) // it would swap them
-          : S(0).substring(N(1)),
+          ? substring(S(0), N(1), N(1) + Math.max(N(2), 0)) // it would swap them
+          : substring(S(0), N(1)),
       );
     case "replace": {
       // Before the split as well as the join: a split of text long enough ends the process,
