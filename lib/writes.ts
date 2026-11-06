@@ -4,6 +4,7 @@
 
 import {
   LongNumber,
+  isObject,
   isNumericType,
   joinText,
   propToInternal,
@@ -225,12 +226,6 @@ function checkRequired(
 // What the server can't hold (see generate.ts): the row has none to give, nor can a client send
 // one, so one that's required is left alone rather than blocking every write of the row
 const isSpatial = (type: string) => /^Edm\.(Geography|Geometry)/.test(type);
-
-const isObject = (body: unknown): body is Record<string, unknown> =>
-  !!body &&
-  typeof body === "object" &&
-  !Array.isArray(body) &&
-  !(body instanceof LongNumber);
 
 function required(name: string): HttpError {
   return new HttpError(400, `Property ${name} is required`, "RequiredProperty");

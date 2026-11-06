@@ -357,6 +357,14 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
   }
 }
 
+// What a body of an entity has to be. JSON can say many other things, which the object
+// spread of a body would read as nothing at all.
+const isObject = (body: unknown): body is Record<string, unknown> =>
+  !!body &&
+  typeof body === "object" &&
+  !Array.isArray(body) &&
+  !(body instanceof LongNumber);
+
 // A decimal as text JSON can carry as a number, its digits as written: "+5" -> "5", ".5" ->
 // "0.5", "1e3" -> "1000" (so that V4 can write it unquoted, see toWire). One with more digits
 // than any decimal holds, such as 1e400, is refused.
@@ -652,6 +660,7 @@ export {
   decimalText,
   joinText,
   enumNamed,
+  isObject,
   enumValue,
   INTEGER_RANGES,
   inIntegerRange,

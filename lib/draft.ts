@@ -31,6 +31,7 @@ import type { Store } from "./store.ts";
 import { HttpError, own } from "./query.ts";
 import { renewETag } from "./etag.ts";
 import { checkRequired, create } from "./writes.ts";
+import { isObject } from "./types.ts";
 import type { WriteHost } from "./writes.ts";
 
 // The draft actions an entity set's annotation can name
@@ -461,7 +462,7 @@ class Drafts {
       const values = Object.fromEntries(
         Object.entries(params).filter(([, v]) => v !== null),
       );
-      const input = body && typeof body === "object" ? body : {};
+      const input = isObject(body) ? body : {};
       return this.create(setName, type, undefined, { ...input, ...values });
     }
     if (!row) throw new HttpError(400, `${op.name} is called on an entity`);
@@ -612,7 +613,7 @@ class Drafts {
         400,
         `${type.name} is draft-enabled: change its draft, not the active entity`,
       );
-    if (!body || typeof body !== "object") return body;
+    if (!isObject(body)) return body;
     const out: Record<string, unknown> = { ...body };
     for (const name of DRAFT_COLUMNS)
       if (Object.hasOwn(type.properties, name)) out[name] = row[name];
@@ -643,12 +644,11 @@ class Drafts {
       );
     if (composed && composed.row.IsActiveEntity)
       throw this.activeNodeError(type);
+    if (body !== undefined && body !== null && !isObject(body))
+      throw new HttpError(400, "Request body must be a JSON object");
     return this.atomic(() => {
       const uuid = composed ? composed.row[UUID] : this.newAdmin();
-      const input = (body && typeof body === "object" ? body : {}) as Record<
-        string,
-        unknown
-      >;
+      const input = isObject(body) ? body : {};
       const row = create(
         this.svc,
         setName,

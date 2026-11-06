@@ -859,3 +859,60 @@ describe("a value the server can't hold", () => {
     }
   });
 });
+
+describe("a body that isn't an object, in a $batch", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "mine", Qty: 5 });
+  });
+  afterEach(() => s.close());
+
+  const part = async (
+    root: string,
+    method: string,
+    url: string,
+    json: string,
+  ) => {
+    const res = await fetch(`${root}/$batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed;boundary=b" },
+      body: `--b\r\nContent-Type: multipart/mixed;boundary=c\r\n\r\n--c\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\nContent-ID: 1\r\n\r\n${method} ${url} HTTP/1.1\r\nContent-Type: application/json\r\n\r\n${json}\r\n--c--\r\n--b--`,
+    });
+    return batchResponses(await res.text())[0];
+  };
+
+  for (const [version, method] of [
+    ["v4", "PUT"],
+    ["v4", "PATCH"],
+    ["v2", "PUT"],
+    ["v2", "MERGE"],
+  ] as const)
+    for (const json of ["[]", "12345678901234567890123"])
+      it(`${version} ${method} ${json} is a 400, and the row stays`, async () => {
+        const res = await part(s[version], method, "Items(1)", json);
+        assert.equal(res.status, 400);
+        assert.match(JSON.stringify(res.body), /JSON object/);
+        const { body } = await get(`${s.v4}/Items(1)`);
+        assert.equal(body.Name, "mine");
+        assert.equal(body.Qty, 5);
+      });
+
+  it("POST [] says the body is wrong, not that a key is missing", async () => {
+    const res = await part(s.v4, "POST", "Items", "[]");
+    assert.equal(res.status, 400);
+    assert.match(JSON.stringify(res.body), /JSON object/);
+  });
+
+  it("an object still resolves its references", async () => {
+    await send("POST", `${s.v4}/Kids`, { ID: 7 });
+    const res = await part(
+      s.v4,
+      "PATCH",
+      "Kids(7)",
+      '{"Item@odata.bind":"Items(1)"}',
+    );
+    assert.equal(res.status, 204);
+    assert.equal((await get(`${s.v4}/Kids(7)`)).body.ItemID, 1);
+  });
+});

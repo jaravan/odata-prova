@@ -6,7 +6,7 @@
 import type { Request, Response } from "express";
 import type { ODataResponse } from "./model.ts";
 import { HttpError, decodeUrl, own } from "./query.ts";
-import { keepLongNumbers } from "./types.ts";
+import { isObject, keepLongNumbers } from "./types.ts";
 import { MAX_RESPONSE, responseText, tooMuch } from "./work.ts";
 import type { ODataService } from "./service.ts";
 import type { Protocol } from "./protocol.ts";
@@ -145,7 +145,7 @@ function renderHttpResponsePart(
 
 // A body with its @odata.bind links to $<content id> as the URLs of what those requests made
 function withContentIds(body: unknown, refs: Record<string, string>): unknown {
-  if (!body || typeof body !== "object") return body;
+  if (!isObject(body)) return body;
   const resolve = (url: unknown) =>
     (typeof url === "string" &&
       url.startsWith("$") &&
