@@ -569,6 +569,29 @@ describe("a body that isn't an object", () => {
   });
 });
 
+describe("a V2 PUT", () => {
+  it("leaves what V2 can't see", async () => {
+    const s = await start(MODEL);
+    try {
+      await send("POST", `${s.v4}/Items`, {
+        ID: 1,
+        Tags: ["a"],
+        Addrs: [{ City: "A" }],
+      });
+      assert.equal(
+        (await send("PUT", `${s.v2}/Items(1)`, { Qty: 2 })).status,
+        204,
+      );
+      const { body } = await get(`${s.v4}/Items(1)`);
+      assert.equal(body.Qty, 2);
+      assert.deepEqual(body.Tags, ["a"]);
+      assert.equal(body.Addrs.length, 1);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe("enums, further", () => {
   let s: TestServer;
   before(async () => {

@@ -577,7 +577,9 @@ function update(
     if (entityType.keys.includes(p.name)) continue;
     if (Object.hasOwn(fields, p.name))
       changes[p.name] = propToInternal(fields[p.name], p);
-    else if (replace) changes[p.name] = propToInternal(p.defaultValue, p);
+    // A V2 client can't see a collection property, nor so send it: it's not being left out
+    else if (replace && !(svc.protocol.version === "2.0" && p.v2Omit))
+      changes[p.name] = propToInternal(p.defaultValue, p);
   }
   if (!draft) checkRequired(entityType, changes, Object.keys(changes), false);
   // Links to existing entities: a single-valued navigation's instead of the one before, a
