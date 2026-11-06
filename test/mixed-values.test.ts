@@ -205,3 +205,36 @@ describe("paths in an expression", () => {
     assert.equal(status, 400);
   });
 });
+
+describe("a field of a complex value", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Addr: { City: "A" } });
+    await send("POST", `${s.v4}/Items`, { ID: 2 });
+  });
+  after(() => s.close());
+
+  it("is served", async () => {
+    const { status, body } = await get(`${s.v4}/Items(1)/Addr/City`);
+    assert.equal(status, 200);
+    assert.equal(body.value, "A");
+    assert.match(body["@odata.context"], /Items\(1\)\/Addr\/City$/);
+  });
+
+  it("with its /$value", async () => {
+    const res = await fetch(`${s.v4}/Items(1)/Addr/City/$value`);
+    assert.equal(await res.text(), "A");
+  });
+
+  it("null, or in a complex value that's null, is a 204", async () => {
+    assert.equal((await get(`${s.v4}/Items(1)/Addr/Zip`)).status, 204);
+    assert.equal((await get(`${s.v4}/Items(2)/Addr/City`)).status, 204);
+  });
+
+  it("no such field is a 404 that says so", async () => {
+    const { status, body } = await get(`${s.v4}/Items(1)/Addr/Nope`);
+    assert.equal(status, 404);
+    assert.match(body.error.message, /Nope/);
+  });
+});

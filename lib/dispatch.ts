@@ -3,7 +3,7 @@
 // and hands it to what answers on where the walk ends: an operation (operations.ts), links
 // ($ref and $links, see references.ts), a property, a collection, or an entity.
 
-import { specialFloat } from "./types.ts";
+import { specialFloat, withPrecision } from "./types.ts";
 import { HttpError, decodeUrl, newNode, own } from "./query.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
@@ -283,8 +283,26 @@ function handle(
       throw new HttpError(400, `Cannot navigate ${seg.name} on a collection`);
     const nav = svc.navigation(type, seg.name);
     if (!nav) {
-      // Plain property access: Set(key)/Prop or Set(key)/Prop/$value
-      const prop = own(type.properties, seg.name);
+      // Plain property access: Set(key)/Prop or Set(key)/Prop/$value, and on through a
+      // complex value: Set(key)/Address/City
+      let prop = own(type.properties, seg.name);
+      let holder: Row | null = row;
+      let field = "";
+      while (prop?.complexType && i < segments.length - 1) {
+        const next: Property | undefined = own(
+          prop.complexType.properties,
+          segments[i + 1].name,
+        );
+        if (!next)
+          throw new HttpError(
+            404,
+            `${segments[i + 1].name} is not a field of ${prop.complexType.name}`,
+          );
+        holder = (holder?.[prop.name] ?? null) as Row | null;
+        field += `/${prop.name}`;
+        prop = next;
+        i++;
+      }
       if (!prop || i !== segments.length - 1)
         throw new HttpError(
           404,
@@ -294,7 +312,7 @@ function handle(
         throw new HttpError(400, `${seg.name} is a property, not a navigation`);
       return propertyRequest(
         request,
-        { setName, type, row },
+        { setName, type, row, holder, field },
         prop,
         wantValue,
         wantCount,
@@ -390,19 +408,46 @@ function draftAdminRequest(request: Request): ODataResponse {
 
 // A property of an entity: Set(key)/Prop, its raw value with /$value, or a collection's size
 // with /$count
+// What only a collection has. Left to pass on one entity, a mistake in it would go unseen.
+const COLLECTION_OPTIONS = [
+  "filter",
+  "orderby",
+  "search",
+  "top",
+  "skip",
+] as const;
+
 function propertyRequest(
   request: Request,
-  at: { setName: string; type: EntityType; row: Row },
+  at: {
+    setName: string;
+    type: EntityType;
+    row: Row;
+    // What holds the property, a complex value on the way to it, and the path to that
+    holder: Row | null;
+    field: string;
+  },
   prop: Property,
   wantValue: boolean,
   wantCount: boolean,
 ): ODataResponse {
   const { svc, method, q, opts } = request;
-  const { setName, type, row } = at;
+  const { setName, type, row, holder, field } = at;
   if (method !== "GET") throw new HttpError(405, "Method not allowed");
   if (q.apply)
     throw new HttpError(400, "$apply applies to reading a collection only");
-  const value = row[prop.name];
+  // A collection property pages; there's nothing else to do to a value
+  const refused = prop.isCollection
+    ? (["filter", "orderby", "search"] as const)
+    : COLLECTION_OPTIONS;
+  for (const option of refused)
+    if (q[option] !== undefined)
+      throw new HttpError(400, `$${option} doesn't apply to ${prop.name}`);
+  let value = holder?.[prop.name] ?? null;
+  if (prop.isCollection && Array.isArray(value)) {
+    const start = q.skip ?? 0;
+    value = value.slice(start, q.top === undefined ? undefined : start + q.top);
+  }
   if (wantCount && !prop.isCollection)
     throw new HttpError(
       400,
@@ -419,6 +464,16 @@ function propertyRequest(
     throw new HttpError(400, `$value applies to a primitive, not ${prop.name}`);
   // V4's null property has no body; V2 keeps its { d: { Name: null } }
   if (value === null && svc.protocol.version === "4.0") return { status: 204 };
+  if (
+    wantValue &&
+    value !== null &&
+    /^Edm\.(DateTimeOffset|TimeOfDay)$/.test(prop.type)
+  )
+    return {
+      status: 200,
+      contentType: "text/plain",
+      body: withPrecision(value, prop.precision),
+    };
   if (wantValue && prop.type === "Edm.Binary" && value !== null)
     return {
       status: 200,
@@ -433,7 +488,7 @@ function propertyRequest(
     };
   return svc.protocol.property(
     svc,
-    svc.entityUri(setName, type, row),
+    `${svc.entityUri(setName, type, row)}${field}`,
     prop,
     value,
     opts,
