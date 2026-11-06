@@ -798,7 +798,8 @@ function parseOperations(model: Model, schemas: Xml[], isV4: boolean): void {
 }
 
 // A DefaultValue that isn't a value of its property would turn up as a client's 400 on every
-// create, for a mistake that's the metadata's
+// create, for a mistake that's the metadata's. It's no reason to refuse the rest of a model
+// either, so it's dropped, and the startup log says so.
 function checkDefaults(model: Model): void {
   const types = [
     ...Object.values(model.entityTypes),
@@ -806,15 +807,20 @@ function checkDefaults(model: Model): void {
   ];
   for (const type of types)
     for (const p of Object.values(type.properties)) {
-      if (p.defaultValue === undefined || p.isCollection) continue;
-      const where = `metadata.xml: ${type.name}.${p.name}: DefaultValue "${p.defaultValue}"`;
+      if (p.defaultValue === undefined) continue;
+      let wrong: string | undefined;
       try {
         propToInternal(p.defaultValue, p);
+        if ([...p.defaultValue].length > Number(p.maxLength))
+          wrong = "longer than its MaxLength";
       } catch (e) {
-        throw new Error(`${where}: ${(e as Error).message}`, { cause: e });
+        wrong = (e as Error).message;
       }
-      if ([...p.defaultValue].length > Number(p.maxLength))
-        throw new Error(`${where} is longer than its MaxLength`);
+      if (!wrong) continue;
+      model.warnings.push(
+        `DefaultValue ignored: ${type.name}.${p.name}: "${p.defaultValue}": ${wrong}`,
+      );
+      delete p.defaultValue;
     }
 }
 

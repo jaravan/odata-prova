@@ -782,22 +782,41 @@ describe("a DefaultValue that isn't a value", () => {
 
   for (const property of [
     `<Property Name="D" Type="Edm.Int32" DefaultValue="abc"/>`,
+    `<Property Name="D" Type="Edm.Int32" DefaultValue="null"/>`,
+    `<Property Name="D" Type="Edm.Decimal" DefaultValue="0M"/>`,
+    `<Property Name="D" Type="Edm.Guid" DefaultValue="guid'00000000-0000-0000-0000-000000000000'"/>`,
     `<Property Name="D" Type="Edm.String" MaxLength="2" DefaultValue="long"/>`,
     `<Property Name="D" Type="Edm.Boolean" DefaultValue="maybe"/>`,
+    `<Property Name="D" Type="Collection(Edm.String)" DefaultValue="x"/>`,
   ])
-    it(`${property} stops the start, naming it`, () => {
-      assert.throws(
-        () => parseMetadata(schema(property)),
-        /metadata\.xml: A\.D: DefaultValue/,
+    it(`${property} -> a warning naming it, and it's left out`, async () => {
+      const model = parseMetadata(schema(property));
+      assert.ok(
+        model.warnings.some((w) => /DefaultValue ignored: A\.D: /.test(w)),
+        model.warnings.join("\n"),
       );
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "default-"));
+      fs.writeFileSync(path.join(dir, "metadata.xml"), schema(property));
+      const s = await start(dir);
+      try {
+        const r = await send("POST", `${s.v4}/As`, { ID: 1 });
+        assert.equal(r.status, 201, JSON.stringify(r.body));
+        assert.doesNotMatch(
+          (await get(`${s.v2}/$metadata`)).body,
+          /DefaultValue/,
+        );
+      } finally {
+        await s.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     });
 
-  it("one that fits is fine", () => {
-    assert.doesNotThrow(() =>
-      parseMetadata(
-        schema(`<Property Name="D" Type="Edm.Int32" DefaultValue="5"/>`),
-      ),
+  it("one that fits -> no warning", () => {
+    const model = parseMetadata(
+      schema(`<Property Name="D" Type="Edm.Int32" DefaultValue="5"/>`),
     );
+    assert.deepEqual(model.warnings, []);
+    assert.equal(model.entityTypes["N.A"].properties.D.defaultValue, "5");
   });
 });
 

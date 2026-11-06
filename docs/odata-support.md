@@ -31,6 +31,8 @@ Writes and data files are checked against the metadata. Each of these is a `400`
 - a foreign key that disagrees with what else the request says: a bind, an inline parent, or the parent in the URL. A single-valued navigation both bound and given inline is the same mistake
 - related entities where there is no creating them: inline in a `PATCH` or `PUT`, which link with `@odata.bind` instead, or a navigation's value that isn't an entity, or a list of them for a collection. A list for a single-valued navigation is one of these. In an update, `null` or an empty list is fine on a row with nothing there, as is V2's `__deferred`, but on a row that has some it would read as removing them, which is what `$ref` is for
 
+A property's `DefaultValue` is what a create or a `PUT` that leaves it out gets. One that isn't a value of the property (`abc` for an `Edm.Int32`, or V2's `0M`) is ignored, and left out of the generated `$metadata`, with a line in the startup log.
+
 Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Properties the client may not set (`Core.Computed`, or `sap:creatable` or `sap:updatable` `"false"`) aren't required. Neither is anything in a draft, which may be incomplete until it is activated.
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
