@@ -1067,6 +1067,48 @@ describe("what a $filter or $orderby can't mean, whatever rows there are", () =>
     });
 });
 
+describe("a number too long for any enum", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    s.store.audit = false;
+    for (let ID = 1; ID <= 2000; ID++)
+      s.store.insert("Items", { ID, Name: "n", Pm: "R", Col: "Red" });
+  });
+  after(() => s.close());
+
+  const digits = "1".repeat(300_000);
+  const inBatch = async (filter: string) => {
+    const url = `Items?$top=1&$select=ID&$filter=${encodeURIComponent(filter)}`;
+    const started = performance.now();
+    const res = await fetch(`${s.v4}/$batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed;boundary=b" },
+      body: `--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nGET ${url} HTTP/1.1\r\n\r\n\r\n--b--`,
+    });
+    const [part] = batchResponses(await res.text());
+    return { status: part.status, ms: performance.now() - started };
+  };
+
+  for (const filter of [
+    `Pm has ${digits}`,
+    `Pm has '${digits}'`,
+    `Pm eq ${digits}`,
+    `Col eq '${digits}'`,
+    `Pm has '${Array(100_000).fill("1").join(",")}'`,
+  ])
+    it(`${filter.slice(0, 12)}… is a quick 400`, async () => {
+      const { status, ms } = await inBatch(filter);
+      assert.equal(status, 400);
+      assert.ok(ms < 2000, `took ${ms}ms`);
+    });
+
+  it("the widest number there is still works", async () => {
+    assert.equal((await inBatch("Pm has 18446744073709551615")).status, 200);
+    assert.equal((await inBatch("Pm eq -9223372036854775808")).status, 200);
+  });
+});
+
 describe("a member's Value", () => {
   const model = (value: string) =>
     `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="F" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EnumType Name="Color"><Member Name="Red" Value="${value}"/></EnumType><EntityContainer Name="C"/></Schema></edmx:DataServices></edmx:Edmx>`;

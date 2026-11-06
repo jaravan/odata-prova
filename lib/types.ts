@@ -496,7 +496,9 @@ function enumNumber(value: unknown, type: EnumType): bigint {
     .reduce((all, part) => {
       const text = part.trim();
       const member = type.members.find((m) => m.name === text);
-      if (!member && !/^-?\d+$/.test(text)) throw invalid(value, type.name);
+      // Twenty digits hold any 64 bits. More would be read again for every row.
+      if (!member && !/^-?\d{1,20}$/.test(text))
+        throw invalid(value, type.name);
       const n = BigInt(member ? member.value : text);
       return type.isFlags ? all | n : n;
     }, 0n);
