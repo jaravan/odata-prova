@@ -377,4 +377,26 @@ describe("startup, from what an editor or a metadata.xml may hold", () => {
         fs.rmSync(dir, { recursive: true, force: true });
       }
     });
+
+  for (const name of ["__proto__", "constructor"])
+    it(`an action import of an action named ${name} is disabled, with a warning`, () => {
+      const dir = model({
+        "metadata.xml": metadata("N").replace(
+          "</EntityContainer>",
+          `<ActionImport Name="Go" Action="${name}"/></EntityContainer>`,
+        ),
+      });
+      try {
+        const { model: parsed } = createApp({
+          modelDir: dir,
+          v2Path: "/2",
+          v4Path: "/4",
+          log: () => {},
+        });
+        assert.deepEqual(parsed.operations.imports, {});
+        assert.ok(parsed.warnings.some((w) => w.includes("ActionImport Go")));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
 });

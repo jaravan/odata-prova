@@ -763,7 +763,7 @@ function parseOperations(model: Model, schemas: Xml[], isV4: boolean): void {
           ["FunctionImport", "Function"],
         ]) {
           for (const imp of container[tag] || []) {
-            const op = unbound[imp[attr]];
+            const op = own(unbound, imp[attr]);
             if (!op) {
               model.warnings.push(
                 `operation disabled: ${tag} ${
