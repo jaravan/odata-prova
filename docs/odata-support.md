@@ -35,7 +35,7 @@ Annotations (`@odata.etag`, `Nav@odata.bind`) and V2's `__metadata` are fine. Pr
 
 The tests load Northwind (V2 and V4) and TripPin unmodified, with every navigation working, see [test/fixtures/real](../test/fixtures/real/).
 
-An empty string is a value of a string, as ABAP's blank is, and not null: it passes `Nullable="false"`, and `Text eq ''` doesn't match null. It isn't a key. A JSON data file keeps it too, but a CSV cell left empty is null, since a CSV can't tell them apart. For any other type `""` is null.
+An empty string is a value of a string, as ABAP's blank is, and not null: it passes `Nullable="false"`, and `Text eq ''` doesn't match null. It isn't a key. A JSON data file keeps it too, but a CSV cell left empty is null, since a CSV can't tell them apart. An empty binary is a value too. For any other type `""` is null.
 
 ## SAP annotations in the generated V4 metadata
 

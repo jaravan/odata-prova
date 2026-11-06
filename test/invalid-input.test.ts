@@ -338,3 +338,52 @@ describe("text where a number is compared", () => {
     });
   }
 });
+
+describe("an empty binary", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "Stamps"));
+  });
+  after(() => s.close());
+
+  it("is a value, not null", async () => {
+    const { status, body } = await send("POST", `${s.v4}/Rs`, { ID: 1, B: "" });
+    assert.equal(status, 201);
+    assert.equal(body.B, "");
+    assert.equal((await get(`${s.v4}/Rs(1)`)).body.B, "");
+  });
+
+  it("is found as one, and isn't null", async () => {
+    const ids = async (expression: string) =>
+      (
+        await get(
+          `${s.v4}/Rs?$select=ID&$filter=${encodeURIComponent(expression)}`,
+        )
+      ).body.value.map((r: { ID: number }) => r.ID);
+    await send("POST", `${s.v4}/Rs`, { ID: 2 });
+    assert.deepEqual(await ids("B eq null"), [2]);
+    assert.deepEqual(await ids("B ne null"), [1]);
+  });
+
+  it("its /$value has no bytes", async () => {
+    const res = await fetch(`${s.v4}/Rs(1)/B/$value`);
+    assert.equal(res.status, 200);
+    assert.equal((await res.arrayBuffer()).byteLength, 0);
+  });
+
+  it("a CSV's empty cell is still null", () => {
+    const prop = {
+      name: "B",
+      type: "Edm.Binary",
+      elementType: "Edm.Binary",
+    } as Property;
+    assert.equal(propToInternal(null, prop), null);
+    assert.equal(propToInternal("", prop), "");
+    assert.equal(toInternal("", "Edm.Binary"), "");
+  });
+
+  it("other types' empty text is still null", () => {
+    assert.equal(toInternal("", "Edm.Int32"), null);
+    assert.equal(toInternal("", "Edm.Date"), null);
+  });
+});

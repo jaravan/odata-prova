@@ -88,6 +88,9 @@ function pad2(n: string | number): string {
 }
 
 const INT64 = /^[+-]?\d+$/;
+// The types whose "" is a value: no text, no bytes. For the others it's null, as spreadsheets
+// leave a number or a date blank.
+const KEEPS_EMPTY = ["Edm.String", "Edm.Binary"];
 const MAX_SINGLE = 3.4028235677973366e38;
 const DECIMAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
 // Edm.Double and Edm.Single spell the special values as these strings in JSON
@@ -263,7 +266,7 @@ const keepLongNumbers = ((
 // it stays no value. (A CSV cell left empty is null: see parseCsv.)
 function toInternal(value: unknown, type: string): PrimitiveValue {
   if (value === null || value === undefined) return null;
-  if (value === "" && type !== "Edm.String") return null;
+  if (value === "" && !KEEPS_EMPTY.includes(type)) return null;
   switch (type) {
     case "Edm.Boolean": {
       // Any case, since spreadsheets write TRUE and FALSE
@@ -411,7 +414,7 @@ function propToInternal(value: unknown, prop: Property): PropertyValue {
   if (
     value === null ||
     value === undefined ||
-    (value === "" && prop.type !== "Edm.String")
+    (value === "" && !KEEPS_EMPTY.includes(prop.type))
   )
     return prop.isCollection ? [] : null;
   if ((prop.isCollection || prop.complexType) && typeof value === "string") {
