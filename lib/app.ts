@@ -422,6 +422,13 @@ function createApp({
     next,
   ) => {
     if (res.headersSent) return next(err);
+    // JSON too deep for the parser: the stack's end is no business of the client's
+    if (/call stack/i.test(err.message))
+      Object.assign(err, {
+        status: 400,
+        expose: true,
+        message: "The request is nested too deeply",
+      });
     const status = err instanceof HttpError || err.expose ? err.status : 500;
     if (status === 500) console.error(err);
     const service =

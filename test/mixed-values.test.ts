@@ -432,4 +432,19 @@ describe("smaller mistakes", () => {
       await s.close();
     }
   });
+
+  it("a body nested past the stack is a 400 that says so", async () => {
+    const s = await start(MODEL);
+    try {
+      const res = await fetch(`${s.v4}/Items`, {
+        method: "POST",
+        headers: JSON_TYPE,
+        body: `${'{"a":'.repeat(200000)}1${"}".repeat(200000)}`,
+      });
+      assert.equal(res.status, 400);
+      assert.doesNotMatch(await res.text(), /call stack/);
+    } finally {
+      await s.close();
+    }
+  });
 });
