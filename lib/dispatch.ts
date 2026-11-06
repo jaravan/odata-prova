@@ -5,7 +5,7 @@
 
 import { specialFloat, withPrecision } from "./types.ts";
 import { HttpError, checkSelect, decodeUrl, newNode, own } from "./query.ts";
-import { checkIfMatch, renewETag } from "./etag.ts";
+import { checkIfMatch, notModified, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
 import { deltaResponse, snapshot, tracksChanges } from "./delta.ts";
@@ -634,6 +634,8 @@ function entityRequest(
   const protocol = svc.protocol;
   switch (method) {
     case "GET": {
+      if (notModified(svc.model, setName, row, headers, svc.etags))
+        return { status: 304 };
       const computed = svc.computed({ rows: [row], type }, q);
       return protocol.entity(
         svc,

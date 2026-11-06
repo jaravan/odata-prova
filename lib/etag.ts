@@ -107,6 +107,25 @@ function entityTags(header: string): string[] {
   );
 }
 
+// Whether If-None-Match names the entity as it is: * does, as any entity that exists, and a
+// tag does if it's the entity's
+function notModified(
+  model: Model,
+  setName: string,
+  row: Row,
+  headers: RequestHeaders,
+  mode: ETagMode,
+): boolean {
+  const raw = headers["if-none-match"];
+  const header = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!header || mode === "off") return false;
+  const tags = entityTags(header);
+  const etag = etagOf(model, setName, row);
+  return (
+    tags.includes("*") || (!!etag && tags.includes(etag.replace(/^W\//, "")))
+  );
+}
+
 // Checks If-Match on a request that changes the entity (see the top of the file). required:
 // the request needs one in strict mode (an update or delete, not on a draft).
 function checkIfMatch(
@@ -117,6 +136,12 @@ function checkIfMatch(
   mode: ETagMode,
   required: boolean,
 ): void {
+  if (notModified(model, setName, row, headers, mode))
+    throw new HttpError(
+      412,
+      "If-None-Match: the entity is as the request says it mustn't be",
+      "ETagMismatch",
+    );
   const etag = mode === "off" ? undefined : etagOf(model, setName, row);
   if (!etag) return;
   const raw = headers["if-match"];
@@ -243,6 +268,7 @@ export {
   parseConcurrency,
   etagOf,
   checkIfMatch,
+  notModified,
   nextETag,
   renewETag,
 };

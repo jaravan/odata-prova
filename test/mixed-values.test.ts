@@ -290,3 +290,29 @@ describe("options that can't apply", () => {
     assert.match(value, /\.0000000Z$/);
   });
 });
+
+describe("If-None-Match", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "ETagSrv"));
+  });
+  after(() => s.close());
+
+  const first = async () => (await get(`${s.v4}/Books`)).body.value[0];
+
+  it("a read of what the client has is a 304", async () => {
+    const book = await first();
+    const url = `${s.v4}/Books(${book.ID})`;
+    const tag = book["@odata.etag"];
+    assert.equal((await get(url, { "if-none-match": tag })).status, 304);
+    assert.equal((await get(url, { "if-none-match": "*" })).status, 304);
+    assert.equal((await get(url, { "if-none-match": '"other"' })).status, 200);
+  });
+
+  it("a write is a 412, and changes nothing", async () => {
+    const url = `${s.v4}/Books(${(await first()).ID})`;
+    const none = { "if-none-match": "*" };
+    assert.equal((await send("PATCH", url, {}, none)).status, 412);
+    assert.equal((await send("DELETE", url, undefined, none)).status, 412);
+  });
+});
