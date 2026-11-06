@@ -192,15 +192,25 @@ function rejectUnsupported(
       typeof query[name] !== "string"
     )
       throw new HttpError(400, `${name} can only be given once`);
+  checkFormat(query);
+}
+
+// A $format the resource isn't given in is a 501: $metadata is XML, everything else JSON
+function checkFormat(query: Record<string, unknown>, format = "JSON"): void {
+  const [short, media] =
+    format === "JSON"
+      ? ["json", "application/json"]
+      : ["xml", "application/xml"];
+  const text = String(query.$format).trim().toLowerCase();
   if (
     query.$format !== undefined &&
-    !/^(json|application\/json(\s*;.*)?)$/i.test(String(query.$format).trim())
-  ) {
+    text !== short &&
+    text.split(";")[0].trim() !== media
+  )
     throw new HttpError(
       501,
-      `$format=${query.$format} is not supported (JSON only)`,
+      `$format=${query.$format} is not supported (${format} only)`,
     );
-  }
 }
 
 // A name in CSDL, as a regular expression's source (for the u flag): any letter or _ first, then
@@ -236,5 +246,6 @@ export {
   checkSelect,
   splitTopLevel,
   parseInt10,
+  checkFormat,
   rejectUnsupported,
 };

@@ -4,7 +4,14 @@
 // ($ref and $links, see references.ts), a property, a collection, or an entity.
 
 import { specialFloat, withPrecision } from "./types.ts";
-import { HttpError, checkSelect, decodeUrl, newNode, own } from "./query.ts";
+import {
+  HttpError,
+  checkFormat,
+  checkSelect,
+  decodeUrl,
+  newNode,
+  own,
+} from "./query.ts";
 import { checkIfMatch, notModified, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
@@ -137,6 +144,7 @@ function handle(
 
   if (resourcePath === "") {
     if (method !== "GET") throw new HttpError(405, "Method not allowed");
+    checkFormat(query);
     return protocol.serviceDocument(svc);
   }
   // A POST has its own route: one here is inside a $batch, where it names nothing
@@ -144,6 +152,7 @@ function handle(
     throw new HttpError(405, "$batch is a POST");
   if (resourcePath === "$metadata") {
     if (method !== "GET") throw new HttpError(405, "Method not allowed");
+    checkFormat(query, "XML");
     return {
       status: 200,
       contentType: "application/xml",

@@ -241,3 +241,26 @@ describe("$ in a path may be escaped", () => {
     assert.equal(batchResponses(res.text)[0].status, 404);
   });
 });
+
+describe("$format of what the server doesn't answer in", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("$metadata is XML", async () => {
+    assert.equal((await get(`${s.v4}/$metadata?$format=json`)).status, 501);
+    assert.equal((await get(`${s.v4}/$metadata?$format=xml`)).status, 200);
+    assert.equal(
+      (await get(`${s.v2}/$metadata?$format=application/xml`)).status,
+      200,
+    );
+  });
+
+  it("the service document is JSON", async () => {
+    assert.equal((await get(`${s.v4}/?$format=xml`)).status, 501);
+    assert.equal((await get(`${s.v2}/?$format=atom`)).status, 501);
+    assert.equal((await get(`${s.v2}/?$format=json`)).status, 200);
+  });
+});
