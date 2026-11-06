@@ -2,7 +2,10 @@
 
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createApp } from "../lib/app.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 import {
   batchResponses,
@@ -455,5 +458,26 @@ describe("smaller mistakes", () => {
       () => parseMetadata(xml),
       /metadata\.xml: TypeDefinition T has no UnderlyingType/,
     );
+  });
+
+  it("a CSV row with more cells than the header stops the start", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cells-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(MODEL, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    fs.writeFileSync(
+      path.join(dir, "data", "Items.csv"),
+      "ID,Name\n1,a,extra\n",
+    );
+    assert.throws(
+      () => createApp({ modelDir: dir, log: () => {} }),
+      (e: Error & { code?: string }) =>
+        e.code === "ESEED" && /more cells than its header/.test(e.message),
+    );
+    fs.writeFileSync(path.join(dir, "data", "Items.csv"), "ID,Name\n1,a,\n");
+    assert.doesNotThrow(() => createApp({ modelDir: dir, log: () => {} }));
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

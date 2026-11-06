@@ -87,7 +87,10 @@ function parseCsv(text: string): Record<string, string | null>[] {
   }
   if (records.length === 0) return [];
   const [headers, ...rows] = records;
-  return rows.map((cells) => {
+  return rows.map((cells, r) => {
+    // A row is its header's: what's past it would be left out unseen
+    if (cells.slice(headers.length).some(Boolean))
+      throw new Error(`row ${r + 2} has more cells than its header`);
     // A cell left empty is no value: a CSV can't tell null from a blank
     const row: Record<string, string | null> = {};
     headers.forEach((h, i) => (row[h] = cells[i] || null));
