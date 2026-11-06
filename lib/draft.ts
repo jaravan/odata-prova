@@ -30,6 +30,7 @@ import type { Qualify, Xml } from "./metadata.ts";
 import type { Store } from "./store.ts";
 import { HttpError, own } from "./query.ts";
 import { renewETag } from "./etag.ts";
+import { compositionColumns } from "./references.ts";
 import { checkRequired, create } from "./writes.ts";
 import { isObject } from "./types.ts";
 import type { WriteHost } from "./writes.ts";
@@ -611,17 +612,6 @@ class Drafts {
     });
   }
 
-  // The columns that hold a draft node in its parent's composition
-  parentColumns(setName: string): string[] {
-    return Object.values(this.model.entityTypes).flatMap((type) =>
-      Object.values(type.navigations).flatMap((nav) =>
-        nav.draft === "composition" && nav.targetSet === setName
-          ? nav.join.map(([, column]) => column)
-          : [],
-      ),
-    );
-  }
-
   // PATCH/PUT: drafts only. The draft columns are the server's to set, and so is what holds a
   // node in its draft: they keep their values, a PUT included. Returns the body to apply.
   beforeUpdate(
@@ -637,7 +627,10 @@ class Drafts {
       );
     if (!isObject(body)) return body;
     const out: Record<string, unknown> = { ...body };
-    for (const name of [...DRAFT_COLUMNS, ...this.parentColumns(setName)])
+    for (const name of [
+      ...DRAFT_COLUMNS,
+      ...compositionColumns(this.model, setName),
+    ])
       if (Object.hasOwn(type.properties, name)) out[name] = row[name];
     return out;
   }

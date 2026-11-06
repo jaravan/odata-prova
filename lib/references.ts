@@ -86,6 +86,17 @@ function changeable(type: EntityType, nav: AnyNavigation): Navigation {
   return nav;
 }
 
+// The columns that hold a draft node in its parent's composition
+function compositionColumns(model: Model, setName: string): string[] {
+  return Object.values(model.entityTypes).flatMap((type) =>
+    Object.values(type.navigations).flatMap((nav) =>
+      nav.draft === "composition" && nav.targetSet === setName
+        ? nav.join.map(([, column]) => column)
+        : [],
+    ),
+  );
+}
+
 // Clears columns that hold a link, which they must be able to: a key or a required property
 // can't be null, so the link can only be replaced
 function clear(
@@ -283,4 +294,11 @@ function referenceRequest(
   }
 }
 
-export { resolveReference, link, unlink, changeable, referenceRequest };
+export {
+  compositionColumns,
+  resolveReference,
+  link,
+  unlink,
+  changeable,
+  referenceRequest,
+};
