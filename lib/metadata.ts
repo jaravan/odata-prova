@@ -16,7 +16,7 @@ import type {
   Property,
   TypedElement,
 } from "./model.ts";
-import { V2_TO_CANONICAL, CANONICAL_TO_V2 } from "./types.ts";
+import { V2_TO_CANONICAL, CANONICAL_TO_V2, propToInternal } from "./types.ts";
 import { own } from "./query.ts";
 import { parseConcurrency } from "./etag.ts";
 import { parseCustomAggregates } from "./aggregates.ts";
@@ -343,6 +343,7 @@ function parseMetadata(
         );
     }
   resolveOperationTypes(model);
+  checkDefaults(model);
   model.operationViews = {
     "2.0": isV4 ? v2ViewOfV4(model) : v2ViewOfV2(model),
     "4.0": isV4 ? model.operations : v4ViewOfV2(model),
@@ -794,6 +795,27 @@ function parseOperations(model: Model, schemas: Xml[], isV4: boolean): void {
       }
     }
   }
+}
+
+// A DefaultValue that isn't a value of its property would turn up as a client's 400 on every
+// create, for a mistake that's the metadata's
+function checkDefaults(model: Model): void {
+  const types = [
+    ...Object.values(model.entityTypes),
+    ...Object.values(model.complexTypes),
+  ];
+  for (const type of types)
+    for (const p of Object.values(type.properties)) {
+      if (p.defaultValue === undefined || p.isCollection) continue;
+      const where = `metadata.xml: ${type.name}.${p.name}: DefaultValue "${p.defaultValue}"`;
+      try {
+        propToInternal(p.defaultValue, p);
+      } catch (e) {
+        throw new Error(`${where}: ${(e as Error).message}`, { cause: e });
+      }
+      if ([...p.defaultValue].length > Number(p.maxLength))
+        throw new Error(`${where} is longer than its MaxLength`);
+    }
 }
 
 function resolveOperationTypes(model: Model): void {

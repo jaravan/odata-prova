@@ -776,6 +776,31 @@ describe("expressions that can't be", () => {
     });
 });
 
+describe("a DefaultValue that isn't a value", () => {
+  const schema = (property: string) =>
+    `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EntityType Name="A"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/>${property}</EntityType><EntityContainer Name="C"><EntitySet Name="As" EntityType="N.A"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
+
+  for (const property of [
+    `<Property Name="D" Type="Edm.Int32" DefaultValue="abc"/>`,
+    `<Property Name="D" Type="Edm.String" MaxLength="2" DefaultValue="long"/>`,
+    `<Property Name="D" Type="Edm.Boolean" DefaultValue="maybe"/>`,
+  ])
+    it(`${property} stops the start, naming it`, () => {
+      assert.throws(
+        () => parseMetadata(schema(property)),
+        /metadata\.xml: A\.D: DefaultValue/,
+      );
+    });
+
+  it("one that fits is fine", () => {
+    assert.doesNotThrow(() =>
+      parseMetadata(
+        schema(`<Property Name="D" Type="Edm.Int32" DefaultValue="5"/>`),
+      ),
+    );
+  });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);
