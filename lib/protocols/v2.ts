@@ -86,7 +86,12 @@ function parseLiteral(text: string): Literal {
     };
   if ((m = t.match(/^time'([^']+)'$/i)))
     return { value: toInternal(m[1], "Edm.TimeOfDay"), type: "Edm.TimeOfDay" };
-  if ((m = t.match(/^(?:binary|X)'([^']*)'$/i)))
+  if ((m = t.match(/^X'([^']*)'$/i))) {
+    if (!/^(?:[0-9a-f]{2})*$/i.test(m[1]))
+      throw new HttpError(400, `${text}: X takes pairs of hex digits`);
+    return { value: binaryValue(m[1]), type: "Edm.Binary" };
+  }
+  if ((m = t.match(/^binary'([^']*)'$/i)))
     return { value: binaryValue(m[1]), type: "Edm.Binary" };
   if (t === "true" || t === "false")
     return { value: t === "true", type: "Edm.Boolean" };

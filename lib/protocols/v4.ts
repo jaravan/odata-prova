@@ -49,7 +49,7 @@ const GUID =
 const DATETIMEOFFSET =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?/;
 const DATE = /^\d{4}-\d{2}-\d{2}/;
-const TIME = /^\d{2}:\d{2}:\d{2}(?:\.\d+)?/;
+const TIME = /^\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?![\d:])/;
 
 // Bare literals that can start with a letter or a digit. The $filter tokenizer tries this
 // before words and numbers. Returns { value, type, length } or undefined.

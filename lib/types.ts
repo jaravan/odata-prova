@@ -88,6 +88,7 @@ function pad2(n: string | number): string {
 }
 
 const INT64 = /^[+-]?\d+$/;
+const MAX_SINGLE = 3.4028235677973366e38;
 const DECIMAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
 // Edm.Double and Edm.Single spell the special values as these strings in JSON
 const SPECIAL_FLOATS: Record<string, number> = {
@@ -284,10 +285,17 @@ function toInternal(value: unknown, type: string): PrimitiveValue {
       const n = numberOf(value);
       // The number NaN is a literal's, and text that's no number isn't one
       if (Number.isNaN(n) && !Number.isNaN(value)) throw invalid(value, type);
+      if (
+        type === "Edm.Single" &&
+        Number.isFinite(n) &&
+        Math.abs(n) > MAX_SINGLE
+      )
+        throw invalid(value, type);
       return n;
     }
     case "Edm.Int64": {
-      const s = String(value).trim();
+      // A whole number however it's written, as the shorter integers read it
+      const s = String(value).trim().replace(/\.0*$/, "");
       if (!INT64.test(s)) throw invalid(value, type);
       const n = BigInt(s);
       if (n < INT64_MIN || n > INT64_MAX) throw invalid(value, type);
@@ -371,7 +379,9 @@ function plainDecimal(value: unknown, type: string): string {
 // Precision 5 and Scale 2 hold 123.45 but not 1234.5 or 1.234. Without a Scale, or with
 // Scale variable, any digits after the point fit, up to the Precision.
 function checkDecimalFacets(text: string, prop: Property): void {
-  const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+  const [whole, written = ""] = text.replace(/^-/, "").split(".");
+  // Zeros ending it don't change the number: 1.230 fits a Scale of 2
+  const fraction = written.replace(/0+$/, "");
   const precision = /^\d+$/.test(prop.precision ?? "")
     ? Number(prop.precision)
     : undefined;

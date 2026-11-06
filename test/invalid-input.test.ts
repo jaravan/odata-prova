@@ -4,7 +4,8 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { toInternal } from "../lib/types.ts";
+import { propToInternal, toInternal } from "../lib/types.ts";
+import type { Property } from "../lib/model.ts";
 import {
   batch,
   batchResponses,
@@ -243,4 +244,50 @@ describe("values that aren't one", () => {
       assert.equal(status, 201, JSON.stringify(body));
     });
   }
+});
+
+describe("values at the edge of their type", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "Stamps"));
+  });
+  after(() => s.close());
+
+  it("V2's X takes hex and nothing else", async () => {
+    const filter = (text: string) =>
+      get(`${s.v2}/Rs?$filter=${encodeURIComponent(`B eq ${text}`)}`);
+    assert.equal((await filter("X'0'")).status, 400);
+    assert.equal((await filter("X'zz'")).status, 400);
+    assert.equal((await filter("X'01'")).status, 200);
+  });
+
+  it("a time without seconds is a time in a $filter too", async () => {
+    const { status } = await get(
+      `${s.v4}/Rs?$filter=${encodeURIComponent("Tm eq 12:00")}`,
+    );
+    assert.equal(status, 200);
+  });
+
+  it("toInternal reads the edges", () => {
+    assert.throws(() => toInternal(1e39, "Edm.Single"), /Invalid/);
+    assert.throws(() => toInternal(-1e39, "Edm.Single"), /Invalid/);
+    assert.equal(toInternal(1e38, "Edm.Single"), 1e38);
+    assert.equal(toInternal(1e39, "Edm.Double"), 1e39);
+    assert.equal(toInternal("INF", "Edm.Single"), Infinity);
+    assert.equal(toInternal("1.0", "Edm.Int64"), "1");
+    assert.equal(toInternal("1.0", "Edm.Int16"), 1);
+    assert.throws(() => toInternal("1.5", "Edm.Int64"), /Invalid/);
+  });
+
+  it("zeros ending a decimal don't count against its Scale", () => {
+    const prop = {
+      name: "D",
+      type: "Edm.Decimal",
+      elementType: "Edm.Decimal",
+      precision: "5",
+      scale: "2",
+    } as Property;
+    assert.equal(propToInternal("1.230", prop), "1.230");
+    assert.throws(() => propToInternal("1.234", prop), /Invalid/);
+  });
 });
