@@ -288,6 +288,11 @@ function handle(
       let prop = own(type.properties, seg.name);
       let holder: Row | null = row;
       let field = "";
+      if (prop?.isCollection && i < segments.length - 1)
+        throw new HttpError(
+          400,
+          `${prop.name} is a collection: a path can't go on through it`,
+        );
       while (prop?.complexType && i < segments.length - 1) {
         const next: Property | undefined = own(
           prop.complexType.properties,
@@ -302,6 +307,11 @@ function handle(
         field += `/${prop.name}`;
         prop = next;
         i++;
+        if (prop.isCollection && i < segments.length - 1)
+          throw new HttpError(
+            400,
+            `${prop.name} is a collection: a path can't go on through it`,
+          );
       }
       if (!prop || i !== segments.length - 1)
         throw new HttpError(
@@ -452,7 +462,7 @@ function propertyRequest(
     if (q[option] !== undefined)
       throw new HttpError(400, `$${option} doesn't apply to ${prop.name}`);
   let value = holder?.[prop.name] ?? null;
-  if (prop.isCollection && Array.isArray(value)) {
+  if (prop.isCollection && Array.isArray(value) && !wantCount) {
     const start = q.skip ?? 0;
     value = value.slice(start, q.top === undefined ? undefined : start + q.top);
   }

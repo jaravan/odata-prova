@@ -660,6 +660,32 @@ describe("enums, further", () => {
   });
 });
 
+describe("collection properties", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, {
+      ID: 1,
+      Tags: ["a", "b", "c"],
+      Addrs: [{ City: "A" }],
+    });
+  });
+  after(() => s.close());
+
+  it("/$count counts them all, whatever pages the list", async () => {
+    for (const query of ["$top=1", "$skip=1"]) {
+      const res = await fetch(`${s.v4}/Items(1)/Tags/$count?${query}`);
+      assert.equal(await res.text(), "3", query);
+    }
+  });
+
+  it("a path through one is a 400, not null", async () => {
+    const { status, body } = await get(`${s.v4}/Items(1)/Addrs/City`);
+    assert.equal(status, 400);
+    assert.match(body.error.message, /Addrs/);
+  });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);
