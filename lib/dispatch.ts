@@ -433,6 +433,7 @@ function checkOneEntity(q: QueryNode): void {
   for (const option of COLLECTION_OPTIONS)
     if (q[option] !== undefined)
       throw new HttpError(400, `$${option} applies to a collection`);
+  if (q.count) throw new HttpError(400, "$count applies to a collection");
 }
 
 function propertyRequest(
@@ -461,6 +462,10 @@ function propertyRequest(
   for (const option of refused)
     if (q[option] !== undefined)
       throw new HttpError(400, `$${option} doesn't apply to ${prop.name}`);
+  if (q.count)
+    throw new HttpError(400, `$count=true doesn't apply to ${prop.name}`);
+  if (q.select || Object.keys(q.expand).length)
+    throw new HttpError(400, `$select and $expand don't apply to ${prop.name}`);
   let value = holder?.[prop.name] ?? null;
   if (prop.isCollection && Array.isArray(value) && !wantCount) {
     const start = q.skip ?? 0;
@@ -584,6 +589,7 @@ function collectionRequest(request: Request, at: Position): ODataResponse {
       return response;
     }
     case "POST": {
+      checkOneEntity(q);
       const parent = parentForCreate;
       const preset: Row = parent
         ? Object.fromEntries(
@@ -696,6 +702,8 @@ function entityRequest(
       };
     }
     case "DELETE": {
+      if (q.select || Object.keys(q.expand).length)
+        throw new HttpError(400, "$select and $expand don't apply to a DELETE");
       const draft = svc.model.entitySets[setName].draft;
       checkIfMatch(svc.model, setName, row, headers, svc.etags, !draft);
       if (draft) svc.drafts.delete(setName, type, row);

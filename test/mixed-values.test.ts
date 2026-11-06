@@ -686,6 +686,47 @@ describe("collection properties", () => {
   });
 });
 
+describe("options on what can't take them", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Tags: ["a"] });
+  });
+  afterEach(() => s.close());
+
+  for (const url of [
+    "Items(1)/Tags?$count=true",
+    "Items(1)/Tags?$select=Nope",
+    "Items(1)?$count=true",
+    "Items(1)/Name?$expand=Nope",
+    "Items(1)/Name?$select=Nope",
+  ])
+    it(`GET ${url} is a 400`, async () => {
+      assert.equal((await get(`${s.v4}/${url}`)).status, 400);
+    });
+
+  it("POST with a read's options is a 400, and creates nothing", async () => {
+    const res = await send(
+      "POST",
+      `${s.v4}/Items?$filter=${encodeURIComponent("bad((")}`,
+      { ID: 2 },
+    );
+    assert.equal(res.status, 400);
+    assert.equal((await get(`${s.v4}/Items(2)`)).status, 404);
+  });
+
+  it("POST with $select still works", async () => {
+    const res = await send("POST", `${s.v4}/Items?$select=ID`, { ID: 3 });
+    assert.equal(res.status, 201);
+  });
+
+  it("DELETE with $select is a 400, and deletes nothing", async () => {
+    const res = await send("DELETE", `${s.v4}/Items(1)?$select=Nope`);
+    assert.equal(res.status, 400);
+    assert.equal((await get(`${s.v4}/Items(1)`)).status, 200);
+  });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);
