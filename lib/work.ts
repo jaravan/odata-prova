@@ -42,4 +42,20 @@ function responseText(body: unknown): string {
   }
 }
 
-export { MAX_WORK, MAX_RESPONSE, startWork, spend, responseText, tooMuch };
+// Reading a row, for what isn't an expression: a search's or a group's. Steps of an expression
+// are far cheaper, and at one step a row these took half a minute to be stopped.
+const ROW_READ = 10;
+
+// Sorting n rows by k terms: the comparisons it takes
+const sortWork = (n: number, k = 1) => Math.ceil(n * Math.log2(n + 1) * k);
+
+export {
+  MAX_WORK,
+  MAX_RESPONSE,
+  ROW_READ,
+  startWork,
+  spend,
+  sortWork,
+  responseText,
+  tooMuch,
+};

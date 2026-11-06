@@ -2,6 +2,7 @@
 // $top, for a collection or an $expand node.
 
 import { compareValues, toComparable } from "./types.ts";
+import { ROW_READ, sortWork, spend } from "./work.ts";
 import { compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
 import type {
@@ -184,6 +185,7 @@ function applyQuery(
     const stringProps = Object.values(entityType.properties)
       .filter((p) => p.type === "Edm.String")
       .map((p) => p.name);
+    spend(results.length * Math.max(stringProps.length, 1) * ROW_READ);
     results = search(results, opts.search, stringProps);
   }
 
@@ -201,6 +203,7 @@ function applyQuery(
       pathScope(svc, entityType).check(path);
       return { path, desc: dir.toLowerCase() === "desc" };
     });
+    spend(sortWork(results.length, terms.length));
     results = [...results].sort((a, b) => {
       for (const { path, desc } of terms) {
         const va = resolve(a, path),

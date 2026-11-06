@@ -36,7 +36,7 @@
 // anything else, such as a currency or unit, is the value all the rows share, or null when
 // they differ, which is what UI5 expects of a unit.
 
-import { spend } from "./work.ts";
+import { ROW_READ, sortWork, spend } from "./work.ts";
 import { applyQuery, resolver } from "./apply-query.ts";
 import type { QueryHost } from "./apply-query.ts";
 import type { Resolve } from "./filter.ts";
@@ -83,6 +83,8 @@ function applyTransformations(
   inGroup = false,
 ): { rows: readonly Row[]; type: EntityType } {
   for (const t of transformations) {
+    // Every step reads every row at least once, whatever it comes to
+    spend(rows.length * ROW_READ);
     switch (t.kind) {
       case "filter":
         rows = applyQuery(
@@ -361,6 +363,7 @@ function ranked(
       `$apply: ${t.method} needs ${counting ? "a primitive value" : "a number"}, and ${t.by} is ${valueType}`,
     );
   const sign = t.method.startsWith("top") ? -1 : 1;
+  spend(sortWork(rows.length));
   const valued = rows
     .map((row) => ({
       row,

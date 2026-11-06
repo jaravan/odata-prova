@@ -15,6 +15,7 @@
 
 import { applyQuery, type QueryHost } from "./apply-query.ts";
 import { HttpError } from "./query.ts";
+import { spend } from "./work.ts";
 import { floatJson } from "./types.ts";
 import type { ODataService } from "./service.ts";
 import type {
@@ -27,6 +28,8 @@ import type {
 
 // How many delta tokens are kept, per service
 const KEPT = 100;
+// Copying a row, in steps of an expression (see work.ts)
+const COPY_WORK = 10;
 
 // An entity that left the client's set since its token: deleted, or changed so that it no
 // longer matches the $filter or $search
@@ -105,6 +108,7 @@ function snapshot(
   rows: readonly Row[],
   q: QueryNode,
 ): Snapshot {
+  spend(rows.length * COPY_WORK);
   return {
     setName,
     filter: q.filter,

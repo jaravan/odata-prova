@@ -263,3 +263,114 @@ describe("a number too long to calculate with", () => {
     assert.match(await res.text(), /"X":10{29}0\.5/);
   });
 });
+
+describe("a $batch of reads that are small to answer and long to do", () => {
+  let s: TestServer;
+  let dir: string;
+  before(async () => {
+    dir = modelWith(
+      Array.from({ length: 20000 }, (_, i) => ({
+        ID: i,
+        Text: `t${i % 500}`,
+        Amount: "1.5",
+      })),
+    );
+    s = await start(dir);
+    // It copies the store for each transaction: it would be most of what's timed
+    s.store.audit = false;
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  for (const [what, url] of [
+    ["sort", `Values?$orderby=${encodeURIComponent("Text desc,ID")}&$top=1`],
+    ["search", "Values?$search=t1&$top=1"],
+    [
+      "group",
+      `Values?$apply=${encodeURIComponent("groupby((Text),aggregate(Amount with sum as T))")}&$top=1`,
+    ],
+    [
+      "aggregate",
+      `Values?$apply=${encodeURIComponent("aggregate(Amount with sum as T)")}`,
+    ],
+    ["rank", `Values?$apply=${encodeURIComponent("topcount(1,ID)")}`],
+    [
+      "distinct group",
+      `Values?$apply=${encodeURIComponent("groupby((Text))")}&$top=1`,
+    ],
+  ])
+    it(`1500 of a ${what} are stopped soon`, async () => {
+      const started = performance.now();
+      const reads = Array.from({ length: 1500 }, () => ({
+        method: "GET",
+        url,
+      }));
+      const parts = batchResponses((await batch(s.v4, reads)).text);
+      const refused = parts.filter(
+        (p) => p.body?.error?.code === "TooMuchWork",
+      );
+      assert.ok(refused.length, `none of ${parts.length} refused`);
+      assert.ok(parts.some((p) => p.status === 200));
+      assert.ok(performance.now() - started < 8000);
+    });
+
+  it("one of each is fine", async () => {
+    for (const url of [
+      "Values?$orderby=Text desc,ID&$top=1",
+      "Values?$search=t1&$top=1",
+      `Values?$apply=${encodeURIComponent("groupby((Text),aggregate(Amount with sum as T))")}`,
+    ])
+      assert.equal((await get(`${s.v4}/${url}`)).status, 200, url);
+  });
+});
+
+describe("updates and deletes on a large set", () => {
+  it("don't search it again for each", async () => {
+    const dir = modelWith(
+      Array.from({ length: 200000 }, (_, i) => ({ ID: i })),
+    );
+    const s = await start(dir);
+    s.store.audit = false;
+    try {
+      const type = s.model.entityTypes["N.V"];
+      const row = s.store.find("Values", type, { ID: 199999 })!;
+      const started = performance.now();
+      for (let i = 0; i < 2000; i++) {
+        s.store.update("Values", row, { Text: `v${i}` });
+        assert.ok(s.store.find("Values", type, { ID: 199999 + (i % 1) }));
+      }
+      for (let i = 199000; i < 199500; i++) {
+        s.store.remove("Values", type, { ID: i });
+        assert.equal(s.store.find("Values", type, { ID: i }), undefined);
+      }
+      assert.ok(performance.now() - started < 1500);
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a key changed, removed or undone is found as it is now", async () => {
+    const dir = modelWith([{ ID: 1 }, { ID: 2 }]);
+    const s = await start(dir);
+    try {
+      const type = s.model.entityTypes["N.V"];
+      const find = (ID: number) => s.store.find("Values", type, { ID });
+      assert.ok(find(1));
+      const row = find(1)!;
+      s.store.update("Values", row, { ID: 5 });
+      assert.equal(find(1), undefined);
+      assert.equal(find(5), row);
+      const mark = s.store.begin();
+      s.store.remove("Values", type, { ID: 5 });
+      assert.equal(find(5), undefined);
+      s.store.rollback(mark);
+      assert.equal(find(5), row);
+    } finally {
+      await s.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
