@@ -238,3 +238,55 @@ describe("a field of a complex value", () => {
     assert.match(body.error.message, /Nope/);
   });
 });
+
+describe("options that can't apply", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, {
+      ID: 1,
+      Tags: ["a", "b", "c"],
+      At: "2025-01-01T00:00:00Z",
+    });
+  });
+  after(() => s.close());
+
+  for (const url of [
+    "Items(1)?$filter=bad((",
+    "Items(1)?$filter=ID eq 1",
+    "Items(1)?$top=1",
+    "Items(1)?$skip=1",
+    "Items(1)?$orderby=ID",
+    "Items(1)?$search=x",
+    "Items(1)/Group?$filter=bad((",
+    "Items(1)/Name?$top=1",
+    "Items(1)/Tags?$filter=x",
+    "Items(1)/Tags?$orderby=x",
+    "Items/$count?$select=Nope",
+  ])
+    it(`${url} is a 400`, async () => {
+      assert.equal((await get(`${s.v4}/${encodeURI(url)}`)).status, 400);
+    });
+
+  it("a collection property pages", async () => {
+    const value = async (query: string) =>
+      (await get(`${s.v4}/Items(1)/Tags?${query}`)).body.value;
+    assert.deepEqual(await value("$top=1"), ["a"]);
+    assert.deepEqual(await value("$skip=1"), ["b", "c"]);
+    assert.deepEqual(await value("$skip=1&$top=1"), ["b"]);
+  });
+
+  it("what applies still does", async () => {
+    assert.equal(
+      (await get(`${s.v4}/Items(1)?$select=ID&$expand=Kids`)).status,
+      200,
+    );
+    assert.equal((await get(`${s.v4}/Items/$count?$top=1`)).status, 200);
+  });
+
+  it("/$value writes a time as /Prop does", async () => {
+    const value = await (await fetch(`${s.v4}/Items(1)/At/$value`)).text();
+    assert.equal(value, (await get(`${s.v4}/Items(1)/At`)).body.value);
+    assert.match(value, /\.0000000Z$/);
+  });
+});

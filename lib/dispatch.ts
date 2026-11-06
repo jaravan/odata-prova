@@ -4,7 +4,7 @@
 // ($ref and $links, see references.ts), a property, a collection, or an entity.
 
 import { specialFloat, withPrecision } from "./types.ts";
-import { HttpError, decodeUrl, newNode, own } from "./query.ts";
+import { HttpError, checkSelect, decodeUrl, newNode, own } from "./query.ts";
 import { checkIfMatch, renewETag } from "./etag.ts";
 import { parseSegments, parseKey, type Segment } from "./resource-path.ts";
 import { applyQuery } from "./apply-query.ts";
@@ -333,6 +333,7 @@ function handle(
       if (!row) throw new HttpError(404, `${type.name} not found`);
     } else if (!nav.isCollection) {
       row = rows[0];
+      checkOneEntity(q);
       if (!row && method === "GET") return protocol.nullEntity();
     }
   }
@@ -375,6 +376,7 @@ function handle(
 
   if (q.apply && (method !== "GET" || row !== undefined))
     throw new HttpError(400, "$apply applies to reading a collection only");
+  if (row !== undefined) checkOneEntity(q);
 
   if (wantCount && row !== undefined)
     throw new HttpError(400, "$count applies to a collection, not an entity");
@@ -416,6 +418,12 @@ const COLLECTION_OPTIONS = [
   "top",
   "skip",
 ] as const;
+
+function checkOneEntity(q: QueryNode): void {
+  for (const option of COLLECTION_OPTIONS)
+    if (q[option] !== undefined)
+      throw new HttpError(400, `$${option} applies to a collection`);
+}
 
 function propertyRequest(
   request: Request,
@@ -500,6 +508,7 @@ function propertyRequest(
 function countRequest(request: Request, at: Position): ODataResponse {
   const { svc, method, q } = request;
   if (method !== "GET") throw new HttpError(405, "Method not allowed");
+  checkSelect(svc, at.type, q);
   const { rows, type } = svc.computed(at, q);
   const applied = svc.applied(rows, type, q);
   const { results } = applyQuery(svc, applied.rows, applied.type, {
