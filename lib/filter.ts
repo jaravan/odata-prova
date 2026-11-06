@@ -8,7 +8,9 @@
 // < unary minus < primary (literal, property path, function call, parens) - standard hierarchy.
 
 import type {
+  ComplexType,
   EntityType,
+  EnumType,
   Literal,
   Model,
   PrimitiveValue,
@@ -28,6 +30,7 @@ import {
   isNumericType,
   toComparable,
   enumNumber,
+  isObject,
   isNumberText,
   toMillis,
   withPrecision,
@@ -57,7 +60,24 @@ const COMPLEX = "complex";
 export interface PathScope {
   // The path's type, or an error when there's no such path
   check(path: string): string;
+  // What the rows or items of a collection hold, for a lambda: undefined for an item that has
+  // no paths of its own
   collection(path: string): PathScope | undefined;
+  // The type of one of a collection's items
+  itemType(path: string): string;
+}
+
+// The field a path ends at in a complex value, and what holds it in item
+function fieldAt(type: ComplexType | undefined, path: string, item?: unknown) {
+  const parts = path.split("/");
+  let at = type,
+    holder = item;
+  for (const part of parts.slice(0, -1)) {
+    const prop = own(at?.properties, part);
+    at = prop?.isCollection ? undefined : prop?.complexType;
+    holder = isObject(holder) ? holder[part] : null;
+  }
+  return { field: own(at?.properties, parts[parts.length - 1]), holder };
 }
 
 // Reads a property path off a row (the caller knows the entity type and how to follow a
@@ -86,7 +106,12 @@ type Token =
   | { kind: "these"; value: string };
 
 type Node =
-  | { literal: unknown; type: string | null; enumType?: string }
+  | {
+      literal: unknown;
+      type: string | null;
+      enumType?: string;
+      enumOf?: EnumType;
+    }
   | { path: string }
   | { op: string; left: Node; right: Node }
   | { in: true; left: Node; list: Node[] }
@@ -127,8 +152,8 @@ const RESERVED = new Set(["true", "false", "null", "not"]);
 interface Scope {
   isProperty(name: string): boolean;
   enumMember(literal: Literal): string;
-  // Its type's full name, for a literal written with an alias
-  enumName(literal: Literal): string | undefined;
+  // Its type, as a literal written with an alias names it too
+  enumOf(literal: Literal): EnumType | undefined;
 }
 
 function scopeOf(model: Model, type: EntityType): Scope {
@@ -139,7 +164,7 @@ function scopeOf(model: Model, type: EntityType): Scope {
       if (!named) throw new Error(`${enumType} is not an enum type`);
       return enumValue(value, named);
     },
-    enumName: ({ enumType }) => enumNamed(model, enumType!)?.fullName,
+    enumOf: ({ enumType }) => enumNamed(model, enumType!),
   };
 }
 
@@ -246,7 +271,8 @@ function tokenize(
           kind: "literal",
           ...literal,
           value: scope ? scope.enumMember(literal) : literal.value,
-          enumType: scope ? scope.enumName(literal) : literal.enumType,
+          enumType: scope?.enumOf(literal)?.fullName ?? literal.enumType,
+          enumOf: scope?.enumOf(literal),
         });
         i = end + 1;
         continue;
@@ -414,7 +440,12 @@ class Parser {
       return e;
     }
     if (t.kind === "literal")
-      return { literal: t.value, type: t.type, enumType: t.enumType };
+      return {
+        literal: t.value,
+        type: t.type,
+        enumType: t.enumType,
+        enumOf: t.enumOf,
+      };
     if (t.kind === "path") return { path: t.value };
     if (t.kind === "these") return { these: t.value };
     if (t.kind === "lambda") {
@@ -468,7 +499,8 @@ class Parser {
 // entity type and how to "walk" a navigation property to get there.
 function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   spend();
-  if ("literal" in node) return { value: node.literal, type: node.type };
+  if ("literal" in node)
+    return { value: node.literal, type: node.type, enumOf: node.enumOf };
   // Before node.path: lambda nodes also have a path (the collection)
   if ("lambda" in node)
     return { value: evaluateLambda(node, row, resolve), type: "Edm.Boolean" };
@@ -692,12 +724,11 @@ function evaluateLambda(
         type: prop?.elementType ?? null,
         enumOf: prop?.enumType,
       };
-    const field = prop?.complexType && own(prop.complexType.properties, rest);
+    const { field, holder } = fieldAt(prop?.complexType, rest, item);
     if (!field)
       throw new Error(`Unknown property ${node.variable}/${rest} in $filter`);
-    const fields = item as Record<string, unknown> | null | undefined;
     return {
-      value: fields?.[rest] ?? null,
+      value: (isObject(holder) ? holder[field.name] : null) ?? null,
       type: field.type,
       enumOf: field.enumType,
     };
@@ -837,9 +868,11 @@ const COMPARISONS = ["eq", "ne", "gt", "ge", "lt", "le"];
 // Whether an enum's value holds all the members of another: a flags value is several, Read,Write
 function hasFlags(l: Value, r: Value): boolean | null {
   if (isNull(l) || isNull(r)) return null;
-  if (l.enumOf) {
-    const flags = enumNumber(r.value, l.enumOf);
-    return (enumNumber(l.value, l.enumOf) & flags) === flags;
+  spend(longText(l.value) + longText(r.value));
+  const enumOf = l.enumOf ?? r.enumOf;
+  if (enumOf) {
+    const flags = enumNumber(r.value, enumOf);
+    return (enumNumber(l.value, enumOf) & flags) === flags;
   }
   const held = String(l.value).split(",");
   return String(r.value)
@@ -1005,75 +1038,100 @@ function compileFilter(
   if (paths)
     bounded(() => {
       checkPaths(ast, paths, new Map());
-      checkCondition(ast, paths);
+      checkCondition(ast, paths, new Map());
     });
   return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
 }
 
-// A $filter has to come to true or false. Null does too, as nothing matches it. A property
-// that isn't a boolean would match nothing, and say nothing about why.
-function checkCondition(ast: Node, paths: PathScope): void {
-  let type: string | null;
+// The lambdas a path is inside: what each one's variable stands for
+type Variables = Map<string, { scope?: PathScope; item: string }>;
+
+// Where a path starts, as evaluateLambda reads it: its first part may be a lambda's variable
+// or $it. No scope for an item of a collection property that has no paths to check here.
+function pathStart(path: string, root: PathScope, variables: Variables) {
+  const [head, ...parts] = path.split("/");
+  const rest = parts.join("/");
+  const variable = variables.get(head);
+  if (variable) return { scope: variable.scope, rest, item: variable.item };
+  return head === "$it" ? { scope: root, rest } : { scope: root, rest: path };
+}
+
+function pathType(path: string, root: PathScope, variables: Variables): string {
+  const { scope, rest, item } = pathStart(path, root, variables);
+  if (!rest) return item ?? "";
+  return scope ? scope.check(rest) : "";
+}
+
+// Its type, when that can be told: the check of the node, or evaluating it, says what's wrong
+function nodeType(
+  node: Node,
+  root: PathScope,
+  variables: Variables,
+): string | null {
   try {
-    type = expressionType(ast, (path) =>
-      paths.check(path.replace(/^\$it\//, "")),
-    );
+    return expressionType(node, (path) => pathType(path, root, variables));
   } catch {
-    return; // what's wrong is for evaluating it to say
+    return null;
   }
+}
+
+// A $filter has to come to true or false, and so does what's under and, or, not or a lambda.
+// Null does too, as nothing matches it. A property that isn't a boolean would match nothing,
+// and say nothing about why.
+function checkCondition(
+  node: Node,
+  root: PathScope,
+  variables: Variables,
+): void {
+  const type = nodeType(node, root, variables);
   if (type && type !== "Edm.Boolean")
     throw new Error(`$filter needs a condition, and this is a ${type}`);
 }
 
+const isList = (type: string | null) => !!type?.startsWith("Collection(");
+const isEnum = (type: string | null) =>
+  !!type &&
+  !type.startsWith("Edm.") &&
+  !isList(type) &&
+  ![NAVIGATION, COMPLEX].includes(type);
+
 // Throws on a path no row could have: from the text alone, as evaluating gets to a path only
 // when a row does, and when and and or haven't settled without it.
-function checkPaths(
-  node: Node,
-  root: PathScope,
-  variables: Map<string, PathScope | undefined>,
-): void {
-  // Where a path starts, as evaluateLambda reads it: its first part may be a lambda's variable
-  // or $it. undefined for an item of a collection property, which has no paths to check here.
-  const from = (path: string): { scope?: PathScope; rest: string } => {
-    const [head, ...parts] = path.split("/");
-    const rest = parts.join("/");
-    if (variables.has(head)) return { scope: variables.get(head), rest };
-    return head === "$it" ? { scope: root, rest } : { scope: root, rest: path };
-  };
+function checkPaths(node: Node, root: PathScope, variables: Variables): void {
   const check = (child: Node) => checkPaths(child, root, variables);
+  const condition = (child: Node) => checkCondition(child, root, variables);
+  const typeOfNode = (of: Node) => nodeType(of, root, variables);
   // Text compared with a number has to read as one, whatever rows there are: '1.5' does, and
   // a typo would otherwise be an empty answer
-  const typed = (path: string) => {
-    const { scope, rest } = from(path);
-    return scope && rest ? scope.check(rest) : "";
-  };
-  // Its type, when that can be told: the check of the node, or evaluating it, says what's wrong
-  const typeOfNode = (of: Node) => {
-    try {
-      return expressionType(of, typed);
-    } catch {
-      return null;
-    }
-  };
   const checkText = (text: Node, other: Node) => {
     if (!("literal" in text) || typeof text.literal !== "string") return;
-    const type = typeOfNode(other);
-    if (!type) return;
-    // Another enum's literal is no value of this one
+    const type = "literal" in other ? other.enumType : typeOfNode(other);
+    // An enum's literal is a value of that enum and no other type's
     if (text.enumType) {
-      if (!type.startsWith("Edm.") && type !== text.enumType)
+      if (type && type !== text.enumType)
         throw new Error(`${text.enumType}'s value isn't a ${type}`);
       return;
     }
-    if (text.type !== "Edm.String" || isNumberText(text.literal)) return;
+    if (!type || text.type !== "Edm.String" || isNumberText(text.literal))
+      return;
     if (isNumericType(type))
       throw new Error(`'${text.literal}' is not a value of ${type}`);
   };
+  const checkEnums = (a: Node, b: Node) => {
+    if ("literal" in a || "literal" in b) return;
+    const [x, y] = [typeOfNode(a), typeOfNode(b)];
+    if (isEnum(x) && isEnum(y) && x !== y)
+      throw new Error(`A ${x} can't be compared with a ${y}`);
+  };
   // Such a path is there or null, and that's all that can be asked of it
-  const noValue = (of: Node) =>
-    "path" in of && [NAVIGATION, COMPLEX].includes(typed(of.path));
+  const isPath = (of: Node): of is { path: string } =>
+    "path" in of && !("lambda" in of);
+  const noValue = (of: Node) => {
+    const type = isPath(of) ? typeOfNode(of) : null;
+    return !!type && [NAVIGATION, COMPLEX].includes(type);
+  };
   const checkNoValue = (op: string, side: Node, other: Node) => {
-    if (!noValue(side) || !("path" in side)) return;
+    if (!isPath(side) || !(noValue(side) || isList(typeOfNode(side)))) return;
     if (
       !["eq", "ne"].includes(op) ||
       !("literal" in other) ||
@@ -1082,28 +1140,33 @@ function checkPaths(
       throw new Error(`${side.path} has no value: compare it with null`);
   };
   if ("lambda" in node) {
-    const { scope, rest } = from(node.path);
+    const { scope, rest } = pathStart(node.path, root, variables);
     const items = scope && rest ? scope.collection(rest) : undefined;
-    if (node.variable && node.predicate)
-      checkPaths(
-        node.predicate,
-        root,
-        new Map(variables).set(node.variable, items),
-      );
+    if (node.variable && node.predicate) {
+      const inner: Variables = new Map(variables).set(node.variable, {
+        scope: items,
+        item: scope && rest ? scope.itemType(rest) : "",
+      });
+      checkPaths(node.predicate, root, inner);
+      checkCondition(node.predicate, root, inner);
+    }
   } else if ("path" in node) {
-    const { scope, rest } = from(node.path);
-    if (scope && rest) scope.check(rest);
+    pathType(node.path, root, variables);
   } else if ("op" in node) {
     check(node.left);
     check(node.right);
+    if (node.op === "and" || node.op === "or") {
+      condition(node.left);
+      condition(node.right);
+      return;
+    }
     if (COMPARISONS.includes(node.op)) {
       checkText(node.left, node.right);
       checkText(node.right, node.left);
+      checkEnums(node.left, node.right);
     }
-    if (node.op !== "and" && node.op !== "or") {
-      checkNoValue(node.op, node.left, node.right);
-      checkNoValue(node.op, node.right, node.left);
-    }
+    checkNoValue(node.op, node.left, node.right);
+    checkNoValue(node.op, node.right, node.left);
     if (node.op === "has" && !("enumType" in node.left && node.left.enumType)) {
       const type = typeOfNode(node.left);
       if (type?.startsWith("Edm."))
@@ -1112,12 +1175,19 @@ function checkPaths(
   } else if ("in" in node) {
     check(node.left);
     node.list.forEach(check);
-    for (const item of node.list) checkText(item, node.left);
-  } else if ("expr" in node) check(node.expr);
-  else if ("func" in node) {
+    checkNoValue("in", node.left, node.left);
+    for (const item of node.list) {
+      checkText(item, node.left);
+      checkEnums(item, node.left);
+      checkNoValue("in", item, node.left);
+    }
+  } else if ("expr" in node) {
+    check(node.expr);
+    if ("not" in node) condition(node.expr);
+  } else if ("func" in node) {
     node.args.forEach(check);
     for (const arg of node.args)
-      if (noValue(arg) && "path" in arg)
+      if (isPath(arg) && noValue(arg))
         throw new Error(`${node.func} takes a value, and ${arg.path} has none`);
   }
 }
@@ -1234,4 +1304,11 @@ function compileExpression(
   };
 }
 
-export { NAVIGATION, COMPLEX, compileFilter, compileExpression, scopeOf };
+export {
+  NAVIGATION,
+  COMPLEX,
+  compileFilter,
+  compileExpression,
+  fieldAt,
+  scopeOf,
+};

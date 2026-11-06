@@ -917,6 +917,156 @@ describe("a body that isn't an object, in a $batch", () => {
   });
 });
 
+describe("what a $filter or $orderby can't mean, whatever rows there are", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, {
+      ID: 1,
+      Name: "a",
+      Qty: 1,
+      Cm: "R,W",
+      Col: "Red",
+      Sh: "Red",
+      Tags: ["secret"],
+      Cols: ["Red"],
+      Bools: [true],
+      Addrs: [{ City: "x" }],
+    });
+    await send("POST", `${s.v4}/Kids`, { ID: 1, ItemID: 1 });
+  });
+  after(() => s.close());
+
+  const filter = (text: string) =>
+    get(`${s.v4}/Items?$select=ID&$filter=${encodeURIComponent(text)}`);
+
+  for (const text of [
+    "not Qty",
+    "not Name",
+    "Qty and true",
+    "true and Qty",
+    "true or Name",
+    "not (true and Name)",
+    "not Group",
+    "Addr or true",
+    "Kids/any(k:k/ID)",
+    "Kids/all(k:k/ItemID)",
+    "Addrs/any(a:a/City)",
+    "Addrs/any(a:a)",
+    "Tags/any(t:t)",
+    "Cols/any(c:c)",
+    "Kids/any(k:k)",
+  ])
+    it(`${text} isn't a condition`, async () => {
+      const res = await filter(text);
+      assert.equal(res.status, 400, JSON.stringify(res.body));
+      assert.match(res.body.error.message, /condition/);
+    });
+
+  for (const text of [
+    "not (Qty gt 0)",
+    "true and not (Name eq 'z')",
+    "null or Qty eq 1",
+    "Bools/any(b:b)",
+    "Bools/any(b:not b)",
+    "Kids/any(k:k/ID gt 0)",
+    "Kids/any()",
+    "Addrs/any(a:a/City eq 'x')",
+    "Addrs/any(a:a/City ne null and contains(a/City,'x'))",
+    "Tags/any(t:t eq 'secret')",
+    "Tags/any(t:contains(t,'e'))",
+    "Kids/any(k:k/Item/Kids/any(j:j/ID eq k/ID))",
+    "Addr eq null",
+    "Group eq null",
+    "Tags/$count gt 0",
+  ])
+    it(`${text} still is one`, async () => {
+      const res = await filter(text);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.ok(res.body.value.length <= 1);
+    });
+
+  it("a field no complex item has is a 400", async () => {
+    assert.equal((await filter("Addrs/any(a:a/Nope eq 'x')")).status, 400);
+  });
+
+  for (const text of [
+    "Tags eq 'a'",
+    "Tags ne 'a'",
+    "Tags has 'a'",
+    "Tags in (null)",
+    "Tags in ('a')",
+    "Qty in (Tags)",
+    "Tags gt null",
+    "Addrs eq 'a'",
+    "Cols has F.Color'Red'",
+    "Addrs/any(a:a eq 'x')",
+  ])
+    it(`${text} is a 400 that shows no row`, async () => {
+      for (const res of [
+        await filter(text),
+        await get(
+          `${s.v4}/Items?$filter=${encodeURIComponent(`${text} and ID eq 99`)}`,
+        ),
+      ]) {
+        assert.equal(res.status, 400, JSON.stringify(res.body));
+        assert.doesNotMatch(res.body.error.message, /secret/);
+      }
+    });
+
+  it("on an empty set too", async () => {
+    const empty = await start(MODEL);
+    try {
+      const res = await get(`${empty.v4}/Items?$filter=Tags eq 'a'`);
+      assert.equal(res.status, 400);
+    } finally {
+      await empty.close();
+    }
+  });
+
+  for (const text of [
+    "Cols/any(c:c eq F.Shade'Red')",
+    "Qty eq F.Color'Red'",
+    "Name eq F.Color'Red'",
+    "Tags/any(t:t eq F.Color'Red')",
+    "Col eq Sh",
+    "Sh ne Col",
+    "Col in (Sh)",
+    "Cols/any(c:c eq Sh)",
+  ])
+    it(`${text} mixes up its enums`, async () => {
+      assert.equal((await filter(text)).status, 400);
+    });
+
+  for (const [text, found] of [
+    ["Cols/any(c:c eq F.Color'Red')", 1],
+    ["Col eq F.Color'Red'", 1],
+    ["Col eq 1", 1],
+    ["Cols/any(c:c eq Col)", 1],
+    ["F.Color'Red' eq Col", 1],
+    ["F.Color'Red' eq F.Color'Red'", 1],
+    ["F.Color'Red' eq F.Color'Blue'", 0],
+    ["F.Combo'R,W' has F.Combo'R'", 1],
+    ["F.Combo'R,W' has F.Combo'X'", 0],
+    ["F.Combo'RW' has F.Combo'W'", 1],
+    ["F.Perm'R,W' has F.Perm'R'", 1],
+    ["Cm has F.Combo'R'", 1],
+    ["Cm has F.Combo'X'", 0],
+  ] as const)
+    it(`${text} finds ${found}`, async () => {
+      const res = await filter(text);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.value.length, found);
+    });
+
+  for (const path of ["Tags", "Addrs", "Cols", "Perms", "Bools"])
+    it(`$orderby=${path} is a 400`, async () => {
+      const res = await get(`${s.v4}/Items?$orderby=${path}`);
+      assert.equal(res.status, 400);
+      assert.match(res.body.error.message, /has no value/);
+    });
+});
+
 describe("a member's Value", () => {
   const model = (value: string) =>
     `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="F" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EnumType Name="Color"><Member Name="Red" Value="${value}"/></EnumType><EntityContainer Name="C"/></Schema></edmx:DataServices></edmx:Edmx>`;
@@ -1005,5 +1155,150 @@ describe("read options on a write", () => {
     const body = await res.json();
     assert.equal(body.Qty, 9);
     assert.equal(body.Name, undefined);
+  });
+});
+
+describe("a path into a complex value", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    for (const row of [
+      {
+        ID: 1,
+        Addr: { City: "Athens" },
+        Place: {
+          Addr: { City: "Zurich" },
+          Col: "Red",
+          Cols: ["Red", "Blue"],
+          Stops: [{ Addr: { City: "Rome" } }],
+        },
+      },
+      {
+        ID: 2,
+        Addr: { City: "Berlin" },
+        Place: { Addr: { City: "Oslo" }, Col: "Blue", Cols: [], Stops: [] },
+      },
+      { ID: 3, Addr: { Zip: "1" } },
+      { ID: 4 },
+    ])
+      assert.equal((await send("POST", `${s.v4}/Items`, row)).status, 201);
+    await send("POST", `${s.v4}/Kids`, { ID: 1, ItemID: 1 });
+  });
+  after(() => s.close());
+
+  const ids = async (query: string, root = s.v4) => {
+    const { status, body } = await get(`${root}/Items?${query}`, {
+      accept: "application/json",
+    });
+    assert.equal(status, 200, JSON.stringify(body));
+    return (body.value ?? body.d.results ?? body.d).map(
+      (r: { ID: number }) => r.ID,
+    );
+  };
+  const filter = (text: string, root = s.v4) =>
+    ids(`$select=ID&$filter=${encodeURIComponent(text)}`, root);
+
+  for (const [text, found] of [
+    ["Addr/City eq 'Athens'", [1]],
+    ["$it/Addr/City eq 'Athens'", [1]],
+    ["Addr/City ne 'Athens'", [2, 3, 4]],
+    ["Addr/City eq null", [3, 4]],
+    ["Addr/City ne null", [1, 2]],
+    ["startswith(Addr/City,'Ber')", [2]],
+    ["length(Addr/City) eq 6", [1, 2]],
+    ["Addr/City in ('Athens','Berlin')", [1, 2]],
+    ["Place/Addr/City eq 'Oslo'", [2]],
+    ["Place/Addr/City eq null", [3, 4]],
+    ["Place/Col eq F.Color'Blue'", [2]],
+    ["Place/Col eq 1", [1]],
+    ["Place/Cols/any(c:c eq F.Color'Blue')", [1]],
+    ["Place/Cols/$count eq 2", [1]],
+    ["Place/Addr ne null", [1, 2]],
+    ["Addr eq null", [4]],
+    ["Addrs/$count eq 0", [1, 2, 3, 4]],
+    ["Place/Stops/any(p:p/Addr/City eq 'Rome')", [1]],
+    ["Kids/any(k:k/Item/Addr/City eq 'Athens')", [1]],
+  ] as const)
+    it(`$filter=${text}`, async () => {
+      assert.deepEqual(await filter(text), found);
+    });
+
+  for (const text of [
+    "Addr/Nope eq 'x'",
+    "Addr/City/Nope eq 'x'",
+    "Place/Addr/Nope eq 'x'",
+    "Addrs/City eq 'x'",
+    "Addr/City",
+    "Place/Addr eq 'x'",
+    "Place/Cols eq 'x'",
+    "Place/Col eq F.Shade'Red'",
+    "Addr/City has 'x'",
+    "Name/City eq 'x'",
+    "Place/Stops/any(p:p/Addr/Nope eq 'x')",
+    "Place/Stops/any(p:p/Addr/City)",
+  ])
+    it(`$filter=${text} is a 400 with no row to read`, async () => {
+      const res = await get(
+        `${s.v4}/Items?$filter=${encodeURIComponent(text)}`,
+      );
+      assert.equal(res.status, 400, JSON.stringify(res.body));
+      assert.doesNotMatch(res.body.error.message, /Athens|Zurich/);
+    });
+
+  it("$orderby sorts by it, nulls first, and either way", async () => {
+    assert.deepEqual(
+      await ids("$select=ID&$orderby=Addr/City,ID"),
+      [3, 4, 1, 2],
+    );
+    assert.deepEqual(
+      await ids("$select=ID&$orderby=Addr/City desc,ID"),
+      [2, 1, 3, 4],
+    );
+    assert.deepEqual(
+      await ids("$select=ID&$orderby=Place/Addr/City,ID"),
+      [3, 4, 2, 1],
+    );
+  });
+
+  it("$orderby sorts an enum in one by its number", async () => {
+    assert.deepEqual(
+      await ids("$select=ID&$orderby=Place/Col desc,ID"),
+      [2, 1, 3, 4],
+    );
+  });
+
+  for (const path of ["Place/Addr", "Place/Cols", "Addr/Nope", "Addrs/City"])
+    it(`$orderby=${path} is a 400`, async () => {
+      assert.equal((await get(`${s.v4}/Items?$orderby=${path}`)).status, 400);
+    });
+
+  it("through a navigation, and in an $expand", async () => {
+    const kids = await get(
+      `${s.v4}/Kids?$filter=${encodeURIComponent("Item/Addr/City eq 'Athens'")}&$orderby=Item/Addr/City`,
+    );
+    assert.deepEqual(
+      kids.body.value.map((k: { ID: number }) => k.ID),
+      [1],
+    );
+    const items = await get(
+      `${s.v4}/Items(1)/Kids?$filter=${encodeURIComponent("Item/Place/Addr/City eq 'Zurich'")}`,
+    );
+    assert.equal(items.body.value.length, 1);
+  });
+
+  it("in V2", async () => {
+    assert.deepEqual(await filter("Addr/City eq 'Athens'", s.v2), [1]);
+    assert.deepEqual(
+      await ids("$orderby=Addr/City,ID&$select=ID", s.v2),
+      [3, 4, 1, 2],
+    );
+  });
+
+  it("in $apply's filter", async () => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$apply=filter(Addr/City eq 'Athens')/aggregate($count as C)`,
+    );
+    assert.equal(status, 200, JSON.stringify(body));
+    assert.equal(Number(body.value[0].C), 1);
   });
 });

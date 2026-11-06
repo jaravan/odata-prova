@@ -1,9 +1,15 @@
 // Applies a request's query options to rows: $filter, $search, $count, $orderby, $skip and
 // $top, for a collection or an $expand node.
 
-import { compareValues, enumNumber, toComparable } from "./types.ts";
+import { compareValues, enumNumber, isObject, toComparable } from "./types.ts";
 import { ROW_READ, sortWork, spend } from "./work.ts";
-import { COMPLEX, NAVIGATION, compileFilter, scopeOf } from "./filter.ts";
+import {
+  COMPLEX,
+  NAVIGATION,
+  compileFilter,
+  fieldAt,
+  scopeOf,
+} from "./filter.ts";
 import { search } from "./search.ts";
 import type {
   Collection,
@@ -14,6 +20,7 @@ import type {
 import { HttpError, own } from "./query.ts";
 import type {
   AnyNavigation,
+  ComplexType,
   EntityType,
   Literal,
   Model,
@@ -37,24 +44,49 @@ export interface QueryHost {
   ): { type: EntityType; rows: Row[] };
 }
 
-// Property-path resolver for $filter/$orderby: "Prop" or "Nav/Prop" (single-valued nav only).
+// What a path goes through: an entity's type, or a complex value's
+type Holder = EntityType | ComplexType;
+
+// The type of a single complex value
+function complexOf(type: Holder, name: string): ComplexType | undefined {
+  const prop = own(type.properties, name);
+  return prop?.isCollection ? undefined : prop?.complexType;
+}
+
+// Property-path resolver for $filter/$orderby: "Prop", or through single-valued navigations
+// and complex values, "Nav/Prop", "Complex/Prop".
 // resolve.collection(row, path), for the lambda operators: a path ending in a collection
 // navigation (after single-valued ones) gives { rows, resolve } for the related rows and
 // their type; one ending in a collection-valued property gives { values, prop }.
 function resolver(svc: QueryHost, entityType: EntityType): Resolve {
-  // Follows the single-valued navigations in parts; null when one of them leads nowhere
+  // A complex type has no navigations
+  const navigation = (type: Holder, name: string) =>
+    "navigations" in type ? svc.navigation(type, name) : undefined;
+  // Follows the navigations and complex values in parts; null when one of them leads nowhere
   const walk = (
     row: Row,
     parts: string[],
     path: string,
-  ): { row: Row; type: EntityType } | null => {
+  ): { row: Row; type: Holder } | null => {
     let currentRow = row,
-      currentType = entityType;
+      currentType: Holder = entityType;
     for (const part of parts) {
-      const nav = svc.navigation(currentType, part);
+      const complex = complexOf(currentType, part);
+      if (complex) {
+        const value = currentRow[part];
+        if (!isObject(value)) return null;
+        currentRow = value;
+        currentType = complex;
+        continue;
+      }
+      const nav = navigation(currentType, part);
       if (!nav || nav.isCollection)
         throw new HttpError(400, `Cannot filter on path ${path}`);
-      const { rows, type } = svc.related(currentRow, currentType, nav);
+      const { rows, type } = svc.related(
+        currentRow,
+        currentType as EntityType,
+        nav,
+      );
       if (rows.length === 0) return null;
       currentRow = rows[0];
       currentType = type;
@@ -89,10 +121,12 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
     const prop = own(at.type.properties, last);
     if (prop) return valueOf(at.row, prop);
     // A single-valued navigation is an entity or null, all that a filter can ask of it
-    const nav = svc.navigation(at.type, last);
+    const nav = navigation(at.type, last);
     if (nav && !nav.isCollection)
       return {
-        value: svc.related(at.row, at.type, nav).rows.length ? true : null,
+        value: svc.related(at.row, at.type as EntityType, nav).rows.length
+          ? true
+          : null,
         type: null,
       };
     throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
@@ -102,9 +136,9 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
     const last = parts[parts.length - 1];
     const at = walk(row, parts.slice(0, -1), path);
     const type = at?.type;
-    const nav = type && svc.navigation(type, last);
+    const nav = type && navigation(type, last);
     if (at && nav?.isCollection) {
-      const related = svc.related(at.row, at.type, nav);
+      const related = svc.related(at.row, at.type as EntityType, nav);
       return { rows: related.rows, resolve: resolver(svc, related.type) };
     }
     const prop = own(type?.properties, last);
@@ -123,11 +157,18 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
 // Checks paths against a type alone, as resolver reads them from a row: a mistake is a 400
 // whatever rows there are.
 function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
-  // Where the single-valued navigations in parts lead
-  const walk = (parts: string[], path: string): EntityType => {
-    let at = entityType;
+  const navigation = (type: Holder, name: string) =>
+    "navigations" in type ? svc.navigation(type, name) : undefined;
+  // Where the single-valued navigations and complex values in parts lead
+  const walk = (parts: string[], path: string): Holder => {
+    let at: Holder = entityType;
     for (const part of parts) {
-      const nav = svc.navigation(at, part);
+      const complex = complexOf(at, part);
+      if (complex) {
+        at = complex;
+        continue;
+      }
+      const nav = navigation(at, part);
       if (!nav || nav.isCollection)
         throw new HttpError(400, `Cannot filter on path ${path}`);
       at = svc.model.entityTypes[nav.targetType];
@@ -141,8 +182,6 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
         this.collection(name.slice(0, -"/$count".length));
         return "Edm.Int32";
       }
-      const typeOf = (prop: Property) =>
-        prop.complexType && !prop.isCollection ? COMPLEX : prop.type;
       const itself = own(entityType.properties, name);
       if (itself) return typeOf(itself);
       const parts = name.split("/");
@@ -150,7 +189,7 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
       const last = parts[parts.length - 1];
       const prop = own(at.properties, last);
       if (prop) return typeOf(prop);
-      const nav = svc.navigation(at, last);
+      const nav = navigation(at, last);
       if (nav && !nav.isCollection) return NAVIGATION;
       throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
     },
@@ -158,12 +197,46 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
       const parts = path.split("/");
       const last = parts[parts.length - 1];
       const at = walk(parts.slice(0, -1), path);
-      const nav = svc.navigation(at, last);
+      const nav = navigation(at, last);
       if (nav?.isCollection)
         return pathScope(svc, svc.model.entityTypes[nav.targetType]);
-      if (own(at.properties, last)?.isCollection) return undefined;
+      const prop = own(at.properties, last);
+      if (prop?.isCollection) return itemScope(prop);
       throw new HttpError(400, `${path} is not a collection: any/all need one`);
     },
+    itemType(path) {
+      const parts = path.split("/");
+      const last = parts[parts.length - 1];
+      const at = walk(parts.slice(0, -1), path);
+      const prop = own(at.properties, last);
+      return prop ? itemType(prop) : NAVIGATION;
+    },
+  };
+}
+
+const typeOf = (prop: Property) =>
+  prop.complexType && !prop.isCollection ? COMPLEX : prop.type;
+const itemType = (prop: Property) =>
+  prop.complexType ? COMPLEX : (prop.elementType ?? prop.type);
+
+// The fields of an item of a collection of complex values, as a lambda reads them
+function itemScope(collection: Property): PathScope | undefined {
+  const type = collection.complexType;
+  if (!type) return undefined;
+  const field = (path: string) => {
+    const prop = fieldAt(type, path).field;
+    if (!prop)
+      throw new HttpError(400, `Unknown property ${path} on ${type.name}`);
+    return prop;
+  };
+  return {
+    check: (path) => typeOf(field(path)),
+    collection(path) {
+      const prop = field(path);
+      if (prop.isCollection) return itemScope(prop);
+      throw new HttpError(400, `${path} is not a collection: any/all need one`);
+    },
+    itemType: (path) => itemType(field(path)),
   };
 }
 
@@ -224,8 +297,10 @@ function applyQuery(
           400,
           `Invalid $orderby: ${t.trim()} (write a property, then asc or desc)`,
         );
+      const sorted = pathScope(svc, entityType).check(path);
       if (
-        [NAVIGATION, COMPLEX].includes(pathScope(svc, entityType).check(path))
+        [NAVIGATION, COMPLEX].includes(sorted) ||
+        sorted.startsWith("Collection(")
       )
         throw new HttpError(400, `Invalid $orderby: ${path} has no value`);
       return { path, desc: dir.toLowerCase() === "desc" };

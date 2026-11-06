@@ -112,6 +112,8 @@ Null follows the spec, and a filter leaves out a row it can't say is true:
 
 `has` compares an enum with its members: `Perms has NS.Perm'Read,Write'`. An enum's literal is its type and member, by name or value, `Color eq NS.Color'Red'`, by namespace or alias, in a key too. A type or member that doesn't exist is a `400`, not an empty answer. `hour`, `minute` and `second` read an `Edm.TimeOfDay` as well as a date and time.
 
+`$filter` and `$orderby` follow paths through single-valued navigations and complex values, `Addr/City eq 'Athens'` or `Customer/Addr/City`, and a lambda's variable through a complex item's fields. What leads nowhere, a null `Addr`, gives `null`.
+
 A property may be named like an operator or a literal (`Div`, `Or`, `True`, `Null`): `Div eq 5` reads the property, and `Add add 1` each as it should. Lower-case `true`, `false`, `null` and `not` are always the keyword.
 
 ### Search (`$search`)
