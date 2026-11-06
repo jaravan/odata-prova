@@ -403,3 +403,19 @@ describe("$batch", () => {
     assert.doesNotMatch(JSON.stringify(part.body), /undefined/);
   });
 });
+
+describe("smaller mistakes", () => {
+  it("substring with a negative length is empty, as OData's has no swap", async () => {
+    const s = await start(MODEL);
+    try {
+      await send("POST", `${s.v4}/Items`, { ID: 1 });
+      const count = async (filter: string) =>
+        (await get(`${s.v4}/Items?$filter=${encodeURIComponent(filter)}`)).body
+          .value.length;
+      assert.equal(await count("substring('abc',1,-1) eq ''"), 1);
+      assert.equal(await count("substring('abc',1,1) eq 'b'"), 1);
+    } finally {
+      await s.close();
+    }
+  });
+});

@@ -899,7 +899,7 @@ function callFunction(name: string, args: Value[]): Value {
     case "substring":
       return string(
         args.length > 2
-          ? S(0).substring(N(1), N(1) + N(2))
+          ? S(0).substring(N(1), N(1) + Math.max(N(2), 0)) // it would swap them
           : S(0).substring(N(1)),
       );
     case "replace": {
