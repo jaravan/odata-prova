@@ -341,7 +341,7 @@ function createApp({
   // $batch bodies are multipart and must stay raw; everything else is JSON.
   for (const service of services) {
     app.post(
-      new RegExp(`^${pathPattern(service.servicePath)}/\\$batch$`),
+      new RegExp(`^${pathPattern(service.servicePath)}/(?:\\$|%24)batch$`),
       express.raw({ type: () => true, limit: "10mb" }),
       createBatchHandler(service),
     );

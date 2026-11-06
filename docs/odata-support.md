@@ -88,6 +88,8 @@ Reads and writes, `$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, 
 
 A system query option the protocol doesn't have is a `400`: a misspelt `$fliter`, `$TOP` (they are case-sensitive in OData 4.0), or the other protocol's (`$count=true` in V2, `$inlinecount` in V4). Answering as if it weren't there would hide the mistake. Custom options, without a `$`, are left alone: `sap-client`, `sap-language`. `$top`, `$skip` and `$skiptoken` take a whole number, nothing else.
 
+A `$` may be written `%24`, as in `%24metadata`.
+
 A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. So is an unknown name in `$filter` or `$orderby`, from the request alone: whether a row gets to it doesn't matter. V4 has no `$select` through a navigation, so `$select=Nav/Prop` is a `400` too: write `$expand=Nav($select=Prop)`. V2 does: `$expand=Nav&$select=Nav/Prop` gives only that, at each level. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`. They work over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nest, and take `$it` for the entity outside the lambda.

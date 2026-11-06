@@ -187,3 +187,40 @@ describe("a next link is one the server can read", () => {
     assert.match(r.body["@odata.nextLink"], /[?&]a=1&a=2&/);
   });
 });
+
+describe("$ in a path may be escaped", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  it("%24metadata is $metadata", async () => {
+    const r = await get(`${s.v4}/%24metadata`);
+    assert.equal(r.status, 200);
+    assert.match(String(r.headers.get("content-type")), /xml/);
+  });
+
+  it("%24batch is $batch", async () => {
+    const res = await fetch(`${s.v4}/%24batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed; boundary=b" },
+      body: "--b--\r\n",
+    });
+    assert.equal(res.status, 200);
+  });
+
+  it("%24 in a key is that key's $", async () => {
+    const created = await send("POST", `${s.v4}/PurchaseOrderSet`, {
+      ...ORDER,
+      PurchaseOrderId: "a$b",
+    });
+    assert.equal(created.status, 201);
+    const r = await get(`${s.v4}/PurchaseOrderSet('a%24b')`);
+    assert.equal(r.body.PurchaseOrderId, "a$b");
+    assert.equal(
+      (await get(`${s.v4}/PurchaseOrderSet('a%2524b')`)).status,
+      404,
+    );
+  });
+});

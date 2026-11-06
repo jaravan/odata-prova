@@ -44,8 +44,10 @@ class HttpError extends Error {
 // A resource path decoded but for what a segment or a key needs to keep apart: decodeURI
 // leaves / , = ? # & encoded (%2F, ...), and %25 stays %25, so that SO%2F2025 in a key
 // isn't read as two segments, nor 50%25 decoded twice. Each segment's name and each key's
-// value is then decoded on its own (see resource-path.ts).
-const decodePath = (text: string) => decodeURI(text.replace(/%25/gi, "%2525"));
+// value is then decoded on its own (see resource-path.ts). A $ means the same either way, so
+// %24metadata is $metadata, though decodeURI leaves it encoded too.
+const decodePath = (text: string) =>
+  decodeURI(text.replace(/%25/gi, "%2525")).replace(/%24/g, "$");
 
 // A path as a URL has it: a service folder's name may hold a space, a Ü, a # or a %, as
 // /odata/v4/My Srv. What is encoded already stays as it is.
