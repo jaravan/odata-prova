@@ -264,3 +264,17 @@ describe("$format of what the server doesn't answer in", () => {
     assert.equal((await get(`${s.v2}/?$format=json`)).status, 200);
   });
 });
+
+describe("$skiptoken is a collection's", () => {
+  it("on one entity -> 400", async () => {
+    const s = await start();
+    try {
+      const r = await get(
+        `${s.v4}/PurchaseOrderSet('4500000001')?$skiptoken=1`,
+      );
+      assert.equal(r.status, 400);
+    } finally {
+      await s.close();
+    }
+  });
+});

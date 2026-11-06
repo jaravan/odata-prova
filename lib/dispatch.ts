@@ -439,6 +439,7 @@ const COLLECTION_OPTIONS = [
   "search",
   "top",
   "skip",
+  "skiptoken",
 ] as const;
 
 function checkOneEntity(q: QueryNode): void {
