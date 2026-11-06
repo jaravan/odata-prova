@@ -176,6 +176,7 @@ function createBatchHandler(
         400,
         `The URL of "${spaced}" holds a space: write it as %20`,
       );
+    if (!rawUrl) return protocol.error(400, "A part has no request in it");
     let url = rawUrl.replace(/^https?:\/\/[^/]+/i, "");
     const ref = url.match(/^\$([^/?]+)(.*)$/);
     if (ref) {
@@ -204,8 +205,13 @@ function createBatchHandler(
           JSON.parse(bodyText, keepLongNumbers),
           contentIdRefs,
         );
-      } catch {
-        parsedBody = undefined;
+      } catch (e) {
+        // A body in another format isn't read at all; one that says it's JSON has to be
+        if (/json/i.test(headers["content-type"] || "json"))
+          return protocol.error(
+            400,
+            `The body of ${method} ${rawUrl} is not JSON: ${(e as Error).message}`,
+          );
       }
     }
     let resourcePath: string;
@@ -223,8 +229,10 @@ function createBatchHandler(
       parsedBody,
       headers,
     );
-    if (headers["content-id"] && result.headers?.Location)
-      contentIdRefs[headers["content-id"]] = result.headers.Location;
+    // $1 is what the request made, or what it changed
+    if (headers["content-id"] && result.status < 300)
+      contentIdRefs[headers["content-id"]] =
+        result.headers?.Location ?? pathOnly;
     return result;
   }
 
@@ -236,6 +244,13 @@ function createBatchHandler(
 
     if (/multipart\/mixed/i.test(outerContentType)) {
       const innerBoundary = extractBoundary(outerContentType);
+      if (!innerBoundary)
+        return {
+          changeset: true,
+          results: [
+            { result: protocol.error(400, "A changeset has no boundary") },
+          ],
+        };
       let members: string[];
       try {
         members = splitMultipart(remainder, innerBoundary);
@@ -249,6 +264,7 @@ function createBatchHandler(
       const mark = store.begin();
       // No prototype: a Content-ID is any text, __proto__ included
       const refs = Object.create(null) as Record<string, string>;
+      const contentIds = new Set<string>();
       const results: ProcessedPart["results"] = [];
       let failed = false;
       try {
@@ -261,7 +277,16 @@ function createBatchHandler(
             parseHeaders(innerHead)["content-id"] ||
             request.headers["content-id"];
           if (contentId) request.headers["content-id"] = contentId;
-          const result = await executeHttpPart(request, refs);
+          const refused =
+            request.method === "GET" || request.method === "HEAD"
+              ? "A changeset holds writes: a read goes outside it"
+              : contentId && contentIds.has(contentId)
+                ? `Content-ID ${contentId} is used twice in a changeset`
+                : undefined;
+          if (contentId) contentIds.add(contentId);
+          const result = refused
+            ? protocol.error(400, refused)
+            : await executeHttpPart(request, refs);
           results.push({ result, contentId });
           if (result.status >= 400) {
             failed = true;

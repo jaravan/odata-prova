@@ -3,7 +3,13 @@
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { get, send, start, type TestServer } from "./helpers.ts";
+import {
+  batchResponses,
+  get,
+  send,
+  start,
+  type TestServer,
+} from "./helpers.ts";
 
 const MODEL = path.join(import.meta.dirname, "fixtures", "Mixed");
 const JSON_TYPE = { "content-type": "application/json" };
@@ -314,5 +320,86 @@ describe("If-None-Match", () => {
     const none = { "if-none-match": "*" };
     assert.equal((await send("PATCH", url, {}, none)).status, 412);
     assert.equal((await send("DELETE", url, undefined, none)).status, 412);
+  });
+});
+
+describe("$batch", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1 });
+  });
+  afterEach(() => s.close());
+
+  const http = (lines: string, head = "") =>
+    `Content-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n${head}\r\n${lines}\r\n`;
+  const send1 = async (body: string) => {
+    const res = await fetch(`${s.v4}/$batch`, {
+      method: "POST",
+      headers: { "content-type": "multipart/mixed;boundary=b" },
+      body,
+    });
+    assert.equal(res.status, 200);
+    return batchResponses(await res.text());
+  };
+  const changeset = (...members: string[]) =>
+    `--b\r\nContent-Type: multipart/mixed;boundary=c\r\n\r\n${members.map((m) => `--c\r\n${m}`).join("")}--c--\r\n--b--`;
+  const post = (id: string, json: string) =>
+    http(
+      `POST Items HTTP/1.1\r\nContent-Type: application/json\r\n\r\n${json}`,
+      `Content-ID: ${id}\r\n`,
+    );
+
+  it("broken JSON in a part is a 400, and runs nothing", async () => {
+    const [part] = await send1(
+      `--b\r\n${http('POST Items HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"ID":')}--b--`,
+    );
+    assert.equal(part.status, 400);
+    assert.equal((await get(`${s.v4}/Items/$count`)).body, "1");
+  });
+
+  it("an empty part is a 400, not the service document", async () => {
+    const [part] = await send1(`--b\r\n${http("")}--b--`);
+    assert.equal(part.status, 400);
+  });
+
+  it("a GET in a changeset fails it", async () => {
+    const [part] = await send1(
+      changeset(http("GET Items(1) HTTP/1.1\r\n\r\n", "Content-ID: 1\r\n")),
+    );
+    assert.equal(part.status, 400);
+  });
+
+  it("a repeated Content-ID fails the changeset, and undoes it", async () => {
+    const [part] = await send1(
+      changeset(post("1", '{"ID":2}'), post("1", '{"ID":3}')),
+    );
+    assert.equal(part.status, 400);
+    assert.equal((await get(`${s.v4}/Items/$count`)).body, "1");
+  });
+
+  it("$1 can name a PATCH's entity", async () => {
+    const patch = http(
+      `PATCH Items(1) HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"Qty":1}`,
+      "Content-ID: 1\r\n",
+    );
+    const again = http(
+      `PATCH $1 HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"Note":"x"}`,
+      "Content-ID: 2\r\n",
+    );
+    const parts = await send1(changeset(patch, again));
+    assert.deepEqual(
+      parts.map((p) => p.status),
+      [204, 204],
+    );
+    assert.equal((await get(`${s.v4}/Items(1)`)).body.Note, "x");
+  });
+
+  it("a changeset with no boundary says so", async () => {
+    const [part] = await send1(
+      "--b\r\nContent-Type: multipart/mixed\r\n\r\nx\r\n--b--",
+    );
+    assert.equal(part.status, 400);
+    assert.doesNotMatch(JSON.stringify(part.body), /undefined/);
   });
 });
