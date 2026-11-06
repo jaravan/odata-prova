@@ -575,3 +575,19 @@ describe("substring from before the text starts", () => {
       assert.equal(await computed(2, expression), emoji);
     });
 });
+
+describe("$format given twice", () => {
+  let s: TestServer;
+  before(async () => (s = await start(fixture("Mixed"))));
+  after(() => s.close());
+
+  for (const url of ["/", "/$metadata", "/Items"])
+    it(`on ${url} says so, whatever it's given as`, async () => {
+      const value = url === "/$metadata" ? "xml" : "json";
+      const { status, body } = await get(
+        `${s.v4}${url}?$format=${value}&$format=${value}`,
+      );
+      assert.equal(status, 400);
+      assert.match(body.error.message, /\$format is given more than once/);
+    });
+});

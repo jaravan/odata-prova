@@ -197,6 +197,8 @@ function rejectUnsupported(
 
 // A $format the resource isn't given in is a 501: $metadata is XML, everything else JSON
 function checkFormat(query: Record<string, unknown>, format = "JSON"): void {
+  if (Array.isArray(query.$format))
+    throw new HttpError(400, "$format is given more than once");
   const [short, media] =
     format === "JSON"
       ? ["json", "application/json"]
