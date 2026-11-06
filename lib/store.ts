@@ -369,8 +369,8 @@ class Store {
     // What no set read, which is then empty or generated: maybe a typo. By the file itself, not
     // its name: a filesystem may not tell Rows.json from rows.json.
     const fileId = (file: string) => {
-      const { dev, ino } = fs.statSync(file);
-      return `${dev}:${ino}`;
+      const stat = fs.statSync(file, { throwIfNoEntry: false });
+      return stat && `${stat.dev}:${stat.ino}`;
     };
     const read = new Set(
       Object.values(files)
@@ -379,7 +379,9 @@ class Store {
     );
     for (const name of fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : []) {
       const file = path.join(dataDir, name);
-      if (/\.(csv|json)$/.test(name) && !read.has(fileId(file)))
+      // A link to nothing is an editor's lock on a file, .#Rows.json
+      const id = /\.(csv|json)$/.test(name) ? fileId(file) : undefined;
+      if (id && !read.has(id))
         log(`  ${file}: ignored, no entity set reads it`);
     }
 

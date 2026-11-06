@@ -183,3 +183,18 @@ describe("an operation rule setting a key", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("a link in the data folder that leads nowhere", () => {
+  it("isn't a reason not to start: Emacs makes them while a file is edited", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dangling-"));
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.copyFileSync(
+      path.join(FAMILIES, "metadata.xml"),
+      path.join(dir, "metadata.xml"),
+    );
+    fs.symlinkSync("user@host.1234", path.join(dir, "data", ".#Ps.json"));
+    const s = await start(dir);
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
