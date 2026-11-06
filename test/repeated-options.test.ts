@@ -81,3 +81,21 @@ describe("overloaded functions", () => {
     assert.equal((await get(`${s.v4}/Rs(1)/N.Bo(c=1)`)).status, 400);
   });
 });
+
+describe("overloads, in V2 and by type", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(FIXTURES, "Params"));
+  });
+  after(() => s.close());
+
+  it("V2 reads the parameters from the query string", async () => {
+    const res = await get(`${s.v2}/Ov?b='x'`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const text = JSON.stringify(res.body);
+    assert.match(text, /:0\b/);
+    const other = await get(`${s.v2}/Ov?a=1`);
+    assert.equal(other.status, 200, JSON.stringify(other.body));
+    assert.doesNotMatch(JSON.stringify(other.body), /:0\b/);
+  });
+});

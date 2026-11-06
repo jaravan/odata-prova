@@ -109,12 +109,21 @@ function boundOperation(
 
 // The declaration of a function with the parameters the call names, as OData tells overloads
 // apart. None has them: the first, whose check then says what's wrong.
-function overloaded(op: Operation, paramText: string | undefined): Operation {
+function overloaded(
+  svc: ODataService,
+  op: Operation,
+  paramText: string | undefined,
+  query: Record<string, unknown>,
+): Operation {
   if (!op.overloads || op.kind !== "function") return op;
-  const given = splitTopLevel(paramText || "", ",")
-    .filter((part) => part.trim())
-    .map((part) => part.slice(0, part.indexOf("=")).trim())
-    .sort();
+  // V4 names them in the path, V2 in the query string, with the query's own options
+  const given = (
+    svc.protocol.version === "4.0"
+      ? splitTopLevel(paramText || "", ",")
+          .filter((part) => part.trim())
+          .map((part) => part.slice(0, part.indexOf("=")).trim())
+      : Object.keys(query).filter((name) => !/^[$!]/.test(name))
+  ).sort();
   const match = [op, ...op.overloads].find((o) =>
     isDeepStrictEqual(o.parameters.map((p) => p.name).sort(), given),
   );
@@ -235,7 +244,7 @@ function callOperation(
   opts: ResponseOptions,
   headers: RequestHeaders,
 ): ODataResponse {
-  op = overloaded(op, paramText);
+  op = overloaded(svc, op, paramText, query);
   // Checked before the operation runs: an action's changes would stay otherwise
   const rt = op.returnType;
   if (q.apply && !(rt?.entityType && rt.isCollection))
