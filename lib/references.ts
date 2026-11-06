@@ -155,13 +155,15 @@ function link(
     row,
     nav.dependentSide === "source" ? sourceColumns : [],
   );
-  checkDraftRow(
-    svc.model,
-    nav.targetSet,
-    targetType,
-    target,
-    nav.dependentSide === "target" ? nav.join.map(([, tgt]) => tgt) : [],
-  );
+  // A link held on the source, or in a link set, leaves the target's row as it is
+  if (!nav.links && nav.dependentSide === "target")
+    checkDraftRow(
+      svc.model,
+      nav.targetSet,
+      targetType,
+      target,
+      nav.join.map(([, tgt]) => tgt),
+    );
   if (nav.links) {
     addLink(svc.model, svc.store, nav, row, target);
     return;

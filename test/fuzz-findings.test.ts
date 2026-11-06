@@ -415,3 +415,134 @@ describe("startup, from what an editor or a metadata.xml may hold", () => {
     }
   });
 });
+
+describe("a link that leaves its target's row as it is", () => {
+  let s: TestServer;
+  let dir: string;
+  const OTHER = "b0000000-0000-4000-8000-000000000002";
+  const reviewBook = (id: number) =>
+    (s.store.rows("Reviews") as Record<string, unknown>[]).find(
+      (r) => r.ID === id,
+    )?.book_ID;
+
+  // DraftSrv, with what it hasn't got: a set outside the draft whose foreign key points into
+  // it, a book's own foreign key to another book, and a many-to-many link to a set outside it
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "draft-links-"));
+    fs.cpSync(fixture("DraftSrv"), dir, { recursive: true });
+    const file = path.join(dir, "metadata.xml");
+    fs.writeFileSync(
+      file,
+      fs
+        .readFileSync(file, "utf8")
+        .replace(
+          '<EntitySet Name="Authors" EntityType="CatalogService.Authors"/>',
+          `<EntitySet Name="Authors" EntityType="CatalogService.Authors"/>
+           <EntitySet Name="Reviews" EntityType="CatalogService.Reviews"><NavigationPropertyBinding Path="book" Target="Books"/></EntitySet>
+           <EntitySet Name="Shelves" EntityType="CatalogService.Shelves"><NavigationPropertyBinding Path="books" Target="Books"/></EntitySet>`,
+        )
+        .replace(
+          '<NavigationPropertyBinding Path="author" Target="Authors"/>',
+          `<NavigationPropertyBinding Path="author" Target="Authors"/>
+           <NavigationPropertyBinding Path="sequel" Target="Books"/>
+           <NavigationPropertyBinding Path="shelves" Target="Shelves"/>`,
+        )
+        .replace(
+          '<NavigationProperty Name="author" Type="CatalogService.Authors">',
+          `<Property Name="sequel_ID" Type="Edm.Guid"/>
+           <NavigationProperty Name="sequel" Type="CatalogService.Books"><ReferentialConstraint Property="sequel_ID" ReferencedProperty="ID"/></NavigationProperty>
+           <NavigationProperty Name="shelves" Type="Collection(CatalogService.Shelves)" Partner="books"/>
+           <NavigationProperty Name="author" Type="CatalogService.Authors">`,
+        )
+        .replace(
+          '<EntityType Name="Authors"',
+          `<EntityType Name="Reviews"><Key><PropertyRef Name="ID"/></Key>
+             <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+             <Property Name="book_ID" Type="Edm.Guid"/>
+             <NavigationProperty Name="book" Type="CatalogService.Books"><ReferentialConstraint Property="book_ID" ReferencedProperty="ID"/></NavigationProperty>
+           </EntityType>
+           <EntityType Name="Shelves"><Key><PropertyRef Name="ShelfNo"/></Key>
+             <Property Name="ShelfNo" Type="Edm.Int32" Nullable="false"/>
+             <NavigationProperty Name="books" Type="Collection(CatalogService.Books)" Partner="shelves"/>
+           </EntityType>
+           <EntityType Name="Authors"`,
+        ),
+    );
+    s = await start(dir);
+    for (const ID of [1, 2]) await send("POST", `${s.v4}/Reviews`, { ID });
+    await send("POST", `${s.v4}/Shelves`, { ShelfNo: 1 });
+  });
+  after(async () => {
+    await s.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a bind in a create and in a PATCH agree", async () => {
+    const created = await send("POST", `${s.v4}/Reviews`, {
+      ID: 3,
+      "book@odata.bind": book(true),
+    });
+    assert.equal(created.status, 201);
+    const patched = await send("PATCH", `${s.v4}/Reviews(1)`, {
+      "book@odata.bind": book(true),
+    });
+    assert.equal(patched.status, 204);
+    assert.equal(reviewBook(1), BOOK);
+  });
+
+  it("PUT and DELETE $ref from a row outside the draft", async () => {
+    const put = await send("PUT", `${s.v4}/Reviews(2)/book/$ref`, {
+      "@odata.id": book(true),
+    });
+    assert.equal(put.status, 204);
+    assert.equal(reviewBook(2), BOOK);
+    const del = await send("DELETE", `${s.v4}/Reviews(2)/book/$ref`);
+    assert.equal(del.status, 204);
+    assert.equal(reviewBook(2), null);
+  });
+
+  it("a draft can point at another book's active entity", async () => {
+    await send("POST", `${s.v4}/${book(true)}/CatalogService.draftEdit`, {
+      PreserveChanges: true,
+    });
+    const other = `Books(ID=${OTHER},IsActiveEntity=true)`;
+    const res = await send("PATCH", `${s.v4}/${book(false)}`, {
+      "sequel@odata.bind": other,
+    });
+    assert.equal(res.status, 204);
+    const ref = await send("PUT", `${s.v4}/${book(false)}/sequel/$ref`, {
+      "@odata.id": other,
+    });
+    assert.equal(ref.status, 204);
+    assert.equal((await get(`${s.v4}/${book(false)}`)).body.sequel_ID, OTHER);
+    assert.equal((await get(`${s.v4}/${book(true)}`)).body.sequel_ID, null);
+  });
+
+  it("a many-to-many link holds nothing on either row", async () => {
+    assert.ok(
+      s.model.entityTypes["CatalogService.Shelves"].navigations.books.links,
+    );
+    const res = await send("POST", `${s.v4}/Shelves(1)/books/$ref`, {
+      "@odata.id": book(true),
+    });
+    assert.equal(res.status, 204, JSON.stringify(res.body));
+    const { body } = await get(`${s.v4}/Shelves(1)/books?$select=ID`);
+    assert.equal(body.value.length, 1);
+  });
+
+  it("the active entity's own link is still its draft's to change", async () => {
+    const res = await send("PUT", `${s.v4}/${book(true)}/sequel/$ref`, {
+      "@odata.id": `Books(ID=${OTHER},IsActiveEntity=true)`,
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error.message, /change its draft/);
+  });
+
+  it("nor can a link from outside write on an active chapter", async () => {
+    const res = await send("POST", `${s.v4}/${book(true)}/chapters/$ref`, {
+      "@odata.id":
+        "Chapters(ID=c0000000-0000-4000-8000-000000000003,IsActiveEntity=true)",
+    });
+    assert.equal(res.status, 400);
+  });
+});

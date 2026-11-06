@@ -316,7 +316,7 @@ Creating and editing work the way Fiori Elements drives them, with the actions t
 | `DELETE` on a draft root                           | Discards the draft.                                                                                                                                                                                                                                                                                                                                    |
 | `DELETE` on an active root                         | Deletes it, with its draft and compositions.                                                                                                                                                                                                                                                                                                           |
 
-A link changes what a `PATCH` does, so it meets the same rules: `$ref`, `$links` or a bind that changes an active entity is a `400`, and a draft child stays in the draft it was created in.
+A link changes what a `PATCH` does, so it meets the same rules: `$ref`, `$links` or a bind that changes an active entity is a `400`, and a draft child stays in the draft it was created in. A link held elsewhere leaves the entity as it is: a row outside the draft, or a draft, can point at an active entity, by a foreign key of its own or through a many-to-many link.
 
 Active entities change only through a draft: a `PATCH` on one, a `POST` under one, or a `DELETE` of an active child is a `400`.
 
