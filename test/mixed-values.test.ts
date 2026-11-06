@@ -301,6 +301,70 @@ describe("options that can't apply", () => {
   });
 });
 
+describe("a navigation left empty in an update", () => {
+  let s: TestServer;
+  const status = async (method: string, id: number, body: unknown) =>
+    (await send(method, `${s.v4}/Items(${id})`, body)).status;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Grps`, { ID: 1 });
+    await send("POST", `${s.v4}/Items`, { ID: 1 });
+    await send("POST", `${s.v4}/Items`, { ID: 2 });
+    await send("POST", `${s.v4}/Kids`, { ID: 1, ItemID: 1 });
+    await send("PUT", `${s.v4}/Items(1)/Group/$ref`, {
+      "@odata.id": "Grps(1)",
+    });
+  });
+  after(() => s.close());
+
+  it("null or [] on a row that has them -> a 400, and nothing is written", async () => {
+    for (const [method, body] of [
+      ["PATCH", { Name: "x", Group: null }],
+      ["PATCH", { Name: "x", Kids: [] }],
+      ["PATCH", { Name: "x", Kids: null }],
+      ["PUT", { Name: "x", Group: null }],
+      ["PUT", { Name: "x", Kids: [] }],
+    ] as const)
+      assert.equal(await status(method, 1, body), 400, JSON.stringify(body));
+    assert.equal((await get(`${s.v4}/Items(1)`)).body.Name, "Open");
+    assert.equal((await get(`${s.v4}/Items(1)/Group`)).status, 200);
+    assert.equal((await get(`${s.v4}/Items(1)/Kids/$count`)).body, "1");
+  });
+
+  it("says how to remove the link", async () => {
+    const r = await send("PATCH", `${s.v4}/Items(1)`, { Group: null });
+    assert.match(r.body.error.message, /Group: .*\$ref/);
+    assert.equal(r.body.error.code, "InvalidValue");
+  });
+
+  it("null or [] on a row without them -> nothing to change, as it read them", async () => {
+    for (const body of [{ Group: null }, { Kids: [] }, { Kids: null }])
+      assert.equal(await status("PATCH", 2, body), 204, JSON.stringify(body));
+  });
+
+  it("a list for a single-valued navigation -> a 400, on any row", async () => {
+    assert.equal(await status("PATCH", 1, { Group: [] }), 400);
+    assert.equal(await status("PATCH", 2, { Group: [] }), 400);
+    assert.equal(await status("PUT", 2, { Group: [] }), 400);
+    const created = await send("POST", `${s.v4}/Items`, { ID: 3, Group: [] });
+    assert.equal(created.status, 400);
+    assert.match(created.body.error.message, /Group: expected an object/);
+  });
+
+  it("V2's forms -> as V4's, and a deferred link holds nothing", async () => {
+    const v2 = (id: number, body: unknown) =>
+      send("PUT", `${s.v2}/Items(${id})`, body);
+    assert.equal((await v2(1, { Kids: { results: [] } })).status, 400);
+    assert.equal((await v2(2, { Kids: { results: [] } })).status, 204);
+    assert.equal((await v2(2, { Group: { results: [] } })).status, 400);
+    const deferred = { __deferred: { uri: "x" } };
+    assert.equal(
+      (await v2(1, { Group: deferred, Kids: deferred })).status,
+      204,
+    );
+  });
+});
+
 describe("If-None-Match", () => {
   let s: TestServer;
   before(async () => {

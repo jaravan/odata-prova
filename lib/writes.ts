@@ -339,33 +339,47 @@ const listOf = (value: unknown): unknown =>
 const isDeferred = (value: unknown) =>
   !!value && typeof value === "object" && "__deferred" in value;
 
+const wrongShape = (nav: Navigation) =>
+  new HttpError(
+    400,
+    `${nav.name}: expected ${nav.isCollection ? "an array" : "an object"}`,
+    "InvalidValue",
+  );
+
 // A navigation's value in a create: an entity, or a list of them for a collection. Each is
 // checked as it's created.
 function checkInline(nav: Navigation, value: unknown): void {
   if (value === undefined || value === null || isDeferred(value)) return;
-  if (
-    nav.isCollection ? !Array.isArray(listOf(value)) : typeof value !== "object"
-  )
-    throw new HttpError(
-      400,
-      `${nav.name}: expected ${nav.isCollection ? "an array" : "an object"}`,
-      "InvalidValue",
-    );
+  const isList = Array.isArray(listOf(value));
+  if (nav.isCollection ? !isList : typeof value !== "object" || isList)
+    throw wrongShape(nav);
 }
 
 // An update changes this entity and its links. Related entities in the body would be left out
-// without a word, so they're a 400; an empty list or V2's deferred link holds nothing to lose.
+// without a word, so they're a 400, and so is an empty value on a row that has some, which
+// reads as removing them: that's for $ref. Otherwise it says what the row already has, as does
+// V2's deferred link. The draft navigations are the server's, whatever a body says of them.
 function checkNoInline(
+  svc: WriteHost,
   type: EntityType,
+  row: Row,
   fields: Record<string, unknown>,
   binds: ReturnType<typeof bindsOf>,
 ): void {
   for (const nav of Object.values(type.navigations)) {
     const value = own(fields, nav.name);
-    if (value === undefined || value === null || isDeferred(value)) continue;
-    if (binds.some((b) => b.field === nav.name)) continue;
+    if (value === undefined || isDeferred(value)) continue;
     const list = listOf(value);
-    if (Array.isArray(list) && !list.length) continue;
+    if (!nav.isCollection && Array.isArray(list)) throw wrongShape(nav);
+    if (binds.some((b) => b.field === nav.name)) continue;
+    if (value === null || (Array.isArray(list) && !list.length)) {
+      if (nav.draft || !svc.related(row, type, nav).rows.length) continue;
+      throw new HttpError(
+        400,
+        `${nav.name}: an update doesn't remove links: DELETE them with $ref`,
+        "InvalidValue",
+      );
+    }
     throw new HttpError(
       400,
       `${nav.name}: an update can't hold related entities: link them with @odata.bind, or POST them to ${nav.name}`,
@@ -570,7 +584,7 @@ function update(
   // collection's besides the others. Resolved before anything changes, so a bad one changes
   // nothing.
   const binds = bindsOf(svc, entityType, fields);
-  checkNoInline(entityType, fields, binds);
+  checkNoInline(svc, entityType, row, fields, binds);
   svc.store.update(setName, row, changes);
   for (const { nav, targets } of binds) {
     if (!nav.isCollection && !targets.length)

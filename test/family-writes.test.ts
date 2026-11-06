@@ -96,9 +96,10 @@ describe("families", () => {
     });
 
     it("what holds nothing to lose is fine", async () => {
+      // Ps(701) has no kids: an empty value says what it already has
       for (const Kids of [[], null, { results: [] }])
         assert.equal(
-          (await send("PATCH", `${s.v4}/Ps(700)`, { Kids })).status,
+          (await send("PATCH", `${s.v4}/Ps(701)`, { Kids })).status,
           204,
         );
       assert.equal(
