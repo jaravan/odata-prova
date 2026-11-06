@@ -6,6 +6,7 @@ import path from "node:path";
 import { get, send, start, type TestServer } from "./helpers.ts";
 
 const MODEL = path.join(import.meta.dirname, "fixtures", "Mixed");
+const JSON_TYPE = { "content-type": "application/json" };
 
 describe("enums", () => {
   let s: TestServer;
@@ -135,5 +136,28 @@ describe("DefaultValue", () => {
   it("the generated V2 $metadata has it", async () => {
     const xml = await (await fetch(`${s.v2}/$metadata`)).text();
     assert.match(xml, /Name="Name"[^>]*DefaultValue="Open"/);
+  });
+});
+
+describe("a write with no body", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "kept", Note: "kept" });
+  });
+  after(() => s.close());
+
+  for (const method of ["PUT", "PATCH"])
+    it(`${method} is a 400, and wipes nothing`, async () => {
+      const res = await fetch(`${s.v4}/Items(1)`, {
+        method,
+        headers: JSON_TYPE,
+      });
+      assert.equal(res.status, 400);
+      assert.equal((await get(`${s.v4}/Items(1)`)).body.Note, "kept");
+    });
+
+  it("{} is a body: it changes nothing", async () => {
+    assert.equal((await send("PATCH", `${s.v4}/Items(1)`, {})).status, 204);
   });
 });

@@ -347,12 +347,22 @@ function createApp({
     );
   }
 
+  // The body parser gives {} for a request with no body, which a PUT would take for "every
+  // property empty". verify sees the bytes it read.
+  const sentBody = new WeakSet<object>();
   app.use(
     express.json({
       type: ["application/json", "text/plain"],
       limit: "10mb",
       reviver: keepLongNumbers,
+      verify: (req, _res, bytes) => {
+        if (bytes.length) sentBody.add(req);
+      },
     }),
+    (req, res, next) => {
+      if (!sentBody.has(req)) req.body = undefined;
+      next();
+    },
   );
 
   function sendResult(
