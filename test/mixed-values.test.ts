@@ -917,6 +917,27 @@ describe("a body that isn't an object, in a $batch", () => {
   });
 });
 
+describe("a member's Value", () => {
+  const model = (value: string) =>
+    `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="F" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EnumType Name="Color"><Member Name="Red" Value="${value}"/></EnumType><EntityContainer Name="C"/></Schema></edmx:DataServices></edmx:Edmx>`;
+
+  for (const value of ["abc", "1.5", "", "1e3"])
+    it(`"${value}" stops the start, and says where`, () => {
+      assert.throws(
+        () => parseMetadata(model(value)),
+        /metadata\.xml: F\.Color\.Red: Value "[^"]*" is not a whole number/,
+      );
+    });
+
+  for (const value of ["0", "-3", "4611686018427387904"])
+    it(`${value} is one`, () => {
+      assert.equal(
+        parseMetadata(model(value)).enumTypes["F.Color"].members[0].value,
+        value,
+      );
+    });
+});
+
 describe("read options on a write", () => {
   let s: TestServer;
   beforeEach(async () => {

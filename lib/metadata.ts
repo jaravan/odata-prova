@@ -93,11 +93,16 @@ function readMetadata(file: string): string {
 }
 
 // An enum's members, each with its number: one with no Value follows the one before, from 0
-function enumMembers(members: Xml[]): EnumType["members"] {
+function enumMembers(type: string, members: Xml[]): EnumType["members"] {
   let next = 0n;
   return members.map((m) => {
     const value = m.Value ?? String(next);
-    next = /^-?\d+$/.test(value) ? BigInt(value) + 1n : next + 1n;
+    // Unlike a DefaultValue this can't be left out: it's what the member compares and sorts by
+    if (!/^-?\d+$/.test(value))
+      throw new Error(
+        `metadata.xml: ${type}.${m.Name}: Value "${value}" is not a whole number`,
+      );
+    next = BigInt(value) + 1n;
     return { name: m.Name, value };
   });
 }
@@ -208,7 +213,7 @@ function parseMetadata(
         namespace: ns,
         underlyingType: en.UnderlyingType,
         isFlags: en.IsFlags === "true",
-        members: enumMembers(en.Member || []),
+        members: enumMembers(fullName, en.Member || []),
       };
     }
 
