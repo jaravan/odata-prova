@@ -482,6 +482,29 @@ describe("smaller mistakes", () => {
   });
 });
 
+describe("a body that isn't an object", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "kept" });
+  });
+  afterEach(() => s.close());
+
+  for (const method of ["PUT", "PATCH"])
+    for (const root of ["v4", "v2"] as const)
+      it(`${method} [] is a 400 in ${root}, and wipes nothing`, async () => {
+        assert.equal(
+          (await send(method, `${s[root]}/Items(1)`, [])).status,
+          400,
+        );
+        assert.equal((await get(`${s.v4}/Items(1)`)).body.Name, "kept");
+      });
+
+  it("POST [] too", async () => {
+    assert.equal((await send("POST", `${s.v4}/Items`, [])).status, 400);
+  });
+});
+
 describe("enums, further", () => {
   let s: TestServer;
   before(async () => {

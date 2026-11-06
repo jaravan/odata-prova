@@ -226,6 +226,12 @@ function checkRequired(
 // one, so one that's required is left alone rather than blocking every write of the row
 const isSpatial = (type: string) => /^Edm\.(Geography|Geometry)/.test(type);
 
+const isObject = (body: unknown): body is Record<string, unknown> =>
+  !!body &&
+  typeof body === "object" &&
+  !Array.isArray(body) &&
+  !(body instanceof LongNumber);
+
 function required(name: string): HttpError {
   return new HttpError(400, `Property ${name} is required`, "RequiredProperty");
 }
@@ -455,9 +461,9 @@ function insertTree(
   presetValues: Row,
   draft: boolean,
 ): Row {
-  if (!body || typeof body !== "object" || body instanceof LongNumber)
+  if (!isObject(body))
     throw new HttpError(400, "Request body must be a JSON object");
-  const fields = body as Record<string, unknown>;
+  const fields = body;
   checkFields(entityType, fields);
   checkNoDelta(fields);
   for (const nav of Object.values(entityType.navigations))
@@ -547,9 +553,9 @@ function update(
 ): Row {
   const row = svc.store.find(setName, entityType, key);
   if (!row) throw new HttpError(404, `${entityType.name} not found`);
-  if (!body || typeof body !== "object")
+  if (!isObject(body))
     throw new HttpError(400, "Request body must be a JSON object");
-  const fields = body as Record<string, unknown>;
+  const fields = body;
   checkNoDelta(fields);
   checkFields(entityType, fields);
   const changes: Row = {};
