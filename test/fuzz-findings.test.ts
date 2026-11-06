@@ -181,4 +181,9 @@ describe("a next link is one the server can read", () => {
       const link = expanded.body["Items@odata.nextLink"];
       assert.equal((await get(`${s.base}${link}`)).status, 200);
     });
+
+  it("a custom option given twice is in it twice", async () => {
+    const r = await get(`${s.v4}/PurchaseOrderSet?a=1&a=2`);
+    assert.match(r.body["@odata.nextLink"], /[?&]a=1&a=2&/);
+  });
 });

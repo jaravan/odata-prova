@@ -27,7 +27,7 @@ function paging(
 // The request's URL with some of its query options changed (undefined: left out): its path
 // from the root, with the escapes it keeps as they are (a key's %2F, see decodePath), and its
 // query options as they came, which are kept readable ($, commas, slashes and colons
-// unescaped).
+// unescaped). A custom option given twice is there twice.
 function requestLink(
   path: string,
   query: Record<string, unknown>,
@@ -35,7 +35,11 @@ function requestLink(
 ): string {
   const options = Object.entries({ ...query, ...changes })
     .filter(([, value]) => value !== undefined)
-    .map(([name, value]) => `${name}=${optionValue(value)}`);
+    .flatMap(([name, value]) =>
+      (Array.isArray(value) ? value : [value]).map(
+        (v) => `${name}=${optionValue(v)}`,
+      ),
+    );
   return `${serviceUrlPath(path)}?${options.join("&")}`;
 }
 
