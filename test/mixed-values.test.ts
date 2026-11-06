@@ -1103,6 +1103,18 @@ describe("a number too long for any enum", () => {
       assert.ok(ms < 2000, `took ${ms}ms`);
     });
 
+  it("in a lambda, on rows that have items", async () => {
+    for (const row of s.store.rows("Items")) row.Perms = ["R"];
+    for (const filter of [
+      `Perms/any(p:p has ${digits})`,
+      `Perms/any(p:p has '${digits}')`,
+    ]) {
+      const { status, ms } = await inBatch(filter);
+      assert.equal(status, 400, filter.slice(0, 20));
+      assert.ok(ms < 2000, `took ${ms}ms`);
+    }
+  });
+
   it("the widest number there is still works", async () => {
     assert.equal((await inBatch("Pm has 18446744073709551615")).status, 200);
     assert.equal((await inBatch("Pm eq -9223372036854775808")).status, 200);

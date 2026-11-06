@@ -1041,6 +1041,51 @@ describe("a draft child", () => {
     assert.equal(list.body.value.length, 2);
   });
 
+  it("deleted while the draft is open, its active chapter has no draft, the others still do", async () => {
+    await edit();
+    await send("DELETE", `${s.v4}/${chapter(CHAPTER, false)}`);
+    const flag = async (id: string) =>
+      (await get(`${s.v4}/${chapter(id, true)}`)).body.HasDraftEntity;
+    assert.equal(await flag(CHAPTER), false);
+    assert.equal(await flag(OTHER), true);
+    assert.equal(
+      (await get(`${s.v4}/${chapter(CHAPTER, true)}?$expand=SiblingEntity`))
+        .body.SiblingEntity,
+      null,
+    );
+  });
+
+  it("deleted, its ID can't come back as a new draft: the active one still has it", async () => {
+    await edit();
+    await send("DELETE", `${s.v4}/${chapter(CHAPTER, false)}`);
+    const again = await send("POST", `${s.v4}/${book(false)}/chapters`, {
+      ID: CHAPTER,
+      title: "Back",
+    });
+    assert.equal(again.status, 409);
+    assert.equal(
+      (await get(`${s.v4}/${chapter(CHAPTER, true)}`)).body.HasDraftEntity,
+      false,
+    );
+    assert.equal((await get(`${s.v4}/${chapter(CHAPTER, false)}`)).status, 404);
+  });
+
+  it("deleted, then activated, the active chapter goes too", async () => {
+    await edit();
+    await send("DELETE", `${s.v4}/${chapter(CHAPTER, false)}`);
+    const done = await send(
+      "POST",
+      `${s.v4}/${book(false)}/${ACTION("draftActivate")}`,
+      {},
+    );
+    assert.equal(done.status, 200);
+    assert.equal((await get(`${s.v4}/${chapter(CHAPTER, true)}`)).status, 404);
+    assert.equal(
+      (await get(`${s.v4}/${chapter(OTHER, true)}`)).body.HasDraftEntity,
+      false,
+    );
+  });
+
   for (const [method, url] of [
     ["PUT", () => chapter(CHAPTER, false)],
     ["PATCH", () => chapter(CHAPTER, false)],
@@ -1102,6 +1147,23 @@ describe("a draft child, in V2", () => {
     assert.equal(
       (await get(`${s.v2}/${url(true)}`, JSON_ACCEPT)).body.d.BookingID,
       "9",
+    );
+  });
+
+  it("deleted while the draft is open, its active one has no draft", async () => {
+    await send(
+      "POST",
+      `${s.v2}/TravelEdit?TravelUUID=guid'${TRAVEL}'&IsActiveEntity=true&PreserveChanges=true`,
+      undefined,
+    );
+    const list = await get(`${s.v2}/${travel(false)}/to_Booking`, JSON_ACCEPT);
+    const { BookingUUID } = list.body.d.results[0];
+    const url = (active: boolean) =>
+      `Booking(BookingUUID=guid'${BookingUUID}',IsActiveEntity=${active})`;
+    assert.equal((await send("DELETE", `${s.v2}/${url(false)}`)).status, 204);
+    assert.equal(
+      (await get(`${s.v2}/${url(true)}`, JSON_ACCEPT)).body.d.HasDraftEntity,
+      false,
     );
   });
 });

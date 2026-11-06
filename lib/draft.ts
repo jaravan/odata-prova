@@ -595,6 +595,12 @@ class Drafts {
     this.atomic(() => {
       if (!row.IsActiveEntity) {
         if (root) return this.discard(setName, type, row);
+        // Their active entities have no draft any more, the rest of the tree still does
+        for (const n of this.tree(setName, type, row)) {
+          const active = this.sibling(n.setName, n.type, n.row, true);
+          if (active)
+            this.store.update(n.setName, active, { HasDraftEntity: false });
+        }
         this.removeTree(setName, type, row);
         return this.touch(row);
       }
