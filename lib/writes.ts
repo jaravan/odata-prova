@@ -288,10 +288,12 @@ function insertPrincipals(
       const key = own(given, src);
       if (key === undefined || key === null) continue;
       const sent = own(payload as Record<string, unknown>, tgt);
+      const prop = type.properties[src];
       if (
         sent !== undefined &&
         sent !== null &&
-        joinText(sent) !== joinText(key)
+        joinText(propToInternal(sent, prop), prop) !==
+          joinText(propToInternal(key, prop), prop)
       )
         throw new HttpError(
           400,
@@ -367,6 +369,7 @@ function checkNoDelta(fields: Record<string, unknown>): void {
 // A foreign key sent with a link to the entity it should hold, which it has to name. Which of
 // the two was meant can't be told otherwise.
 function checkBoundKeys(
+  type: EntityType,
   fields: Record<string, unknown>,
   binds: ReturnType<typeof bindsOf>,
 ): void {
@@ -374,25 +377,28 @@ function checkBoundKeys(
     if (nav.links || nav.dependentSide !== "source" || !targets.length)
       continue;
     for (const [src, tgt] of nav.join)
-      checkAgrees(fields, src, targets[0][tgt], field);
+      checkAgrees(type, fields, src, targets[0][tgt], field);
   }
 }
 
 // A value the body sends against the one its context gives: agreeing is fine, and so is
 // leaving it out
 function checkAgrees(
+  type: EntityType,
   fields: Record<string, unknown>,
   name: string,
   value: unknown,
   context: string,
 ): void {
   const sent = own(fields, name);
+  const prop = own(type.properties, name);
   if (
     sent !== undefined &&
     sent !== null &&
     value !== undefined &&
     value !== null &&
-    joinText(sent) !== joinText(value)
+    joinText(prop ? propToInternal(sent, prop) : sent, prop) !==
+      joinText(value, prop)
   )
     throw new HttpError(
       400,
@@ -438,9 +444,9 @@ function insertTree(
   // checked, the others once the entity exists
   const binds = bindsOf(svc, entityType, fields);
   checkOneOfBindAndInline(fields, binds);
-  checkBoundKeys(fields, binds);
+  checkBoundKeys(entityType, fields, binds);
   for (const [name, value] of Object.entries(presetValues))
-    checkAgrees(fields, name, value, "where it's created");
+    checkAgrees(entityType, fields, name, value, "where it's created");
   const given = { ...fields, ...presetValues };
   const row = svc.store.normalize(entityType, {
     ...body,

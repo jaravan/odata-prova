@@ -21,6 +21,7 @@ import type {
   EntityType,
   Key,
   Model,
+  Property,
   PropertyValue,
   Row,
 } from "./model.ts";
@@ -175,9 +176,12 @@ type Change =
 const keyName = (type: EntityType, key: Record<string, unknown>) =>
   JSON.stringify(type.keys.map((k) => keyText(key[k], type.properties[k])));
 
-// The key of a lookup: values compared as navigations compare them (see joinText)
-const valuesKey = (values: PropertyValue[]) =>
-  JSON.stringify(values.map(joinText));
+// The key of a lookup: values compared as navigations compare them (see joinText), by their
+// columns' properties where known
+const valuesKey = (
+  values: PropertyValue[],
+  props: (Property | undefined)[] = [],
+) => JSON.stringify(values.map((value, i) => joinText(value, props[i])));
 
 // Undoes changes, last first, on data: the store's, or a copy of it (see Store.audit)
 function undo(data: Record<string, Row[]>, changes: Change[]): void {
@@ -597,18 +601,46 @@ class Store {
       this.indexes.set(setName, byColumns);
     }
     const name = JSON.stringify(columns);
+    const props = this.columnProperties(setName, columns);
     let index = byColumns.get(name);
     if (!index) {
       index = new Map();
       for (const row of this.data[setName]) {
-        const value = valuesKey(columns.map((c) => row[c]));
+        const value = valuesKey(
+          columns.map((c) => row[c]),
+          props,
+        );
         const bucket = index.get(value);
         if (bucket) bucket.push(row);
         else index.set(value, [row]);
       }
       byColumns.set(name, index);
     }
-    return index.get(valuesKey(values)) ?? [];
+    return index.get(valuesKey(values, props)) ?? [];
+  }
+
+  // The properties of a set's columns: its entity type's, or a link set's ends' keys
+  private columnProperties(
+    setName: string,
+    columns: string[],
+  ): (Property | undefined)[] {
+    const es = this.model.entitySets[setName] as EntitySet | undefined;
+    if (es) {
+      const type = this.model.entityTypes[es.entityType];
+      return columns.map(
+        (c) => own(type.properties, c) ?? own(type.hiddenKeys, c),
+      );
+    }
+    const ends = this.model.linkSets[setName]?.ends ?? [];
+    return columns.map((c) => {
+      for (const end of ends) {
+        const i = end.columns.indexOf(c);
+        if (i === -1) continue;
+        const { entityType } = this.model.entitySets[end.set];
+        return this.model.entityTypes[entityType].properties[end.keys[i]];
+      }
+      return undefined;
+    });
   }
 
   // Drops the indexes change may have made wrong: an update's on the columns it set, an
@@ -637,7 +669,10 @@ class Store {
     return (
       entityType.keys.every(same) &&
       (entityType.parentKeys ?? []).every(
-        (k) => !Object.hasOwn(key, k) || joinText(row[k]) === joinText(key[k]),
+        (k) =>
+          !Object.hasOwn(key, k) ||
+          joinText(row[k], entityType.properties[k]) ===
+            joinText(key[k], entityType.properties[k]),
       )
     );
   }

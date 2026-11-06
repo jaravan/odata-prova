@@ -127,7 +127,8 @@ function link(
     for (const [src, tgt] of nav.join)
       if (
         type.keys.includes(src) &&
-        joinText(row[src]) !== joinText(target[tgt])
+        joinText(row[src], type.properties[src]) !==
+          joinText(target[tgt], type.properties[src])
       )
         throw invalid(
           `${nav.name} links through ${type.name}'s key, which can't change`,

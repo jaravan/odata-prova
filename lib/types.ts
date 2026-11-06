@@ -175,9 +175,10 @@ function decimalText(units: bigint, scale: number): string {
   return `${negative ? "-" : ""}${whole}${fraction}`;
 }
 
-// A value as a join compares it: as text, a GUID's digits in either case
-function joinText(value: unknown): string {
-  const text = String(value);
+// A value as a join compares it: as text, a GUID's digits in either case, and as its property
+// has it when that's known, so that 1.5 joins 1.50 and PT60M joins PT1H
+function joinText(value: unknown, prop?: Property): string {
+  const text = prop ? keyText(value, prop) : String(value);
   return GUID.test(text) ? text.toLowerCase() : text;
 }
 
@@ -227,6 +228,8 @@ function keyText(value: unknown, prop: Property): string {
       return withPrecision(value as PropertyValue, prop.precision);
     case "Edm.Binary":
       return binaryBytes(text);
+    case "Edm.Duration":
+      return String(durationMillis(text) ?? text);
     default:
       return text;
   }

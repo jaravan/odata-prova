@@ -13,8 +13,14 @@ function endsOf(model: Model, nav: Navigation): [LinkEnd, LinkEnd] {
   return nav.links!.from === 0 ? [ends[0], ends[1]] : [ends[1], ends[0]];
 }
 
-const holds = (link: Row, end: LinkEnd, row: Row) =>
-  end.columns.every((c, i) => joinText(link[c]) === joinText(row[end.keys[i]]));
+const holds = (model: Model, link: Row, end: LinkEnd, row: Row) => {
+  const { properties } =
+    model.entityTypes[model.entitySets[end.set].entityType];
+  return end.columns.every((c, i) => {
+    const prop = properties[end.keys[i]];
+    return joinText(link[c], prop) === joinText(row[end.keys[i]], prop);
+  });
+};
 
 // The target rows linked to row
 function linkedRows(
@@ -24,10 +30,12 @@ function linkedRows(
   row: Row,
 ): Row[] {
   const [from, to] = endsOf(model, nav);
-  const links = store.rows(nav.links!.set).filter((l) => holds(l, from, row));
+  const links = store
+    .rows(nav.links!.set)
+    .filter((l) => holds(model, l, from, row));
   return store
     .rows(to.set)
-    .filter((target) => links.some((l) => holds(l, to, target)));
+    .filter((target) => links.some((l) => holds(model, l, to, target)));
 }
 
 // Links row to target, unless they are already
@@ -40,7 +48,10 @@ function addLink(
 ): void {
   const [from, to] = endsOf(model, nav);
   const links = store.rows(nav.links!.set);
-  if (links.some((l) => holds(l, from, row) && holds(l, to, target))) return;
+  if (
+    links.some((l) => holds(model, l, from, row) && holds(model, l, to, target))
+  )
+    return;
   const link: Row = {};
   from.columns.forEach((c, i) => (link[c] = row[from.keys[i]]));
   to.columns.forEach((c, i) => (link[c] = target[to.keys[i]]));
@@ -59,7 +70,7 @@ function removeLink(
   const set = nav.links!.set;
   for (const l of store
     .rows(set)
-    .filter((l) => holds(l, from, row) && holds(l, to, target)))
+    .filter((l) => holds(model, l, from, row) && holds(model, l, to, target)))
     store.removeRow(set, l);
 }
 
@@ -68,7 +79,9 @@ function unlink(model: Model, store: Store, setName: string, row: Row): void {
   for (const set of Object.values(model.linkSets))
     for (const end of set.ends)
       if (end.set === setName)
-        for (const l of store.rows(set.name).filter((l) => holds(l, end, row)))
+        for (const l of store
+          .rows(set.name)
+          .filter((l) => holds(model, l, end, row)))
           store.removeRow(set.name, l);
 }
 

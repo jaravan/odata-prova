@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Q" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="PD">
+        <Key><PropertyRef Name="F"/></Key>
+        <Property Name="F" Type="Edm.Decimal" Nullable="false"/>
+        <NavigationProperty Name="Cs" Type="Collection(Q.C)" Partner="PD"/>
+      </EntityType>
+      <EntityType Name="C">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="F" Type="Edm.Decimal"/>
+        <NavigationProperty Name="PD" Type="Q.PD" Partner="Cs">
+          <ReferentialConstraint Property="F" ReferencedProperty="F"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="PT">
+        <Key><PropertyRef Name="D"/></Key>
+        <Property Name="D" Type="Edm.Duration" Nullable="false"/>
+        <NavigationProperty Name="Ts" Type="Collection(Q.T)" Partner="PT"/>
+      </EntityType>
+      <EntityType Name="T">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="D" Type="Edm.Duration"/>
+        <NavigationProperty Name="PT" Type="Q.PT" Partner="Ts">
+          <ReferentialConstraint Property="D" ReferencedProperty="D"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="PB">
+        <Key><PropertyRef Name="B"/></Key>
+        <Property Name="B" Type="Edm.Binary" Nullable="false"/>
+        <NavigationProperty Name="Bs" Type="Collection(Q.BK)" Partner="PB"/>
+      </EntityType>
+      <EntityType Name="BK">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="B" Type="Edm.Binary"/>
+        <NavigationProperty Name="PB" Type="Q.PB" Partner="Bs">
+          <ReferentialConstraint Property="B" ReferencedProperty="B"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityContainer Name="C1">
+        <EntitySet Name="PDs" EntityType="Q.PD"><NavigationPropertyBinding Path="Cs" Target="Cs"/></EntitySet>
+        <EntitySet Name="Cs" EntityType="Q.C"><NavigationPropertyBinding Path="PD" Target="PDs"/></EntitySet>
+        <EntitySet Name="PTs" EntityType="Q.PT"><NavigationPropertyBinding Path="Ts" Target="Ts"/></EntitySet>
+        <EntitySet Name="Ts" EntityType="Q.T"><NavigationPropertyBinding Path="PT" Target="PTs"/></EntitySet>
+        <EntitySet Name="PBs" EntityType="Q.PB"><NavigationPropertyBinding Path="Bs" Target="BKs"/></EntitySet>
+        <EntitySet Name="BKs" EntityType="Q.BK"><NavigationPropertyBinding Path="PB" Target="PBs"/></EntitySet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
