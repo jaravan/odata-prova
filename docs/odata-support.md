@@ -454,7 +454,7 @@ Rejected with `400 Bad Request`, though OData has them:
 - an expression in `$orderby` (`length(Name)`): a property or a path only, or a `$compute` alias
 - parameter aliases (`@p1`) in `$filter`
 - a path into a complex value in a query option, as `$select=Address/City` or `$filter=Address/City eq 'x'`. In the URL it's served: `Rows(1)/Address/City`
-- spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body: generated as null, so an entity with a required one can't be `PUT` back
+- spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body. A required one isn't required: the server holds none, and answers null
 
 `odata.metadata` in `Accept` is ignored: the answer is always `minimal`. `If-None-Match` is served: a read of what it names is a `304`, and a write a `412`.
 

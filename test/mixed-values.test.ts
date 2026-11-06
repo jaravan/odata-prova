@@ -481,3 +481,18 @@ describe("smaller mistakes", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("a value the server can't hold", () => {
+  it("doesn't stop a row being written back", async () => {
+    const s = await start(MODEL);
+    try {
+      await send("POST", `${s.v4}/Items`, { ID: 1 });
+      const { body } = await get(`${s.v4}/Items(1)`);
+      assert.equal(body.Spot, null);
+      const { "@odata.context": _, ...row } = body;
+      assert.equal((await send("PUT", `${s.v4}/Items(1)`, row)).status, 204);
+    } finally {
+      await s.close();
+    }
+  });
+});

@@ -215,11 +215,16 @@ function checkRequired(
     const p = entityType.properties[name];
     // A hidden key (see hiddenKey in navigations.ts) is the server's, never required
     if (!p || entityType.keys.includes(name)) continue;
-    if (p.computed || p.sap?.[settable] === "false") continue;
+    if (p.computed || p.sap?.[settable] === "false" || isSpatial(p.type))
+      continue;
     if (row[name] === null && !p.nullable) throw required(name);
     checkComplex(p, row[name], name);
   }
 }
+
+// What the server can't hold (see generate.ts): the row has none to give, nor can a client send
+// one, so one that's required is left alone rather than blocking every write of the row
+const isSpatial = (type: string) => /^Edm\.(Geography|Geometry)/.test(type);
 
 function required(name: string): HttpError {
   return new HttpError(400, `Property ${name} is required`, "RequiredProperty");
@@ -234,7 +239,12 @@ function checkComplex(prop: Property, value: unknown, at: string): void {
     if (item === null) continue;
     for (const field of fields) {
       const path = `${at}/${field.name}`;
-      if (item[field.name] === null && !field.nullable && !field.computed)
+      if (
+        item[field.name] === null &&
+        !field.nullable &&
+        !field.computed &&
+        !isSpatial(field.type)
+      )
         throw required(path);
       checkComplex(field, item[field.name], path);
     }
