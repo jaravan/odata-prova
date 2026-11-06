@@ -161,3 +161,47 @@ describe("a write with no body", () => {
     assert.equal((await send("PATCH", `${s.v4}/Items(1)`, {})).status, 204);
   });
 });
+
+describe("paths in an expression", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Grps`, { ID: 5 });
+    await send("POST", `${s.v4}/Items`, {
+      ID: 1,
+      Tags: ["a", "b"],
+      Kids: [{ ID: 7 }, { ID: 8 }],
+    });
+    await send("POST", `${s.v4}/Items`, { ID: 2 });
+  });
+  after(() => s.close());
+
+  const ids = async (query: string) => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$select=ID&${encodeURI(query)}`,
+    );
+    assert.equal(status, 200, JSON.stringify(body));
+    return body.value.map((r: { ID: number }) => r.ID);
+  };
+
+  for (const [query, expected] of [
+    ["$filter=Kids/$count gt 0", [1]],
+    ["$filter=Kids/$count eq 0", [2]],
+    ["$filter=Kids/$count gt 1 and Tags/$count eq 2", [1]],
+    ["$filter=Tags/$count gt 1", [1]],
+    ["$orderby=Kids/$count desc", [1, 2]],
+    ["$orderby=Kids/$count", [2, 1]],
+    ["$filter=Group eq null", [1, 2]],
+    ["$filter=Group ne null", []],
+  ] as const)
+    it(`${query}`, async () => {
+      assert.deepEqual(await ids(query), expected);
+    });
+
+  it("$count of what isn't a collection is a 400", async () => {
+    const { status } = await get(
+      `${s.v4}/Items?$filter=${encodeURIComponent("Qty/$count gt 0")}`,
+    );
+    assert.equal(status, 400);
+  });
+});

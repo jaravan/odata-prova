@@ -188,7 +188,9 @@ function tokenize(
     // From here on it's a bare word - could be a typed literal (datetime'...', guid'...'),
     // a keyword, true/false/null, a function name, a lambda (Items/any), or a property path
     // ($it/Prop: the outer entity).
-    const word = input.slice(i).match(/^\$?[\p{L}_][\p{L}\p{M}\p{N}_./]*/u);
+    const word = input
+      .slice(i)
+      .match(/^\$?[\p{L}_][\p{L}\p{M}\p{N}_./]*(?:(?<=\/)\$count\b)?/u);
     if (word) {
       const w = word[0];
       // An aggregate expression isn't a filter expression ("Amount with sum"), so its text

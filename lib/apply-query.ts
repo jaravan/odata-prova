@@ -73,16 +73,29 @@ function resolver(svc: QueryHost, entityType: EntityType): Resolve {
         }
       : { value: row[prop.name], type: prop.type, enumOf: prop.enumType };
   const resolve = (row: Row, path: string): Literal => {
+    if (path.endsWith("/$count")) {
+      const coll = resolve.collection(row, path.slice(0, -"/$count".length));
+      spend(ROW_READ);
+      const items = "rows" in coll ? coll.rows : coll.values;
+      return { value: items.length, type: "Edm.Int32" };
+    }
     // A path that is a property of its own: $apply's result for a groupby on a path
     const itself = own(entityType.properties, path.replace(/^\$it\//, ""));
     if (itself) return valueOf(row, itself);
     const parts = path.replace(/^\$it\//, "").split("/");
     const at = walk(row, parts.slice(0, -1), path);
     if (!at) return { value: null, type: null };
-    const prop = own(at.type.properties, parts[parts.length - 1]);
-    if (!prop)
-      throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
-    return valueOf(at.row, prop);
+    const last = parts[parts.length - 1];
+    const prop = own(at.type.properties, last);
+    if (prop) return valueOf(at.row, prop);
+    // A single-valued navigation is an entity or null, all that a filter can ask of it
+    const nav = svc.navigation(at.type, last);
+    if (nav && !nav.isCollection)
+      return {
+        value: svc.related(at.row, at.type, nav).rows.length ? true : null,
+        type: null,
+      };
+    throw new HttpError(400, `Unknown property ${path} on ${at.type.name}`);
   };
   resolve.collection = (row: Row, path: string): Collection => {
     const parts = path.replace(/^\$it\//, "").split("/");
@@ -124,14 +137,20 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
   return {
     check(path) {
       const name = path.replace(/^\$it\//, "");
+      if (name.endsWith("/$count")) {
+        this.collection(name.slice(0, -"/$count".length));
+        return "Edm.Int32";
+      }
       const itself = own(entityType.properties, name);
       if (itself) return itself.type;
       const parts = name.split("/");
       const at = walk(parts.slice(0, -1), path);
-      const prop = own(at.properties, parts[parts.length - 1]);
-      if (!prop)
-        throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
-      return prop.type;
+      const last = parts[parts.length - 1];
+      const prop = own(at.properties, last);
+      if (prop) return prop.type;
+      const nav = svc.navigation(at, last);
+      if (nav && !nav.isCollection) return "";
+      throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
     },
     collection(path) {
       const parts = path.split("/");
@@ -203,7 +222,8 @@ function applyQuery(
           400,
           `Invalid $orderby: ${t.trim()} (write a property, then asc or desc)`,
         );
-      pathScope(svc, entityType).check(path);
+      if (!pathScope(svc, entityType).check(path))
+        throw new HttpError(400, `Invalid $orderby: ${path} is a navigation`);
       return { path, desc: dir.toLowerCase() === "desc" };
     });
     spend(sortWork(results.length, terms.length));

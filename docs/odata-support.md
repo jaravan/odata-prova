@@ -452,7 +452,6 @@ Rejected with `501 Not Implemented`:
 Rejected with `400 Bad Request`, though OData has them:
 
 - an expression in `$orderby` (`length(Name)`): a property or a path only, or a `$compute` alias
-- `Kids/$count` in `$filter` and `$orderby`
 - parameter aliases (`@p1`) in `$filter`
 - a path into a complex value, as `Rows(1)/Address/City` or `$select=Address/City`
 - spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body: generated as null, so an entity with a required one can't be `PUT` back
