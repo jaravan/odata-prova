@@ -124,11 +124,14 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
   return {
     check(path) {
       const name = path.replace(/^\$it\//, "");
-      if (own(entityType.properties, name)) return;
+      const itself = own(entityType.properties, name);
+      if (itself) return itself.type;
       const parts = name.split("/");
       const at = walk(parts.slice(0, -1), path);
-      if (!own(at.properties, parts[parts.length - 1]))
+      const prop = own(at.properties, parts[parts.length - 1]);
+      if (!prop)
         throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
+      return prop.type;
     },
     collection(path) {
       const parts = path.split("/");

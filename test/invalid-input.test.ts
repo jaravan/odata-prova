@@ -291,3 +291,50 @@ describe("values at the edge of their type", () => {
     assert.throws(() => propToInternal("1.234", prop), /Invalid/);
   });
 });
+
+describe("text where a number is compared", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(import.meta.dirname, "fixtures", "EdmTypes"));
+  });
+  after(() => s.close());
+
+  const filter = (expression: string, root = s.v4) =>
+    statusOf(`${root}/Values?$filter=${expression}`);
+
+  for (const expression of [
+    "ID eq 'nope'",
+    "'nope' eq ID",
+    "ID ne 'nope'",
+    "ID gt 'nope'",
+    "Big eq 'nope'",
+    "Amount eq 'nope'",
+    "V eq 'nope'",
+    "ID add 1 eq 'nope'",
+    "ID eq ''",
+    "ID in ('nope')",
+    "ID in (1,'nope')",
+    "ID lt 0 and ID eq 'nope'",
+  ]) {
+    it(`${expression} is a 400`, async () => {
+      assert.equal(await filter(expression), 400);
+    });
+  }
+
+  it("with no rows to reach, in V2 too", async () => {
+    assert.equal(await filter("ID lt 0 and Big eq 'nope'", s.v2), 400);
+  });
+
+  for (const expression of [
+    "ID eq '1'",
+    "Amount eq '1.5'",
+    "Big eq '5'",
+    "V eq 'INF'",
+    "V eq 'NaN'",
+    "ID in ('1',2)",
+  ]) {
+    it(`${expression} is still a number`, async () => {
+      assert.equal(await filter(expression), 200);
+    });
+  }
+});

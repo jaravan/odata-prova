@@ -59,9 +59,11 @@ describe("a Decimal against a number longer than a decimal can be", () => {
     }
   });
 
-  it("text that is no number equals nothing", async () => {
-    assert.deepEqual(await ids("Amount eq 'x'"), []);
-    assert.deepEqual(await ids("Amount eq ''"), []);
+  it("text that is no number is a 400, not a crash", async () => {
+    for (const filter of ["Amount eq 'x'", "Amount eq ''"]) {
+      const url = `${s.v4}/Rows?$filter=${encodeURIComponent(filter)}`;
+      assert.equal((await get(url)).status, 400, filter);
+    }
   });
 
   it("an Int64 against one", async () => {

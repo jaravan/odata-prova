@@ -123,6 +123,10 @@ function distinctKey(value: unknown, type: string): string {
   );
 }
 
+// Whether a text reads as a number: one in decimal, or INF, -INF or NaN
+const isNumberText = (text: string) =>
+  Object.hasOwn(SPECIAL_FLOATS, text) || !Number.isNaN(numberOf(text));
+
 // A number, or one as text in decimal: Number alone would also read 0x10, and blanks as 0
 function numberOf(value: unknown): number {
   return typeof value !== "string" || DECIMAL.test(value.trim())
@@ -615,6 +619,7 @@ export {
   LongNumber,
   keepLongNumbers,
   keyText,
+  isNumberText,
   binaryBytes,
   withPrecision,
   propToInternal,

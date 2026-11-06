@@ -27,6 +27,7 @@ import {
   enumValue,
   isNumericType,
   toComparable,
+  isNumberText,
   toMillis,
   withPrecision,
 } from "./types.ts";
@@ -48,7 +49,8 @@ type Value = Literal;
 // apply-query.ts). collection gives the scope of a collection's items, undefined when they're
 // a collection property's.
 export interface PathScope {
-  check(path: string): void;
+  // The path's type, or an error when there's no such path
+  check(path: string): string;
   collection(path: string): PathScope | undefined;
 }
 
@@ -789,6 +791,8 @@ function compare(l: Value, r: Value): number {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+const COMPARISONS = ["eq", "ne", "gt", "ge", "lt", "le"];
+
 // Whether an enum's value holds all the members of another: a flags value is several, Read,Write
 function hasFlags(l: Value, r: Value): boolean | null {
   if (isNull(l) || isNull(r)) return null;
@@ -970,6 +974,24 @@ function checkPaths(
     return head === "$it" ? { scope: root, rest } : { scope: root, rest: path };
   };
   const check = (child: Node) => checkPaths(child, root, variables);
+  // Text compared with a number has to read as one, whatever rows there are: '1.5' does, and
+  // a typo would otherwise be an empty answer
+  const typed = (path: string) => {
+    const { scope, rest } = from(path);
+    return scope && rest ? scope.check(rest) : "";
+  };
+  const checkText = (text: Node, other: Node) => {
+    if (!("literal" in text) || typeof text.literal !== "string") return;
+    if (text.type !== "Edm.String" || isNumberText(text.literal)) return;
+    let type: string | null;
+    try {
+      type = expressionType(other, typed);
+    } catch {
+      return; // the check of other, or evaluating it, says what's wrong
+    }
+    if (type && isNumericType(type))
+      throw new Error(`'${text.literal}' is not a value of ${type}`);
+  };
   if ("lambda" in node) {
     const { scope, rest } = from(node.path);
     const items = scope && rest ? scope.collection(rest) : undefined;
@@ -985,9 +1007,14 @@ function checkPaths(
   } else if ("op" in node) {
     check(node.left);
     check(node.right);
+    if (COMPARISONS.includes(node.op)) {
+      checkText(node.left, node.right);
+      checkText(node.right, node.left);
+    }
   } else if ("in" in node) {
     check(node.left);
     node.list.forEach(check);
+    for (const item of node.list) checkText(item, node.left);
   } else if ("expr" in node) check(node.expr);
   else if ("func" in node) node.args.forEach(check);
 }
