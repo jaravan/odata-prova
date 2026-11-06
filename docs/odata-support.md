@@ -5,7 +5,7 @@
 All primitive Edm types, plus the ones below. Geography and geometry values aren't generated (they are `null`) and can't be filtered on, and `Edm.Stream` properties hold no content.
 
 - **Complex types**, nested and in collections. In V2 a complex value carries its type in `__metadata`, as SAP Gateway sends it.
-- **Enum types** (V4). V2 has no enums, so there they are `Edm.String` holding the member name.
+- **Enum types** (V4). V2 has no enums, so there they are `Edm.String` holding the member name. A member's `Value` has to be a whole number: anything else stops the server at startup, as a member can't be left out the way a `DefaultValue` can.
 - **Collection-valued properties** (V4). V2 has none, so they are left out of the V2 service, with a `not in V2: ...` line in the startup log.
 - **Inheritance** (`BaseType`). Each derived type gets its base's key, properties and navigations, so the generated `$metadata` needs no `BaseType`.
 - **Type definitions** (V4 `TypeDefinition`). A property of one has its underlying type, with the definition's facets (`MaxLength`, `Precision`, `Scale`) where it sets none, which is also how the V2 `$metadata` writes it.

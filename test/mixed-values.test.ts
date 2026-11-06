@@ -938,6 +938,31 @@ describe("a member's Value", () => {
     });
 });
 
+describe("members of one value", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    for (const [ID, Tw] of [
+      [1, "A"],
+      [2, "B"],
+      [3, "C"],
+    ])
+      await send("POST", `${s.v4}/Items`, { ID, Tw });
+  });
+  after(() => s.close());
+
+  it("are one group, as eq has them", async () => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$apply=groupby((Tw),aggregate($count as C))&$orderby=C`,
+    );
+    assert.equal(status, 200, JSON.stringify(body));
+    assert.deepEqual(
+      body.value.map((r: { C: number }) => r.C),
+      [1, 2],
+    );
+  });
+});
+
 describe("read options on a write", () => {
   let s: TestServer;
   beforeEach(async () => {

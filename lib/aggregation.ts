@@ -48,6 +48,7 @@ import {
   compareValues,
   decimalUnits,
   distinctKey,
+  enumNumber,
   isNumericType,
   toComparable,
 } from "./types.ts";
@@ -481,7 +482,13 @@ function groupsOf(
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
     const k = properties
-      .map((p) => distinctKey(row[p], type.properties[p].type))
+      .map((p) => {
+        const { type: edm, enumType } = type.properties[p];
+        // Two members of one value are one value, as eq and $orderby have them
+        return enumType && row[p] !== null && row[p] !== undefined
+          ? String(enumNumber(row[p], enumType))
+          : distinctKey(row[p], edm);
+      })
       .join();
     const group = groups.get(k);
     if (group) group.push(row);
