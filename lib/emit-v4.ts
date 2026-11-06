@@ -20,6 +20,7 @@ function propertyV4(
     ["Name", p.name],
     ["Type", p.type],
     ["Nullable", p.nullable ? undefined : "false"],
+    ["DefaultValue", p.defaultValue],
     ["MaxLength", p.maxLength],
     ["Precision", p.precision],
     ["Scale", p.scale],

@@ -1,6 +1,6 @@
 // Enums by their values, defaults, and what a request asks that used to pass unnoticed.
 
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { get, send, start, type TestServer } from "./helpers.ts";
@@ -94,5 +94,46 @@ describe("enums", () => {
       Pm: "8",
     });
     assert.equal(res.status, 400);
+  });
+});
+
+describe("DefaultValue", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await start(MODEL);
+  });
+  afterEach(() => s.close());
+
+  it("fills what a create leaves out", async () => {
+    const { status, body } = await send("POST", `${s.v4}/Items`, { ID: 1 });
+    assert.equal(status, 201, JSON.stringify(body));
+    assert.equal(body.Name, "Open");
+    assert.equal(body.Note, "hi");
+  });
+
+  it("not what it sets, even to null", async () => {
+    const { body } = await send("POST", `${s.v4}/Items`, {
+      ID: 1,
+      Name: "mine",
+      Note: null,
+    });
+    assert.equal(body.Name, "mine");
+    assert.equal(body.Note, null);
+    const required = await send("POST", `${s.v4}/Items`, { ID: 2, Name: null });
+    assert.equal(required.status, 400);
+  });
+
+  it("a PUT resets to it", async () => {
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "mine", Note: "x" });
+    const res = await send("PUT", `${s.v4}/Items(1)`, { Qty: 1 });
+    assert.equal(res.status, 204);
+    const { body } = await get(`${s.v4}/Items(1)`);
+    assert.equal(body.Name, "Open");
+    assert.equal(body.Note, "hi");
+  });
+
+  it("the generated V2 $metadata has it", async () => {
+    const xml = await (await fetch(`${s.v2}/$metadata`)).text();
+    assert.match(xml, /Name="Name"[^>]*DefaultValue="Open"/);
   });
 });

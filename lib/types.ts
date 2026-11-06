@@ -498,7 +498,7 @@ function elementToInternal(value: unknown, prop: Property): PropertyValue {
     const fields = value as Record<string, unknown>;
     const out: Record<string, PropertyValue> = {};
     for (const p of Object.values(prop.complexType.properties))
-      out[p.name] = propToInternal(own(fields, p.name), p);
+      out[p.name] = propToInternal(own(fields, p.name) ?? p.defaultValue, p);
     return out;
   }
   if (prop.enumType) return enumValue(value, prop.enumType);

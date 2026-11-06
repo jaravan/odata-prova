@@ -30,6 +30,7 @@ function propertyV2(p: Property, indent: string, etag = false): string[] {
     ["Name", p.name],
     ["Type", p.v2Type],
     ["Nullable", p.nullable ? undefined : "false"],
+    ["DefaultValue", p.defaultValue],
     ["MaxLength", p.maxLength],
     ["Precision", p.precision],
     ["Scale", p.scale],

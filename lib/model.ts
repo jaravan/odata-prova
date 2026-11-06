@@ -125,6 +125,8 @@ export interface EnumType {
 // A property, as normalizeProperty reads it and resolveTypeRef completes it
 export interface Property {
   name: string;
+  // CSDL's DefaultValue: what a create or a PUT that leaves it out gets
+  defaultValue?: string;
   // Canonical (V4) Edm type, or a complex or enum type's qualified name; Collection(...) for
   // a collection
   type: string;

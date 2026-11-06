@@ -828,6 +828,7 @@ function normalizeProperty(p: Xml, isV4: boolean): TypedElement {
     type,
     v2Type,
     nullable: p.Nullable !== "false",
+    defaultValue: p.DefaultValue,
     maxLength: p.MaxLength,
     precision: p.Precision,
     scale: p.Scale,

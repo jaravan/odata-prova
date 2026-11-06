@@ -425,6 +425,18 @@ function checkOneOfBindAndInline(
   }
 }
 
+// The DefaultValues of the properties a body leaves out: one it sets to null it has set
+function defaultsOf(
+  type: EntityType,
+  fields: Record<string, unknown>,
+): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  for (const p of Object.values(type.properties))
+    if (p.defaultValue !== undefined && !Object.hasOwn(fields, p.name))
+      defaults[p.name] = p.defaultValue;
+  return defaults;
+}
+
 function insertTree(
   svc: WriteHost,
   setName: string,
@@ -449,6 +461,7 @@ function insertTree(
     checkAgrees(entityType, fields, name, value, "where it's created");
   const given = { ...fields, ...presetValues };
   const row = svc.store.normalize(entityType, {
+    ...defaultsOf(entityType, fields),
     ...body,
     ...boundValues(binds),
     ...insertPrincipals(svc, entityType, fields, binds, given, draft),
@@ -534,7 +547,7 @@ function update(
     if (entityType.keys.includes(p.name)) continue;
     if (Object.hasOwn(fields, p.name))
       changes[p.name] = propToInternal(fields[p.name], p);
-    else if (replace) changes[p.name] = propToInternal(undefined, p);
+    else if (replace) changes[p.name] = propToInternal(p.defaultValue, p);
   }
   if (!draft) checkRequired(entityType, changes, Object.keys(changes), false);
   // Links to existing entities: a single-valued navigation's instead of the one before, a
