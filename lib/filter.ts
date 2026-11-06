@@ -470,6 +470,9 @@ function evaluate(node: Node, row: Row, resolve: Resolve): Value {
   if ("not" in node) return not(evaluate(node.expr, row, resolve));
   if ("neg" in node) {
     const v = evaluate(node.expr, row, resolve);
+    // 0 - 0 is 0, and a double's negated zero is -0, which dividing by shows
+    if (/^Edm\.(Double|Single)$/.test(v.type ?? "") && !isNull(v))
+      return { value: -num(v), type: v.type };
     return arithmetic("sub", { value: 0, type: v.type }, v);
   }
   if ("func" in node)

@@ -180,3 +180,42 @@ describe("$compute copies a time as fine as its property", () => {
     assert.equal(row.K, 2025);
   });
 });
+
+describe("negating a zero", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(path.join(FIXTURES, "Stamps"));
+    await send("POST", `${s.v4}/Rs`, { ID: 1, D: 0 });
+    await send("POST", `${s.v4}/Rs`, { ID: 2, D: 2.5 });
+  });
+  after(() => s.close());
+
+  const compute = async (id: number, expression: string) =>
+    (
+      await get(
+        `${s.v4}/Rs(${id})?$select=K&$compute=${encodeURIComponent(`${expression} as K`)}`,
+      )
+    ).body.K;
+
+  it("gives -0: dividing by it shows", async () => {
+    assert.equal(await compute(1, "1 div D"), "INF");
+    assert.equal(await compute(1, "1 div -(D)"), "-INF");
+    assert.equal(await compute(1, "1 div -D"), "-INF");
+  });
+
+  it("-0 still equals 0", async () => {
+    const { body } = await get(
+      `${s.v4}/Rs?$select=ID&$filter=${encodeURIComponent("-(D) eq 0")}`,
+    );
+    assert.deepEqual(
+      body.value.map((r: { ID: number }) => r.ID),
+      [1],
+    );
+  });
+
+  it("other doubles and exact types negate as before", async () => {
+    assert.equal(await compute(2, "-(D)"), -2.5);
+    assert.equal(await compute(2, "-ID"), -2);
+    assert.equal(await compute(2, "-(1.5)"), -1.5);
+  });
+});
