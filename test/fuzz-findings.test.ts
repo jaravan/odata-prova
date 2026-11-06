@@ -546,3 +546,32 @@ describe("a link that leaves its target's row as it is", () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe("substring from before the text starts", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(fixture("Mixed"));
+    await send("POST", `${s.v4}/Items`, { ID: 1, Name: "abcde" });
+    await send("POST", `${s.v4}/Items`, { ID: 2, Name: "😀abcd" });
+  });
+  after(() => s.close());
+
+  const computed = async (id: number, expression: string) =>
+    (
+      await get(
+        `${s.v4}/Items(${id})?$compute=${encodeURIComponent(expression)} as X&$select=X`,
+      )
+    ).body.X;
+
+  for (const [expression, plain, emoji] of [
+    ["substring(Name,-5,2)", "", ""],
+    ["substring(Name,-5,5)", "", ""],
+    ["substring(Name,-1,2)", "a", "😀"],
+    ["substring(Name,-1)", "abcde", "😀abcd"],
+    ["substring(Name,1,2)", "bc", "ab"],
+  ])
+    it(`${expression} counts the same with a pair of surrogates`, async () => {
+      assert.equal(await computed(1, expression), plain);
+      assert.equal(await computed(2, expression), emoji);
+    });
+});

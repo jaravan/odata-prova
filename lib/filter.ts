@@ -927,7 +927,9 @@ function charCount(text: string): number {
 function substring(text: string, start: number, end?: number): string {
   if (!SURROGATE.test(text)) return text.substring(start, end);
   spend(text.length);
-  return [...text].slice(Math.max(start, 0), end).join("");
+  // A negative end would count from the end of the text
+  const stop = end === undefined ? end : Math.max(end, 0);
+  return [...text].slice(Math.max(start, 0), stop).join("");
 }
 
 function callFunction(name: string, args: Value[]): Value {
