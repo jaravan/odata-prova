@@ -103,11 +103,17 @@ const STATUS_TEXT: Record<number, string> = {
   200: "OK",
   201: "Created",
   204: "No Content",
+  304: "Not Modified",
   400: "Bad Request",
   404: "Not Found",
   405: "Method Not Allowed",
   409: "Conflict",
+  410: "Gone",
+  412: "Precondition Failed",
+  428: "Precondition Required",
   500: "Internal Server Error",
+  501: "Not Implemented",
+  503: "Service Unavailable",
 };
 
 function renderHttpResponsePart(

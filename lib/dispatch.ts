@@ -651,7 +651,14 @@ function entityRequest(
   switch (method) {
     case "GET": {
       if (notModified(svc.model, setName, row, headers, svc.etags))
-        return { status: 304 };
+        return {
+          status: 304,
+          headers: {
+            ...(svc.etag(setName, row)
+              ? { ETag: svc.etag(setName, row)! }
+              : {}),
+          },
+        };
       const computed = svc.computed({ rows: [row], type }, q);
       return protocol.entity(
         svc,

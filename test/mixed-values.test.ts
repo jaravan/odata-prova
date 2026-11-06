@@ -801,6 +801,31 @@ describe("a DefaultValue that isn't a value", () => {
   });
 });
 
+describe("a 304", () => {
+  it("has the ETag, and a reason in a $batch", async () => {
+    const s = await start(
+      path.join(import.meta.dirname, "fixtures", "ETagSrv"),
+    );
+    try {
+      const book = (await get(`${s.v4}/Books`)).body.value[0];
+      const url = `${s.v4}/Books(${book.ID})`;
+      const res = await get(url, { "if-none-match": "*" });
+      assert.equal(res.status, 304);
+      assert.equal(res.headers.get("etag"), book["@odata.etag"]);
+      const text = await (
+        await fetch(`${s.v4}/$batch`, {
+          method: "POST",
+          headers: { "content-type": "multipart/mixed;boundary=b" },
+          body: `--b\r\nContent-Type: application/http\r\n\r\nGET Books(${book.ID}) HTTP/1.1\r\nIf-None-Match: *\r\n\r\n\r\n--b--`,
+        })
+      ).text();
+      assert.match(text, /HTTP\/1\.1 304 Not Modified/);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);
