@@ -3,7 +3,7 @@
 
 import { compareValues, enumNumber, toComparable } from "./types.ts";
 import { ROW_READ, sortWork, spend } from "./work.ts";
-import { compileFilter, scopeOf } from "./filter.ts";
+import { COMPLEX, NAVIGATION, compileFilter, scopeOf } from "./filter.ts";
 import { search } from "./search.ts";
 import type {
   Collection,
@@ -141,15 +141,17 @@ function pathScope(svc: QueryHost, entityType: EntityType): PathScope {
         this.collection(name.slice(0, -"/$count".length));
         return "Edm.Int32";
       }
+      const typeOf = (prop: Property) =>
+        prop.complexType && !prop.isCollection ? COMPLEX : prop.type;
       const itself = own(entityType.properties, name);
-      if (itself) return itself.type;
+      if (itself) return typeOf(itself);
       const parts = name.split("/");
       const at = walk(parts.slice(0, -1), path);
       const last = parts[parts.length - 1];
       const prop = own(at.properties, last);
-      if (prop) return prop.type;
+      if (prop) return typeOf(prop);
       const nav = svc.navigation(at, last);
-      if (nav && !nav.isCollection) return "";
+      if (nav && !nav.isCollection) return NAVIGATION;
       throw new HttpError(400, `Unknown property ${path} on ${at.name}`);
     },
     collection(path) {
@@ -222,8 +224,10 @@ function applyQuery(
           400,
           `Invalid $orderby: ${t.trim()} (write a property, then asc or desc)`,
         );
-      if (!pathScope(svc, entityType).check(path))
-        throw new HttpError(400, `Invalid $orderby: ${path} is a navigation`);
+      if (
+        [NAVIGATION, COMPLEX].includes(pathScope(svc, entityType).check(path))
+      )
+        throw new HttpError(400, `Invalid $orderby: ${path} has no value`);
       return { path, desc: dir.toLowerCase() === "desc" };
     });
     spend(sortWork(results.length, terms.length));

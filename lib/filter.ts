@@ -49,6 +49,11 @@ type Value = Literal;
 // What the paths of an expression are checked against: a type's (see pathScope in
 // apply-query.ts). collection gives the scope of a collection's items, undefined when they're
 // a collection property's.
+// The "types" of the paths that have no value to work on (see PathScope): a single-valued
+// navigation, and a complex value
+const NAVIGATION = "navigation";
+const COMPLEX = "complex";
+
 export interface PathScope {
   // The path's type, or an error when there's no such path
   check(path: string): string;
@@ -81,7 +86,7 @@ type Token =
   | { kind: "these"; value: string };
 
 type Node =
-  | { literal: unknown; type: string | null }
+  | { literal: unknown; type: string | null; enumType?: string }
   | { path: string }
   | { op: string; left: Node; right: Node }
   | { in: true; left: Node; list: Node[] }
@@ -122,6 +127,8 @@ const RESERVED = new Set(["true", "false", "null", "not"]);
 interface Scope {
   isProperty(name: string): boolean;
   enumMember(literal: Literal): string;
+  // Its type's full name, for a literal written with an alias
+  enumName(literal: Literal): string | undefined;
 }
 
 function scopeOf(model: Model, type: EntityType): Scope {
@@ -132,6 +139,7 @@ function scopeOf(model: Model, type: EntityType): Scope {
       if (!named) throw new Error(`${enumType} is not an enum type`);
       return enumValue(value, named);
     },
+    enumName: ({ enumType }) => enumNamed(model, enumType!)?.fullName,
   };
 }
 
@@ -238,6 +246,7 @@ function tokenize(
           kind: "literal",
           ...literal,
           value: scope ? scope.enumMember(literal) : literal.value,
+          enumType: scope ? scope.enumName(literal) : literal.enumType,
         });
         i = end + 1;
         continue;
@@ -404,7 +413,8 @@ class Parser {
       this.expect(")");
       return e;
     }
-    if (t.kind === "literal") return { literal: t.value, type: t.type };
+    if (t.kind === "literal")
+      return { literal: t.value, type: t.type, enumType: t.enumType };
     if (t.kind === "path") return { path: t.value };
     if (t.kind === "these") return { these: t.value };
     if (t.kind === "lambda") {
@@ -754,7 +764,9 @@ function num(v: Value): number {
   return n;
 }
 function str(v: Value): string {
-  return String(v.value);
+  return typeof v.value === "object"
+    ? JSON.stringify(v.value)
+    : String(v.value);
 }
 
 // The type two sides compare in. Between numbers the widest, so that a Decimal keeps its
@@ -779,6 +791,13 @@ const longText = (value: unknown) =>
 // a full timestamp, without the caller having to know or care.
 function compare(l: Value, r: Value): number {
   spend(longText(l.value) + longText(r.value));
+  // A complex value or a collection is only ever null or not
+  for (const [side, other] of [
+    [l, r],
+    [r, l],
+  ])
+    if (typeof side.value === "object" && !isNull(side) && !isNull(other))
+      throw new Error(`${str(side)} can only be compared with null`);
   // An enum is its number, whatever its members are called
   const enumOf = l.enumOf ?? r.enumOf;
   if (enumOf && !isNull(l) && !isNull(r)) {
@@ -863,6 +882,9 @@ function rounded(name: string, v: Value): Value {
 }
 
 function callFunction(name: string, args: Value[]): Value {
+  for (const arg of args)
+    if (typeof arg.value === "object" && !isNull(arg))
+      throw new Error(`${name} takes a primitive value, not ${str(arg)}`);
   // The spec's rule for all of them. Round, floor and ceiling give their argument's type.
   if (args.some(isNull))
     return { value: null, type: own(FUNCTION_TYPES, name) ?? args[0].type };
@@ -980,8 +1002,27 @@ function compileFilter(
   const ast = bounded(() =>
     new Parser(tokenize(text, protocol, scope)).parse(),
   );
-  if (paths) bounded(() => checkPaths(ast, paths, new Map()));
+  if (paths)
+    bounded(() => {
+      checkPaths(ast, paths, new Map());
+      checkCondition(ast, paths);
+    });
   return (row, resolve) => bounded(() => truthy(evaluate(ast, row, resolve)));
+}
+
+// A $filter has to come to true or false. Null does too, as nothing matches it. A property
+// that isn't a boolean would match nothing, and say nothing about why.
+function checkCondition(ast: Node, paths: PathScope): void {
+  let type: string | null;
+  try {
+    type = expressionType(ast, (path) =>
+      paths.check(path.replace(/^\$it\//, "")),
+    );
+  } catch {
+    return; // what's wrong is for evaluating it to say
+  }
+  if (type && type !== "Edm.Boolean")
+    throw new Error(`$filter needs a condition, and this is a ${type}`);
 }
 
 // Throws on a path no row could have: from the text alone, as evaluating gets to a path only
@@ -1006,17 +1047,39 @@ function checkPaths(
     const { scope, rest } = from(path);
     return scope && rest ? scope.check(rest) : "";
   };
+  // Its type, when that can be told: the check of the node, or evaluating it, says what's wrong
+  const typeOfNode = (of: Node) => {
+    try {
+      return expressionType(of, typed);
+    } catch {
+      return null;
+    }
+  };
   const checkText = (text: Node, other: Node) => {
     if (!("literal" in text) || typeof text.literal !== "string") return;
-    if (text.type !== "Edm.String" || isNumberText(text.literal)) return;
-    let type: string | null;
-    try {
-      type = expressionType(other, typed);
-    } catch {
-      return; // the check of other, or evaluating it, says what's wrong
+    const type = typeOfNode(other);
+    if (!type) return;
+    // Another enum's literal is no value of this one
+    if (text.enumType) {
+      if (!type.startsWith("Edm.") && type !== text.enumType)
+        throw new Error(`${text.enumType}'s value isn't a ${type}`);
+      return;
     }
-    if (type && isNumericType(type))
+    if (text.type !== "Edm.String" || isNumberText(text.literal)) return;
+    if (isNumericType(type))
       throw new Error(`'${text.literal}' is not a value of ${type}`);
+  };
+  // Such a path is there or null, and that's all that can be asked of it
+  const noValue = (of: Node) =>
+    "path" in of && [NAVIGATION, COMPLEX].includes(typed(of.path));
+  const checkNoValue = (op: string, side: Node, other: Node) => {
+    if (!noValue(side) || !("path" in side)) return;
+    if (
+      !["eq", "ne"].includes(op) ||
+      !("literal" in other) ||
+      other.literal !== null
+    )
+      throw new Error(`${side.path} has no value: compare it with null`);
   };
   if ("lambda" in node) {
     const { scope, rest } = from(node.path);
@@ -1037,12 +1100,26 @@ function checkPaths(
       checkText(node.left, node.right);
       checkText(node.right, node.left);
     }
+    if (node.op !== "and" && node.op !== "or") {
+      checkNoValue(node.op, node.left, node.right);
+      checkNoValue(node.op, node.right, node.left);
+    }
+    if (node.op === "has" && !("enumType" in node.left && node.left.enumType)) {
+      const type = typeOfNode(node.left);
+      if (type?.startsWith("Edm."))
+        throw new Error(`has needs an enum, not ${type}`);
+    }
   } else if ("in" in node) {
     check(node.left);
     node.list.forEach(check);
     for (const item of node.list) checkText(item, node.left);
   } else if ("expr" in node) check(node.expr);
-  else if ("func" in node) node.args.forEach(check);
+  else if ("func" in node) {
+    node.args.forEach(check);
+    for (const arg of node.args)
+      if (noValue(arg) && "path" in arg)
+        throw new Error(`${node.func} takes a value, and ${arg.path} has none`);
+  }
 }
 
 // The Edm type each function gives; round, floor and ceiling give their argument's
@@ -1157,4 +1234,4 @@ function compileExpression(
   };
 }
 
-export { compileFilter, compileExpression, scopeOf };
+export { NAVIGATION, COMPLEX, compileFilter, compileExpression, scopeOf };

@@ -727,6 +727,55 @@ describe("options on what can't take them", () => {
   });
 });
 
+describe("expressions that can't be", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start(MODEL);
+    await send("POST", `${s.v4}/Items`, { ID: 1, Qty: 1, Sh: "Red" });
+  });
+  after(() => s.close());
+
+  const status = async (filter: string) =>
+    (await get(`${s.v4}/Items?$filter=${encodeURIComponent(filter)}`)).status;
+
+  for (const filter of [
+    "Qty",
+    "Name",
+    "5",
+    "'x'",
+    "Group",
+    "Group eq 5",
+    "Group gt null",
+    "Qty has 1",
+    "Sh eq F.Color'Red'",
+    "round(Addr) eq 1",
+    "length(Addr) eq 1",
+    "Addr eq 'x'",
+    "Addr add 1 eq 1",
+  ])
+    it(`${filter} is a 400`, async () => {
+      assert.equal(await status(filter), 400);
+      const { body } = await get(
+        `${s.v4}/Items?$filter=${encodeURIComponent(filter)}`,
+      );
+      assert.doesNotMatch(JSON.stringify(body), /object Object/);
+    });
+
+  for (const filter of [
+    "Qty eq 1",
+    "Sh eq F.Shade'Red'",
+    "Group eq null",
+    "contains(Name,'x')",
+    "not contains(Name,'x')",
+    "Addr eq null",
+    "null",
+    "true",
+  ])
+    it(`${filter} is fine`, async () => {
+      assert.equal(await status(filter), 200);
+    });
+});
+
 describe("a value the server can't hold", () => {
   it("doesn't stop a row being written back", async () => {
     const s = await start(MODEL);
