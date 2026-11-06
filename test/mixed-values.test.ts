@@ -3,6 +3,7 @@
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { parseMetadata } from "../lib/metadata.ts";
 import {
   batchResponses,
   get,
@@ -446,5 +447,13 @@ describe("smaller mistakes", () => {
     } finally {
       await s.close();
     }
+  });
+
+  it("a TypeDefinition with no UnderlyingType is named", () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm"><TypeDefinition Name="T"/><EntityType Name="A"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType><EntityContainer Name="C"><EntitySet Name="As" EntityType="N.A"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
+    assert.throws(
+      () => parseMetadata(xml),
+      /metadata\.xml: TypeDefinition T has no UnderlyingType/,
+    );
   });
 });

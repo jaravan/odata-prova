@@ -601,8 +601,13 @@ function resolveTypeNames(schemas: Xml[]): void {
     );
   const definitions = new Map<string, Xml>();
   for (const schema of schemas)
-    for (const td of schema.TypeDefinition || [])
+    for (const td of schema.TypeDefinition || []) {
+      if (!td.UnderlyingType)
+        throw new Error(
+          `metadata.xml: TypeDefinition ${td.Name} has no UnderlyingType`,
+        );
       definitions.set(`${schema.Namespace}.${td.Name}`, td);
+    }
 
   const visit = (node: Xml): void => {
     if (Array.isArray(node)) return node.forEach(visit);
