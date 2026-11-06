@@ -198,7 +198,8 @@ function binaryBytes(text: string): string {
 // A value that doesn't fit its type is a 400: storing it anyway would serve it back as null
 // or as something the type can't hold.
 function invalid(value: unknown, type: string): HttpError {
-  return new HttpError(400, `Invalid ${type} value: ${value}`, "InvalidValue");
+  const text = typeof value === "object" ? JSON.stringify(value) : value;
+  return new HttpError(400, `Invalid ${type} value: ${text}`, "InvalidValue");
 }
 
 // Fractional seconds cut or padded to the property's Precision facet. Without a facet the

@@ -418,4 +418,18 @@ describe("smaller mistakes", () => {
       await s.close();
     }
   });
+
+  it("an object where a value belongs is quoted, not [object Object]", async () => {
+    const s = await start(MODEL);
+    try {
+      const res = await send("POST", `${s.v4}/Items`, {
+        ID: 1,
+        Pm: { a: 1 },
+      });
+      assert.equal(res.status, 400);
+      assert.doesNotMatch(JSON.stringify(res.body), /object Object/);
+    } finally {
+      await s.close();
+    }
+  });
 });
