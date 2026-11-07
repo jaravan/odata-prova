@@ -116,7 +116,12 @@ describe("a data file no set reads", () => {
 });
 
 describe("a data file in another case", () => {
-  const onCaseInsensitive = fs.existsSync(path.join(FAMILIES, "METADATA.XML"));
+  // Where the test writes its files, which may not be where the fixtures are: a container's
+  // /tmp is case-sensitive under a macOS checkout mounted into it
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "case-probe-"));
+  fs.writeFileSync(path.join(probe, "a"), "");
+  const onCaseInsensitive = fs.existsSync(path.join(probe, "A"));
+  fs.rmSync(probe, { recursive: true, force: true });
 
   it(
     "isn't called unread when the set read it",
