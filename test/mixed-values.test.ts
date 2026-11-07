@@ -1103,6 +1103,16 @@ describe("a number too long for any enum", () => {
       assert.ok(ms < 2000, `took ${ms}ms`);
     });
 
+  // The work limit counts its length for each row, but reading it costs far more: it was read
+  // again for every row until the limit stopped it, which took 0.6s here and over 2s on CI
+  for (const op of ["has", "eq"])
+    it(`a long list of flags after ${op} is read once, not for each row`, async () => {
+      const list = Array(100_000).fill("1").join(",");
+      const { status, ms } = await inBatch(`Pm ${op} '${list}'`);
+      assert.equal(status, 400);
+      assert.ok(ms < 300, `took ${ms}ms`);
+    });
+
   it("in a lambda, on rows that have items", async () => {
     for (const row of s.store.rows("Items")) row.Perms = ["R"];
     for (const filter of [

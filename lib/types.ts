@@ -499,17 +499,33 @@ function enumValue(value: unknown, type: EnumType): string {
 // flags type, or the number itself. A bigint: flags go up to 64 bits, past what | keeps of a
 // number, and past a double's digits.
 function enumNumber(value: unknown, type: EnumType): bigint {
-  return String(value)
-    .split(",")
-    .reduce((all, part) => {
-      const text = part.trim();
-      const member = type.members.find((m) => m.name === text);
-      // Twenty digits hold any 64 bits. More would be read again for every row.
-      if (!member && !/^-?\d{1,20}$/.test(text))
-        throw invalid(value, type.name);
-      const n = BigInt(member ? member.value : text);
-      return type.isFlags ? all | n : n;
-    }, 0n);
+  const text = String(value);
+  if (text.length <= LONG_ENUM) return readEnumNumber(text, type);
+  // A long one is a literal, compared with every row: read it once. A filter's work counts
+  // its length for each row, but reading it costs far more than that, a second or more.
+  let known = longEnums.get(type);
+  if (!known) longEnums.set(type, (known = new Map<string, bigint>()));
+  let n = known.get(text);
+  if (n === undefined) {
+    n = readEnumNumber(text, type);
+    if (known.size >= 8) known.clear();
+    known.set(text, n);
+  }
+  return n;
+}
+
+const LONG_ENUM = 256;
+const longEnums = new WeakMap<EnumType, Map<string, bigint>>();
+
+function readEnumNumber(value: string, type: EnumType): bigint {
+  return value.split(",").reduce((all, part) => {
+    const text = part.trim();
+    const member = type.members.find((m) => m.name === text);
+    // Twenty digits hold any 64 bits. More would be read again for every row.
+    if (!member && !/^-?\d{1,20}$/.test(text)) throw invalid(value, type.name);
+    const n = BigInt(member ? member.value : text);
+    return type.isFlags ? all | n : n;
+  }, 0n);
 }
 
 function elementToInternal(value: unknown, prop: Property): PropertyValue {
