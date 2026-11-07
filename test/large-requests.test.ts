@@ -97,6 +97,26 @@ describe("a long literal", () => {
     assert.equal(status, 200);
     assert.equal(body["@odata.count"], 20000);
   });
+
+  // Its length counts as work for each row, but turning it into a number cost far more: it
+  // was read again for every row until the limit stopped it. Measured against the same
+  // literal read for one row only, so a slower machine is slower at both.
+  it("of an Int64 is read once, not for each row", async () => {
+    const digits = "1".repeat(300_000);
+    const timed = async (filter: string) => {
+      const started = performance.now();
+      await batch(s.v4, [
+        { method: "GET", url: `Values?$filter=${encodeURIComponent(filter)}` },
+      ]);
+      return performance.now() - started;
+    };
+    const everyRow = await timed(`Big eq ${digits}`);
+    const oneRow = await timed(`ID eq 0 and Big eq ${digits}2`);
+    assert.ok(
+      everyRow < 4 * oneRow + 50,
+      `${Math.round(everyRow)}ms, and ${Math.round(oneRow)}ms for one row`,
+    );
+  });
 });
 
 describe("a very large group", () => {
@@ -301,8 +321,8 @@ describe("a $batch of reads that are small to answer and long to do", () => {
       `Values?$apply=${encodeURIComponent("groupby((Text))")}&$top=1`,
     ],
   ])
+    // Counted, not timed: the work they may do takes 2 seconds here and over 10 on CI
     it(`1500 of a ${what} are stopped soon`, async () => {
-      const started = performance.now();
       const reads = Array.from({ length: 1500 }, () => ({
         method: "GET",
         url,
@@ -312,8 +332,9 @@ describe("a $batch of reads that are small to answer and long to do", () => {
         (p) => p.body?.error?.code === "TooMuchWork",
       );
       assert.ok(refused.length, `none of ${parts.length} refused`);
-      assert.ok(parts.some((p) => p.status === 200));
-      assert.ok(performance.now() - started < 8000);
+      const ran = parts.filter((p) => p.status === 200).length;
+      assert.ok(ran, "none ran");
+      assert.ok(ran < parts.length / 10, `${ran} of ${parts.length} ran`);
     });
 
   it("one of each is fine", async () => {

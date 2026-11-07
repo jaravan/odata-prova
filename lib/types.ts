@@ -499,23 +499,28 @@ function enumValue(value: unknown, type: EnumType): string {
 // flags type, or the number itself. A bigint: flags go up to 64 bits, past what | keeps of a
 // number, and past a double's digits.
 function enumNumber(value: unknown, type: EnumType): bigint {
-  const text = String(value);
-  if (text.length <= LONG_ENUM) return readEnumNumber(text, type);
-  // A long one is a literal, compared with every row: read it once. A filter's work counts
-  // its length for each row, but reading it costs far more than that, a second or more.
-  let known = longEnums.get(type);
-  if (!known) longEnums.set(type, (known = new Map<string, bigint>()));
-  let n = known.get(text);
-  if (n === undefined) {
-    n = readEnumNumber(text, type);
-    if (known.size >= 8) known.clear();
-    known.set(text, n);
-  }
-  return n;
+  return readOnce(type, String(value), (text) => readEnumNumber(text, type));
 }
 
-const LONG_ENUM = 256;
-const longEnums = new WeakMap<EnumType, Map<string, bigint>>();
+// A long value is a literal, compared with every row: it's read once. A filter's work counts
+// its length for each row, but reading it costs far more than that, a second or more.
+const LONG_VALUE = 256;
+const longValues = new WeakMap<object, Map<string, unknown>>();
+
+function readOnce<T>(
+  owner: object,
+  text: string,
+  read: (text: string) => T,
+): T {
+  if (text.length <= LONG_VALUE) return read(text);
+  let known = longValues.get(owner);
+  if (!known) longValues.set(owner, (known = new Map<string, unknown>()));
+  if (known.has(text)) return known.get(text) as T;
+  const value = read(text);
+  if (known.size >= 8) known.clear();
+  known.set(text, value);
+  return value;
+}
 
 function readEnumNumber(value: string, type: EnumType): bigint {
   return value.split(",").reduce((all, part) => {
@@ -611,8 +616,10 @@ function toComparable(
   if (value === null || value === undefined) return null;
   // Every digit, which a double would round from 2^53 on. < and > compare a bigint with a
   // number exactly, so a literal of another numeric type compares with it too.
-  if (type === "Edm.Int64" && INT64.test(String(value)))
-    return BigInt(String(value));
+  if (type === "Edm.Int64") {
+    const n = readOnce(INT64, String(value), int64Order);
+    if (n !== undefined) return n;
+  }
   if (type === "Edm.Decimal") return decimalOrder(value);
   if (type && isNumericType(type)) return Number(value);
   // Hex digits, in either case
@@ -628,6 +635,9 @@ function toComparable(
   if (type === "Edm.Binary") return binaryBytes(String(value));
   return value as PrimitiveValue;
 }
+
+const int64Order = (text: string) =>
+  INT64.test(text) ? BigInt(text) : undefined;
 
 // A moment as a number to compare, in picoseconds so that every digit of a time counts, which
 // a double's wouldn't. What isn't a moment is NaN, as Date has it.
