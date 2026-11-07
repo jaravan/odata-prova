@@ -39,3 +39,11 @@ yarn test:image
 - A fix comes with a test that fails without it. For a metadata problem, add the smallest `metadata.xml` that shows it under `test/fixtures/`.
 - Tests use the fixtures, not `examples/`: the example data there may change. Only `test/models.test.ts` loads the examples, to check that each one still works.
 - Only add third-party files, such as sample metadata or data, if their license allows it, and credit them in [NOTICE](NOTICE).
+
+## How it's built
+
+AI tools are used in writing the code. The maintainer decides the design and how each change is tested, reviews the code and its test results, and makes every commit and release.
+
+Trust comes from the checks, whoever wrote the code: every fix comes with a test that fails without it, CI runs the full suite on every push, and changes are also checked with fuzzing and against real Fiori apps.
+
+Contributions made with AI tools are welcome on the same terms as any other: you understand the change and can explain it, and it comes with a test.
