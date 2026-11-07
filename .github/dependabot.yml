@@ -1,0 +1,24 @@
+# Monthly updates, each ecosystem's in one pull request. CI tests them like any other.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The base image, pinned by digest in the Dockerfile
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
