@@ -35,7 +35,7 @@ yarn test:image
 
 ## Changes
 
-- One change per commit, with a [Conventional Commits](https://www.conventionalcommits.org/) message, e.g. `fix(filter): ...`, `feat(v4): ...`, `docs(readme): ...`. Say in the body why, not only what.
+- One change per commit, with a [Conventional Commits](https://www.conventionalcommits.org/) message, e.g. `fix(filter): ...`, `feat(v4): ...`, `docs(readme): ...`.
 - A fix comes with a test that fails without it. For a metadata problem, add the smallest `metadata.xml` that shows it under `test/fixtures/`.
 - Tests use the fixtures, not `examples/`: the example data there may change. Only `test/models.test.ts` loads the examples, to check that each one still works.
 - Only add third-party files, such as sample metadata or data, if their license allows it, and credit them in [NOTICE](NOTICE).
