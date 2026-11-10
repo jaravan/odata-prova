@@ -78,7 +78,7 @@ describe("a hierarchy of one long chain", () => {
       assert.equal(await count(apply), expected);
     });
 
-  it("doesn't hold everything else up", async () => {
+  it("answers in under 5 seconds", async () => {
     const started = performance.now();
     await count(`descendants(${H},filter(ID lt 15000))`);
     assert.ok(performance.now() - started < 5000);

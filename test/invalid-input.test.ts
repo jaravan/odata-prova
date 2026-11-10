@@ -178,7 +178,7 @@ describe("a long number in a string property", () => {
   });
 });
 
-describe("values that aren't one", () => {
+describe("literals that aren't valid values", () => {
   let s: TestServer;
   before(async () => {
     s = await start();
@@ -218,7 +218,7 @@ describe("values that aren't one", () => {
     });
   }
 
-  it("a time of PT says nothing", () => {
+  it("PT alone is no time of day", () => {
     assert.throws(() => toInternal("PT", "Edm.TimeOfDay"), /Invalid/);
     assert.equal(toInternal("PT1H", "Edm.TimeOfDay"), "01:00:00");
   });
@@ -235,7 +235,7 @@ describe("values that aren't one", () => {
   }
 
   for (const offset of ["+23:59", "-23:59", "+14:00", "-00:00"]) {
-    it(`a time zone of ${offset} is one`, async () => {
+    it(`a time zone of ${offset} is valid`, async () => {
       const { status, body } = await send("POST", `${s.v4}/PurchaseOrderSet`, {
         ...ORDER,
         PurchaseOrderId: `Z${offset}`,
@@ -268,7 +268,7 @@ describe("values at the edge of their type", () => {
     assert.equal(status, 200);
   });
 
-  it("toInternal reads the edges", () => {
+  it("toInternal accepts a type's limits and refuses past them", () => {
     assert.throws(() => toInternal(1e39, "Edm.Single"), /Invalid/);
     assert.throws(() => toInternal(-1e39, "Edm.Single"), /Invalid/);
     assert.equal(toInternal(1e38, "Edm.Single"), 1e38);
@@ -353,7 +353,7 @@ describe("an empty binary", () => {
     assert.equal((await get(`${s.v4}/Rs(1)`)).body.B, "");
   });
 
-  it("is found as one, and isn't null", async () => {
+  it("$filter finds it as a value, not as null", async () => {
     const ids = async (expression: string) =>
       (
         await get(

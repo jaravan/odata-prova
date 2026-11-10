@@ -7,14 +7,14 @@ import { start, get, PO_MODEL, type TestServer } from "./helpers.ts";
 
 // Names every JavaScript object has (constructor, toString, __proto__) are no entity set,
 // property or navigation of the service, unless its metadata declares them
-describe("names from a request that every object has", () => {
+describe("Object.prototype names in a request (constructor, toString, __proto__)", () => {
   let s: TestServer;
   before(async () => {
     s = await start();
   });
   after(() => s.close());
 
-  it("are unknown, as any other name is", async () => {
+  it("are unknown, like any other name", async () => {
     for (const [url, status] of [
       [`${s.v4}/constructor`, 404],
       [`${s.v4}/__proto__`, 404],

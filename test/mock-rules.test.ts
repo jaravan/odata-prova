@@ -75,14 +75,14 @@ describe("mock rules: what they apply to", () => {
     );
   });
 
-  it("not a foreign key, whose value comes from the row it points at, for a Property rule", () => {
+  it("a Property rule skips a foreign key, whose value comes from the row it points at", () => {
     assert.deepEqual(
       keys(resolveMockRules(PO, [rule("PurchaseOrderId", "45########")])),
       { PurchaseOrderSet: { PurchaseOrderId: "PurchaseOrderId" } },
     );
   });
 
-  it("from a shared file, whatever it names that the model doesn't have, skipped", () => {
+  it("a shared file's rules for what the model doesn't have are skipped", () => {
     assert.deepEqual(
       keys(
         resolveMockRules(PO, [
@@ -149,7 +149,7 @@ describe("mock rules: mistakes, and how to fix them", () => {
     );
   });
 
-  it("a running number whose #s run out before the last row, for what it goes in", () => {
+  it("a running number with too few #s for the rows it has to number", () => {
     const northwind = model(path.join(FIXTURES, "real", "NorthwindV4"));
     const rules = [rule("PurchaseOrderSet.Currency", "C#")];
     assert.equal(
@@ -233,7 +233,7 @@ describe("mock rules: mistakes, and how to fix them", () => {
     );
   });
 
-  it("a rule on a collection of complex values, for a member instead", () => {
+  it("a rule on a collection of complex values: the message says to give a member's rule", () => {
     const trippin = model(path.join(FIXTURES, "real", "TripPin"));
     assert.deepEqual(
       mistakes(() =>
@@ -245,7 +245,7 @@ describe("mock rules: mistakes, and how to fix them", () => {
     );
   });
 
-  it("a Property rule that fits none of the sets that have it, why for each", () => {
+  it("a Property rule that fits none of the sets that have it: the message says why for each", () => {
     assert.deepEqual(
       mistakes(() => resolveMockRules(PO, [rule("Currency", "EURO")])),
       [

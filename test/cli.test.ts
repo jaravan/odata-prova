@@ -344,7 +344,7 @@ describe("odata-prova --persist", () => {
     }
   });
 
-  it("no value is in memory only: last, before another option, or empty", async () => {
+  it("--persist with no value keeps the data in memory: last, before another option, or empty", async () => {
     for (const args of [
       [PO_MODEL, "--port=0", "--persist"],
       [PO_MODEL, "--persist", "--port=0"],

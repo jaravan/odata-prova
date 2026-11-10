@@ -22,7 +22,7 @@ const fixture = (name: string) =>
 const BOOK = "b0000000-0000-4000-8000-000000000001";
 const book = (active: boolean) => `Books(ID=${BOOK},IsActiveEntity=${active})`;
 
-describe("a link is held to what a PATCH is, in a draft", () => {
+describe("$ref on draft-enabled entities follows the rules a PATCH does", () => {
   let s: TestServer;
   const authorOf = (active: boolean) =>
     (s.store.rows("Books") as Record<string, unknown>[]).find(
@@ -104,7 +104,7 @@ describe("a link is held to what a PATCH is, in a draft", () => {
   });
 });
 
-describe("an update that says two things of a foreign key", () => {
+describe("an update that gives a foreign key and a bind for the same link", () => {
   let s: TestServer;
   before(async () => {
     s = await start(fixture("Families"), { mockRows: 4 });
@@ -146,7 +146,7 @@ describe("an update that says two things of a foreign key", () => {
   });
 });
 
-describe("a next link is one the server can read", () => {
+describe("the server can follow its own next links", () => {
   let s: TestServer;
   const order = { ...ORDER };
   const item = (n: number) => ({
@@ -165,7 +165,7 @@ describe("a next link is one the server can read", () => {
   after(() => s.close());
 
   for (const id of ["a/b", "50%", "é x"])
-    it(`of a navigation under the key ${id}`, async () => {
+    it(`for a navigation of an entity keyed ${id}`, async () => {
       const created = await send("POST", `${s.v4}/PurchaseOrderSet`, {
         ...order,
         PurchaseOrderId: id,
@@ -245,7 +245,7 @@ describe("$ in a path may be escaped", () => {
   });
 });
 
-describe("$format of what the server doesn't answer in", () => {
+describe("$format asking for a format the resource doesn't have", () => {
   let s: TestServer;
   before(async () => {
     s = await start();
@@ -268,7 +268,7 @@ describe("$format of what the server doesn't answer in", () => {
   });
 });
 
-describe("$skiptoken is a collection's", () => {
+describe("$skiptoken applies to collections only", () => {
   it("on one entity -> 400", async () => {
     const s = await start();
     try {
@@ -328,7 +328,7 @@ describe("a JSON number a double can't hold", () => {
     assert.equal((await raw('{"ID":902,"V":"1e400"}')).status, 400);
   });
 
-  it("INF as itself is still a Double's", async () => {
+  it("INF as a string is still a valid Double", async () => {
     assert.equal((await raw('{"ID":903,"V":"INF"}')).status, 201);
   });
 
@@ -350,7 +350,7 @@ describe("a JSON number a double can't hold", () => {
   });
 });
 
-describe("startup, from what an editor or a metadata.xml may hold", () => {
+describe("startup with unusual files: odd names in metadata.xml, a byte order mark", () => {
   const model = (files: Record<string, string>) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "odata-prova-"));
     for (const [name, text] of Object.entries(files)) {
@@ -416,7 +416,7 @@ describe("startup, from what an editor or a metadata.xml may hold", () => {
   });
 });
 
-describe("a link that leaves its target's row as it is", () => {
+describe("a link stored on the source row, which leaves an active target unchanged, is allowed", () => {
   let s: TestServer;
   let dir: string;
   const OTHER = "b0000000-0000-4000-8000-000000000002";
@@ -490,7 +490,7 @@ describe("a link that leaves its target's row as it is", () => {
     assert.equal(reviewBook(1), BOOK);
   });
 
-  it("PUT and DELETE $ref from a row outside the draft", async () => {
+  it("a row outside the draft links to and unlinks from an active book with $ref", async () => {
     const put = await send("PUT", `${s.v4}/Reviews(2)/book/$ref`, {
       "@odata.id": book(true),
     });
@@ -530,7 +530,7 @@ describe("a link that leaves its target's row as it is", () => {
     assert.equal(body.value.length, 1);
   });
 
-  it("the active entity's own link is still its draft's to change", async () => {
+  it("an active entity's own link is still refused: it changes through its draft", async () => {
     const res = await send("PUT", `${s.v4}/${book(true)}/sequel/$ref`, {
       "@odata.id": `Books(ID=${OTHER},IsActiveEntity=true)`,
     });
@@ -538,7 +538,7 @@ describe("a link that leaves its target's row as it is", () => {
     assert.match(res.body.error.message, /change its draft/);
   });
 
-  it("nor can a link from outside write on an active chapter", async () => {
+  it("a link that would write on an active chapter's row is refused", async () => {
     const res = await send("POST", `${s.v4}/${book(true)}/chapters/$ref`, {
       "@odata.id":
         "Chapters(ID=c0000000-0000-4000-8000-000000000003,IsActiveEntity=true)",

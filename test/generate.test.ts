@@ -244,7 +244,7 @@ describe("mock data", () => {
     }
   });
 
-  it("leaves no stand-in showing: no cut label, a courtesy title, an image path, a ship's name", () => {
+  it("avoids placeholder-looking values: digits for a short Extension, a courtesy title, an image path, a ship's name", () => {
     const { store } = load(path.join(FIXTURES, "real", "NorthwindV2"), 20);
     for (const e of store.rows("Employees")) {
       // Extension has MaxLength 4: "Extension 1" doesn't fit, so digits, not "Exte"

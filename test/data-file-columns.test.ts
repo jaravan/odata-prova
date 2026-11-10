@@ -55,7 +55,7 @@ describe("a data file's columns the metadata doesn't have", () => {
     assert.match(warning, /Nope, Later/);
   });
 
-  it("every file says its own", async () => {
+  it("each file gets its own warning", async () => {
     const warnings = await started({
       "Ps.csv": "ID,A\n1,x\n",
       "Ks.csv": "ID,B\n1,x\n",
@@ -63,11 +63,11 @@ describe("a data file's columns the metadata doesn't have", () => {
     assert.equal(warnings.length, 2);
   });
 
-  it("a file that fits says nothing", async () => {
+  it("a file with no unknown columns gets no warning", async () => {
     assert.deepEqual(await started({ "Ps.csv": "ID,I1\n1,9\n" }), []);
   });
 
-  it("a navigation, an annotation or __metadata isn't one", async () => {
+  it("a navigation, an annotation or __metadata isn't reported as one", async () => {
     const warnings = await started({
       "Ps.json": '[{"ID":1,"Kids":[],"@odata.etag":"x","__metadata":{}}]',
     });
@@ -124,7 +124,7 @@ describe("a data file in another case", () => {
   fs.rmSync(probe, { recursive: true, force: true });
 
   it(
-    "isn't called unread when the set read it",
+    "isn't logged as ignored when the set read it",
     { skip: !onCaseInsensitive },
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "case-"));

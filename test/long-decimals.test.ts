@@ -10,7 +10,7 @@ const SPELLINGS = path.join(import.meta.dirname, "fixtures", "Spellings");
 const HUGE = `1${"0".repeat(42)}`;
 const ALL = [1, 2, 3, 4, 6];
 
-describe("a Decimal against a number longer than a decimal can be", () => {
+describe("a Decimal compared with a number of more digits than a decimal holds", () => {
   let s: TestServer;
   before(async () => {
     s = await start(SPELLINGS);
@@ -66,12 +66,12 @@ describe("a Decimal against a number longer than a decimal can be", () => {
     }
   });
 
-  it("an Int64 against one", async () => {
+  it("an Int64 compared with such a number", async () => {
     assert.deepEqual(await ids(`Big lt ${HUGE}`), [1, 2, 3, 4]);
     assert.deepEqual(await ids(`Big gt ${HUGE}`), []);
   });
 
-  it("INF is beyond it", async () => {
+  it("INF is greater than every decimal, -INF less", async () => {
     assert.deepEqual(await ids("Amount lt INF"), ALL);
     assert.deepEqual(await ids("Amount gt -INF"), ALL);
   });

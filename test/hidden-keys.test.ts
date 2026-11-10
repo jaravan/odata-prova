@@ -12,7 +12,7 @@ import { start, get, send, type TestServer } from "./helpers.ts";
 // files fill them: ann's photo is 2, ben has none; lines A and B are order 1's, C order 2's.
 const MODEL = path.join(import.meta.dirname, "fixtures", "HiddenKeys");
 
-describe("a navigation with a key of its own", () => {
+describe("a navigation joined on a hidden key of its own", () => {
   let s: TestServer;
   before(async () => {
     s = await start(MODEL);
@@ -42,7 +42,7 @@ describe("a navigation with a key of its own", () => {
     assert.deepEqual(filtered.body.value, [{ UserName: "ann" }]);
   });
 
-  it("and so does its partner, a collection, the other way", async () => {
+  it("its partner, a collection, joins the other way", async () => {
     const lines = await get(`${s.v4}/Orders(1)/Lines?$select=Code`);
     assert.deepEqual(lines.body.value, [{ Code: "A" }, { Code: "B" }]);
     assert.equal((await get(`${s.v4}/Lines('C')/Order`)).body.Number, 2);
@@ -101,7 +101,7 @@ describe("a navigation with a key of its own", () => {
   });
 });
 
-describe("a key of its own in generated data", () => {
+describe("a hidden key in generated data", () => {
   let dir: string;
   before(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "hidden-keys-"));

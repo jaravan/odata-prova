@@ -711,7 +711,7 @@ describe("$apply groupby over INF, -INF and NaN", () => {
   });
   after(() => s.close());
 
-  it("a group each, as for any other value", async () => {
+  it("each is a group of its own, like any other value", async () => {
     const r = await get(
       `${s.v4}/Ms?$apply=groupby((V),aggregate($count as C))&$orderby=V`,
     );

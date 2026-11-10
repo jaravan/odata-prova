@@ -39,18 +39,18 @@ describe("ranking by a total", () => {
   const cancelling = (transformation: string) => ids(101, 103, transformation);
   const tenths = (transformation: string) => ids(201, 205, transformation);
 
-  it("toppercent keeps what the small amount adds up to", async () => {
+  it("toppercent: amounts that cancel out leave an exact total (0.3), not a rounding error", async () => {
     assert.deepEqual(await cancelling("toppercent(50,Amount)"), [101]);
   });
 
-  it("bottompercent goes through every row to reach it", async () => {
+  it("bottompercent adds up every row before it reaches its share", async () => {
     assert.deepEqual(
       await cancelling("bottompercent(50,Amount)"),
       [103, 102, 101],
     );
   });
 
-  it("topsum stops as soon as tenths add up to the sum", async () => {
+  it("topsum stops when 0.7 + 0.1 + 0.1 + 0.1 reaches exactly 1", async () => {
     assert.deepEqual(await tenths("topsum(1,Amount)"), [201, 202, 203, 204]);
   });
 

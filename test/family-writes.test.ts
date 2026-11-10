@@ -8,7 +8,7 @@ import { get, send, start, type TestServer } from "./helpers.ts";
 
 const FAMILIES = path.join(import.meta.dirname, "fixtures", "Families");
 
-describe("families", () => {
+describe("writes between parents and kids", () => {
   let s: TestServer;
   beforeEach(async () => {
     s = await start(FAMILIES);
@@ -22,7 +22,7 @@ describe("families", () => {
     (await get(`${s.v4}/Ks(${id})`)).body.PID;
 
   describe("unlinking with $id", () => {
-    it("someone else's kid is a 404, and stays theirs", async () => {
+    it("another parent's kid -> 404, and it stays linked to its own parent", async () => {
       const url = `${s.v4}/Ps(701)/Kids/$ref?$id=Ks(900)`;
       assert.equal((await send("DELETE", url)).status, 404);
       assert.equal(await parentOf(900), 700);
@@ -95,7 +95,7 @@ describe("families", () => {
       assert.equal((await get(`${s.v4}/Ks(900)`)).body.I1, null);
     });
 
-    it("what holds nothing to lose is fine", async () => {
+    it("an empty value on a parent with no kids is fine: nothing would be removed", async () => {
       // Ps(701) has no kids: an empty value says what it already has
       for (const Kids of [[], null, { results: [] }])
         assert.equal(
@@ -112,7 +112,7 @@ describe("families", () => {
       );
     });
 
-    it("links by reference still are links", async () => {
+    it("an @odata.bind in an update still links", async () => {
       assert.equal(
         (
           await send("PATCH", `${s.v4}/Ks(900)`, {
@@ -135,7 +135,7 @@ describe("families", () => {
   });
 });
 
-describe("a to-one link and what a create can't mean", () => {
+describe("a to-one link, and requests the server refuses", () => {
   let s: TestServer;
   beforeEach(async () => {
     s = await start(FAMILIES);
@@ -174,7 +174,7 @@ describe("a to-one link and what a create can't mean", () => {
     assert.equal((await get(`${s.v4}/Ks(999)`)).status, 404);
   });
 
-  it("either alone still works", async () => {
+  it("a bind alone, or an inline entity alone, still works", async () => {
     const bound = { ID: 990, "Parent@odata.bind": "Ps(801)" };
     assert.equal((await send("POST", `${s.v4}/Ks`, bound)).status, 201);
     const inline = { ID: 991, Parent: { ID: 803 } };
@@ -182,7 +182,7 @@ describe("a to-one link and what a create can't mean", () => {
   });
 
   for (const field of ["Kids@delta", "Kids@odata.delta"]) {
-    it(`PATCH with ${field} says it isn't done`, async () => {
+    it(`PATCH with ${field} -> 501, saying delta payloads aren't supported`, async () => {
       const res = await send("PATCH", `${s.v4}/Ps(800)`, {
         [field]: [{ ID: 950 }],
       });
@@ -209,7 +209,7 @@ describe("a to-one link and what a create can't mean", () => {
   });
 });
 
-describe("what a create says twice", () => {
+describe("a create that gives a link twice", () => {
   let s: TestServer;
   beforeEach(async () => {
     s = await start(FAMILIES);
@@ -252,7 +252,7 @@ describe("what a create says twice", () => {
     assert.equal(res.status, 201);
   });
 
-  it("a nested kid's against its new parent is a 400, and creates nothing", async () => {
+  it("a nested kid's foreign key that names another parent is a 400, and creates nothing", async () => {
     const res = await send("POST", `${s.v4}/Ps`, {
       ID: 813,
       Kids: [{ ID: 4, PID: 810 }],
@@ -261,7 +261,7 @@ describe("what a create says twice", () => {
     assert.equal((await get(`${s.v4}/Ps(813)`)).status, 404);
   });
 
-  it("against the parent in the URL too", async () => {
+  it("a foreign key that names another parent than the URL's is a 400 too", async () => {
     const res = await send("POST", `${s.v4}/Ps(811)/Kids`, { ID: 5, PID: 810 });
     assert.equal(res.status, 400);
     const fine = await send("POST", `${s.v4}/Ps(811)/Kids`, {

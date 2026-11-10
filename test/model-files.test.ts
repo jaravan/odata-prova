@@ -54,7 +54,7 @@ describe("model files", () => {
     });
   });
 
-  it("an entity set named as what every object inherits", async () => {
+  it("an entity set named constructor, toString or valueOf is served", async () => {
     for (const set of ["constructor", "toString", "valueOf"]) {
       const s = await start(model(edmx(service(set))));
       assert.equal((await get(`${s.v4}/${set}`)).status, 200, set);
@@ -90,7 +90,7 @@ describe("model files", () => {
       assert.equal(two.at(-1), "99");
     });
 
-    it("no limit, no change", async () => {
+    it("a string with no MaxLength: every row gets a key", async () => {
       assert.equal((await ids('Type="Edm.String"', 300)).length, 300);
     });
   });

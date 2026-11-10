@@ -148,7 +148,7 @@ describe("writes to contained entities", () => {
     assert.equal(twice.status, 409);
   });
 
-  it("an update or delete touches only the parent's own", async () => {
+  it("an update or delete changes only that parent's entity, not another parent's with the same key", async () => {
     await send("PATCH", `${s.v4}/People('ann')/Trips(1)`, { Name: "Naples" });
     assert.equal(
       (await get(`${s.v4}/People('ann')/Trips(1)`)).body.Name,

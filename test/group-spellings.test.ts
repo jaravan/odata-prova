@@ -49,7 +49,7 @@ describe("values with several spellings", () => {
     assert.equal(guid.Ref, "aaaaaaaa-0000-4000-8000-000000000001");
   });
 
-  it("a group holds what eq finds", async () => {
+  it("a group holds the same rows eq finds", async () => {
     const { body } = await get(
       `${s.v4}/Rows?$filter=${encodeURIComponent("Amount eq 0.3")}`,
     );

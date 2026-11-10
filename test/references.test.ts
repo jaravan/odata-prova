@@ -52,7 +52,7 @@ describe("links through a foreign key, on either side", () => {
     }
   });
 
-  it("a collection's: the target takes the link, from its old one", async () => {
+  it("a bind on a collection moves the target's link from its old parent", async () => {
     const created = await send("POST", `${s.v4}/Orders`, {
       Number: 3,
       "Lines@odata.bind": ["Lines('A')"],

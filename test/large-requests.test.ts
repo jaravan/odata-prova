@@ -196,7 +196,7 @@ describe("a response too long for a string", () => {
     );
   });
 
-  it("any other mistake is left as it is", () => {
+  it("any other error is rethrown unchanged", () => {
     const body = {
       toJSON() {
         throw new TypeError("mine");

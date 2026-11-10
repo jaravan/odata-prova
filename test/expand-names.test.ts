@@ -65,7 +65,7 @@ describe("$expand is checked against the type", () => {
     });
   }
 
-  it("V2: a $select of a complex member is no navigation to go through", async () => {
+  it("V2: $select=Addr/City is a 400: a complex property is no navigation", async () => {
     const shapes = await start(
       path.join(import.meta.dirname, "fixtures", "Shapes"),
     );

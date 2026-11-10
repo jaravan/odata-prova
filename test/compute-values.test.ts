@@ -134,7 +134,7 @@ describe("$compute of a literal", () => {
   }
 });
 
-describe("$compute copies a time as fine as its property", () => {
+describe("$compute copies a time with its property's Precision", () => {
   let s: Awaited<ReturnType<typeof start>>;
   before(async () => {
     s = await start(path.join(FIXTURES, "SalesSrv"));
@@ -148,7 +148,7 @@ describe("$compute copies a time as fine as its property", () => {
     return (body as { value: Order[] }).value[0];
   };
 
-  it("a copy of a property is written as the property is", async () => {
+  it("a copied property is written exactly as the property is", async () => {
     const row = await first("$compute=CreatedAt as K&$select=CreatedAt,K");
     assert.equal(row.K, row.CreatedAt);
   });
@@ -167,7 +167,7 @@ describe("$compute copies a time as fine as its property", () => {
     assert.equal(row.K, row.Order.CreatedAt);
   });
 
-  it("the copy compares as the property does", async () => {
+  it("the copy equals the property in a $filter", async () => {
     const row = await first("$compute=CreatedAt as K&$select=CreatedAt,K");
     const { body } = await get(
       `${s.v4}/Orders?$compute=CreatedAt as K&$filter=${encodeURIComponent(`K eq ${row.CreatedAt}`)}`,
@@ -175,7 +175,7 @@ describe("$compute copies a time as fine as its property", () => {
     assert.equal((body as { value: unknown[] }).value.length, 1);
   });
 
-  it("an expression is written as before", async () => {
+  it("an expression's result is unaffected", async () => {
     const row = await first("$compute=year(CreatedAt) as K&$select=K");
     assert.equal(row.K, 2025);
   });
@@ -197,7 +197,7 @@ describe("negating a zero", () => {
       )
     ).body.K;
 
-  it("gives -0: dividing by it shows", async () => {
+  it("gives -0, as dividing by it shows", async () => {
     assert.equal(await compute(1, "1 div D"), "INF");
     assert.equal(await compute(1, "1 div -(D)"), "-INF");
     assert.equal(await compute(1, "1 div -D"), "-INF");

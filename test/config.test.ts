@@ -146,7 +146,7 @@ describe("config.json: extends", () => {
       ]),
     );
 
-  it("is nothing without a config.json", () => {
+  it("a model without a config.json gets an empty config", () => {
     assert.deepEqual(loadConfig(files({ "Srv/metadata.xml": "" })), {
       operations: {},
       mock: [],
@@ -154,7 +154,7 @@ describe("config.json: extends", () => {
     });
   });
 
-  it("merges shared rules per key, the model's own winning, case aside", () => {
+  it("merges shared rules per key, ignoring case; the model's own rules win", () => {
     const dir = files({
       "shared/config.json": {
         mock: { Status: ["Open"], Currency: "EUR" },

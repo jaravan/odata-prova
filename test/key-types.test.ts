@@ -84,7 +84,7 @@ describe("a date and time past what ISO 8601's four digits of a year hold -> 400
   after(() => s.close());
 
   for (const id of ["9999-12-31T23:59:59-14:00", "0000-01-01T00:00:00+14:00"])
-    it(`${id}, which UTC puts in another year`, async () => {
+    it(`${id}, which is outside years 0001 to 9999 in UTC`, async () => {
       const r = await send("POST", `${s.v4}/Stamps`, { Id: id });
       assert.equal(r.status, 400);
       assert.equal(r.body.error.code, "InvalidValue");

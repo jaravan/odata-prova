@@ -49,7 +49,7 @@ describe("a path that doesn't fit what it names", () => {
     }
   });
 
-  it("$value is a primitive's", async () => {
+  it("$value is for primitive properties: a complex or collection one -> 400", async () => {
     assert.equal((await get(`${s.v4}/Items(1)/N/$value`)).body, "1");
     for (const root of [s.v4, s.v2])
       assert.equal((await get(`${root}/Items(1)/Addr/$value`)).status, 400);
@@ -201,7 +201,7 @@ describe("values that don't fit", () => {
   });
 });
 
-describe("properties named like what every object inherits", () => {
+describe("properties named like Object.prototype members", () => {
   let s: TestServer;
   before(async () => (s = await start(MODEL)));
   after(() => s.close());
@@ -319,7 +319,7 @@ describe("$filter on enums and times of day", () => {
     assert.equal(applied.status, 400);
   });
 
-  it("in a key: of its type, on a key that is one", async () => {
+  it("in a key: it has to be of the key's enum type", async () => {
     await send("POST", `${s.v4}/ByColors`, { ID: "Blue" });
     for (const key of ["No.Such'Blue'", "Sh.Perm'Blue'", "Sh.Color'Green'"])
       assert.equal((await get(`${s.v4}/ByColors(${key})`)).status, 400, key);
@@ -335,7 +335,7 @@ describe("$filter on enums and times of day", () => {
     assert.equal(res.status, 400);
   });
 
-  it("V2 has none", async () => {
+  it("V2 has no enum literals -> 400", async () => {
     const res = await get(`${s.v2}/Items?$filter=Color eq Sh.Color'Red'`);
     assert.equal(res.status, 400);
   });
@@ -440,7 +440,7 @@ describe("a schema's alias in a bound operation's name", () => {
   });
 });
 
-describe("a request nested past reason", () => {
+describe("a request nested too deeply", () => {
   let s: TestServer;
   before(async () => (s = await start(MODEL)));
   after(() => s.close());

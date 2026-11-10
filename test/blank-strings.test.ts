@@ -66,7 +66,7 @@ describe("an empty string", () => {
     assert.deepEqual(res.body.Tags, [""]);
   });
 
-  it("for a number or a date is still no value", async () => {
+  it("for a number or a date is null", async () => {
     const res = await send("POST", `${s.v4}/Notes`, {
       ID: "g",
       Required: "x",
@@ -78,7 +78,7 @@ describe("an empty string", () => {
     assert.equal(res.body.Day, null);
   });
 
-  it("is no key", async () => {
+  it("can't be a key -> 400", async () => {
     const res = await send("POST", `${s.v4}/Notes`, { ID: "", Required: "x" });
     assert.equal(res.status, 400);
   });

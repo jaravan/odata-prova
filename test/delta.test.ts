@@ -305,7 +305,7 @@ describe("a delta when a related row changes what the $filter matches", () => {
     assert.equal(body.value[0].reason, "changed");
   });
 
-  it("deleted with the kid gone first, it matched when the link was read", async () => {
+  it("a parent deleted after its last kid is still reported deleted: it matched when the link was read", async () => {
     const link = await tracked("Ps?$filter=Kids/any()");
     await send("DELETE", `${s.v4}/Ks(10)`);
     await send("DELETE", `${s.v4}/Ps(1)`);
@@ -319,7 +319,7 @@ describe("a delta when a related row changes what the $filter matches", () => {
     assert.deepEqual((await get(link)).body.value, []);
   });
 
-  it("the next link starts from what matched at that read", async () => {
+  it("the next delta link compares against what matched when it was handed out", async () => {
     const first = await tracked("Ps?$filter=Kids/any()");
     await send("DELETE", `${s.v4}/Ks(10)`);
     const { body } = await get(first);

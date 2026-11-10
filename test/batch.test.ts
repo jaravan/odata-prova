@@ -140,7 +140,7 @@ describe("$batch", () => {
     );
   });
 
-  it("a body holding the boundary's text is one part: a boundary starts a line", async () => {
+  it("a boundary's text inside a body doesn't end the part: a boundary starts a line", async () => {
     // The helpers' outer boundary is batch_test, its changesets' changeset_<i>
     const r = await batch(s.v4, [
       [
@@ -202,7 +202,7 @@ describe("a JSON $batch", () => {
   });
 });
 
-describe("$batch: reading what was sent", () => {
+describe("$batch: parsing the multipart body", () => {
   let s: TestServer;
   before(
     async () =>
@@ -219,7 +219,7 @@ describe("$batch: reading what was sent", () => {
   const part = (url: string) =>
     `--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nGET ${url} HTTP/1.1\r\n\r\n\r\n`;
 
-  it("a ? in a query's value is part of it", async () => {
+  it("a ? inside a query value is part of the value", async () => {
     await send("POST", `${s.v4}/Docs`, { No: "q" });
     const res = await batch(s.v4, [
       { method: "GET", url: "Docs?$filter=No%20eq%20'%3Fq'" },
@@ -241,7 +241,7 @@ describe("$batch: reading what was sent", () => {
     assert.equal((await get(`${s.v4}/Docs('cut')`)).status, 404);
   });
 
-  it("a changeset without one fails alone", async () => {
+  it("a changeset with no closing delimiter fails, and the part after it still runs", async () => {
     const res = await raw(
       `--b\r\nContent-Type: multipart/mixed; boundary=cs\r\n\r\n--cs\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nPOST Docs HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"No":"cs"}\r\n--b\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\nGET Docs('%231') HTTP/1.1\r\n\r\n\r\n--b--\r\n`,
     );
@@ -253,14 +253,14 @@ describe("$batch: reading what was sent", () => {
     assert.equal((await get(`${s.v4}/Docs('cs')`)).status, 404);
   });
 
-  it("every part runs when it does close", async () => {
+  it("every part runs when the closing delimiter is there", async () => {
     const res = await raw(
       `${part("Docs?$top=1")}${part("Docs?$top=1")}--b--\r\n`,
     );
     assert.equal(batchResponses(await res.text()).length, 2);
   });
 
-  it("a Content-ID named like what objects inherit is no reference", async () => {
+  it("$constructor, $toString and $__proto__ are unknown Content-ID references", async () => {
     for (const name of ["__proto__", "constructor", "toString"]) {
       const res = await batch(s.v4, [
         [{ method: "PATCH", url: `$${name}`, body: { Text: "x" } }],
@@ -359,7 +359,7 @@ describe("$batch: a request line", () => {
     assert.equal((await get(`${s.v4}/PurchaseOrderSet('SPACE')`)).status, 404);
   });
 
-  it("an encoded space is the space it stands for", async () => {
+  it("%20 in the URL is decoded to a space", async () => {
     const res = await batch(s.v4, [
       { method: "GET", url: "PurchaseOrderSet?$orderby=TotalAmount%20desc" },
     ]);
@@ -373,7 +373,7 @@ describe("$batch: a request line", () => {
     );
   });
 
-  it("a space in a body is the body's", async () => {
+  it("a space in a body is left alone", async () => {
     const res = await batch(s.v4, [
       [
         {
@@ -390,7 +390,7 @@ describe("$batch: a request line", () => {
     assert.equal((await raw("GET PurchaseOrderSet?$top=1")).status, 200);
   });
 
-  it("several spaces between its parts are one", async () => {
+  it("several spaces between the method, URL and version count as one", async () => {
     assert.equal(
       (await raw("GET  PurchaseOrderSet?$top=1  HTTP/1.1")).body.value.length,
       1,
@@ -453,7 +453,7 @@ describe("$batch: the service's own $ resources", () => {
     assert.equal(batchResponses(res.text)[0].status, 404);
   });
 
-  it("a Content-ID of that name is still the request's", async () => {
+  it("a Content-ID named metadata can still be referenced as $metadata", async () => {
     const res = await batch(s.v4, [
       [
         {

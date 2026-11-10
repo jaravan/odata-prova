@@ -124,7 +124,7 @@ describe("servers sharing a saved state", () => {
     }
   });
 
-  it("a turn not expected to write, that does, runs again when another server saved first", async () => {
+  it("a GET that turns out to write is run again when another server saved first", async () => {
     const db = new SharedDatabase();
     const [a, b] = await servers(db);
     try {
@@ -174,7 +174,7 @@ describe("servers sharing a saved state", () => {
     }
   });
 
-  it("a write whose turn is overtaken anyway is a 503, and nothing changes", async () => {
+  it("a write that another server's commit overtakes is a 503, and nothing changes", async () => {
     const db = new SharedDatabase();
     const [a] = await servers(db, 1);
     try {

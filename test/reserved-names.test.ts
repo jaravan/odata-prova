@@ -34,7 +34,7 @@ async function family(s: TestServer) {
   assert.equal(status, 201);
 }
 
-describe("names every JavaScript object has", () => {
+describe("sets and properties named like Object.prototype members (constructor, toString)", () => {
   let s: TestServer;
   before(async () => {
     s = await start(RESERVED);
@@ -107,7 +107,7 @@ describe("names every JavaScript object has", () => {
     assert.equal(v2.body.d.Where.constructor, null);
   });
 
-  it("a parameter left out is one that's needed", async () => {
+  it("a required parameter left out is a 400, not an inherited value", async () => {
     assert.equal((await get(`${s.v4}/Find()`)).status, 400);
   });
 
@@ -181,7 +181,7 @@ describe("names every JavaScript object has", () => {
   });
 });
 
-describe("names every JavaScript object has, generated and saved", () => {
+describe("Object.prototype names, generated and saved", () => {
   let dir: string;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "reserved-"));
@@ -226,7 +226,7 @@ describe("names every JavaScript object has, generated and saved", () => {
 
 // A set named toString with properties named name, valueOf or keys: each is what a function or
 // an object has already, and none of them is a mock rule
-describe("generated rows for names every JavaScript object has", () => {
+describe("generated rows for Object.prototype names", () => {
   const RULES = path.join(import.meta.dirname, "fixtures", "ReservedRules");
 
   it("start, and hold what their types say", async () => {

@@ -43,7 +43,7 @@ describe("enums", () => {
     return body.value.map((r: { ID: number }) => r.ID);
   };
 
-  it("a flags value is held one way, in the order of its members' values", async () => {
+  it("a flags value is stored in one form, its members ordered by value", async () => {
     const { body } = await get(`${s.v4}/Items?$select=Pm`);
     assert.deepEqual(
       body.value.map((r: { Pm: string }) => r.Pm),
@@ -122,7 +122,7 @@ describe("DefaultValue", () => {
     assert.equal(body.Note, "hi");
   });
 
-  it("not what it sets, even to null", async () => {
+  it("leaves what a create sets, even when it sets null", async () => {
     const { body } = await send("POST", `${s.v4}/Items`, {
       ID: 1,
       Name: "mine",
@@ -337,7 +337,7 @@ describe("a navigation left empty in an update", () => {
     assert.equal(r.body.error.code, "InvalidValue");
   });
 
-  it("null or [] on a row without them -> nothing to change, as it read them", async () => {
+  it("null or [] on a row without related entities -> 204, nothing to change", async () => {
     for (const body of [{ Group: null }, { Kids: [] }, { Kids: null }])
       assert.equal(await status("PATCH", 2, body), 204, JSON.stringify(body));
   });
@@ -351,7 +351,7 @@ describe("a navigation left empty in an update", () => {
     assert.match(created.body.error.message, /Group: expected an object/);
   });
 
-  it("V2's forms -> as V4's, and a deferred link holds nothing", async () => {
+  it("V2's forms behave as V4's, and a __deferred link is ignored", async () => {
     const v2 = (id: number, body: unknown) =>
       send("PUT", `${s.v2}/Items(${id})`, body);
     assert.equal((await v2(1, { Kids: { results: [] } })).status, 400);
@@ -472,7 +472,7 @@ describe("$batch", () => {
   });
 });
 
-describe("smaller mistakes", () => {
+describe("assorted invalid input", () => {
   it("substring with a negative length is empty, as OData's has no swap", async () => {
     const s = await start(MODEL);
     try {
@@ -570,7 +570,7 @@ describe("a body that isn't an object", () => {
 });
 
 describe("a V2 PUT", () => {
-  it("leaves what V2 can't see", async () => {
+  it("keeps the collection properties V2 doesn't serve", async () => {
     const s = await start(MODEL);
     try {
       await send("POST", `${s.v4}/Items`, {
@@ -686,7 +686,7 @@ describe("collection properties", () => {
   });
 });
 
-describe("options on what can't take them", () => {
+describe("query options on a request that can't take them", () => {
   let s: TestServer;
   beforeEach(async () => {
     s = await start(MODEL);
@@ -727,7 +727,7 @@ describe("options on what can't take them", () => {
   });
 });
 
-describe("expressions that can't be", () => {
+describe("a $filter that isn't a valid condition", () => {
   let s: TestServer;
   before(async () => {
     s = await start(MODEL);
@@ -846,7 +846,7 @@ describe("a 304", () => {
 });
 
 describe("a value the server can't hold", () => {
-  it("doesn't stop a row being written back", async () => {
+  it("doesn't stop a row being PUT back as it was read", async () => {
     const s = await start(MODEL);
     try {
       await send("POST", `${s.v4}/Items`, { ID: 1 });
@@ -917,7 +917,7 @@ describe("a body that isn't an object, in a $batch", () => {
   });
 });
 
-describe("what a $filter or $orderby can't mean, whatever rows there are", () => {
+describe("an invalid $filter or $orderby, whatever rows there are", () => {
   let s: TestServer;
   before(async () => {
     s = await start(MODEL);
@@ -957,7 +957,7 @@ describe("what a $filter or $orderby can't mean, whatever rows there are", () =>
     "Cols/any(c:c)",
     "Kids/any(k:k)",
   ])
-    it(`${text} isn't a condition`, async () => {
+    it(`${text} -> 400: not a boolean condition`, async () => {
       const res = await filter(text);
       assert.equal(res.status, 400, JSON.stringify(res.body));
       assert.match(res.body.error.message, /condition/);
@@ -1034,7 +1034,7 @@ describe("what a $filter or $orderby can't mean, whatever rows there are", () =>
     "Col in (Sh)",
     "Cols/any(c:c eq Sh)",
   ])
-    it(`${text} mixes up its enums`, async () => {
+    it(`${text} -> 400: an enum literal against another type`, async () => {
       assert.equal((await filter(text)).status, 400);
     });
 
@@ -1144,7 +1144,7 @@ describe("a member's Value", () => {
     });
 
   for (const value of ["0", "-3", "4611686018427387904"])
-    it(`${value} is one`, () => {
+    it(`${value} is a valid Value`, () => {
       assert.equal(
         parseMetadata(model(value)).enumTypes["F.Color"].members[0].value,
         value,
@@ -1152,7 +1152,7 @@ describe("a member's Value", () => {
     });
 });
 
-describe("members of one value", () => {
+describe("enum members that share a value", () => {
   let s: TestServer;
   before(async () => {
     s = await start(MODEL);
@@ -1165,7 +1165,7 @@ describe("members of one value", () => {
   });
   after(() => s.close());
 
-  it("are one group, as eq has them", async () => {
+  it("form one group, as eq treats them as equal", async () => {
     const { status, body } = await get(
       `${s.v4}/Items?$apply=groupby((Tw),aggregate($count as C))&$orderby=C`,
     );

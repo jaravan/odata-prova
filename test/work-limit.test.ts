@@ -48,7 +48,7 @@ describe("a request that would take too much work -> 400, and the server carries
     await refused(`${s.v4}/${SET}?$apply=${q(concats(200, 4))}&$top=1`);
   });
 
-  it("whatever the sequences are, and whatever comes after", async () => {
+  it("whatever transformations the concats hold, and whatever follows them", async () => {
     const sequence = Array(200).fill("compute(1 as K)").join(",");
     const apply = `concat(${sequence})/concat(${sequence.replaceAll("K", "L")})/${concats(200, 1)}`;
     await refused(`${s.v4}/${SET}?$apply=${q(apply)}&$top=1`);
@@ -60,7 +60,7 @@ describe("a request that would take too much work -> 400, and the server carries
     );
   });
 
-  it("the rows a concat is for are fine", async () => {
+  it("a concat of a normal size is fine", async () => {
     const res = await get(
       `${s.v4}/${SET}?$apply=${q(concats(200, 2))}&$count=true&$top=1`,
     );
@@ -120,7 +120,7 @@ describe("a request that would take too much work -> 400, and the server carries
 });
 
 describe("the work a request may do", () => {
-  it("is counted for each turn in the queue, which a whole $batch is", async () => {
+  it("is counted per turn in the queue (a whole $batch is one turn)", async () => {
     const queue = new Queue();
     await queue.run(() => {
       spend(MAX_WORK);

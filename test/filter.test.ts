@@ -210,7 +210,7 @@ describe("$filter on a property named like a keyword", () => {
       assert.deepEqual(await ids(`${name} eq 5`), [1], name);
   });
 
-  it("on either side, beside the operator of its name", async () => {
+  it("on either side of a comparison, and next to the operator it's named like", async () => {
     assert.deepEqual(await ids("5 eq Div"), [1]);
     assert.deepEqual(await ids("Add add 1 eq 6"), [1]);
     assert.deepEqual(await ids("Div div 5 eq 1 and Mod mod 5 eq 0"), [1]);

@@ -8,7 +8,7 @@ import { get, send, start, type TestServer } from "./helpers.ts";
 
 const MODEL = path.join(import.meta.dirname, "fixtures", "EqualKeys");
 
-describe("related rows", () => {
+describe("rows related by a value written two ways (1.50 and 1.5, PT1H and PT60M)", () => {
   let s: TestServer;
   beforeEach(async () => {
     s = await start(MODEL);
@@ -36,7 +36,7 @@ describe("related rows", () => {
       assert.equal(await kids(url), 1);
     });
 
-    it(`created under ${value} with ${kid}, it agrees`, async () => {
+    it(`a create under ${value} with the foreign key ${kid} is accepted`, async () => {
       await send("POST", `${s.v4}/${parent}`, { [field]: value });
       const res = await send("POST", `${s.v4}/${url}`, {
         ID: 2,
@@ -46,7 +46,7 @@ describe("related rows", () => {
     });
   }
 
-  it("another value still disagrees", async () => {
+  it("a foreign key with another value is still a 400", async () => {
     await send("POST", `${s.v4}/PDs`, { F: "1.50" });
     const res = await send("POST", `${s.v4}/PDs(1.50)/Cs`, { ID: 3, F: "2" });
     assert.equal(res.status, 400);
@@ -61,7 +61,7 @@ describe("related rows", () => {
     assert.equal(parents.body.value.length, 1);
   });
 
-  it("a bind agrees with a key written otherwise", async () => {
+  it("a bind and a foreign key that write the same value differently agree", async () => {
     await send("POST", `${s.v4}/PTs`, { D: "PT1H" });
     const res = await send("POST", `${s.v4}/Ts`, {
       ID: 5,

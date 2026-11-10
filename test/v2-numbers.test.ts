@@ -62,7 +62,7 @@ describe("an integer in a V2 URL", () => {
     assert.equal((await get(`${s.v2}/Rows(1)`)).status, 200);
   });
 
-  it("it isn't an Int32 that overflows when it's written as an Int64", async () => {
+  it("added to an Int64, it doesn't overflow as an Int32", async () => {
     assert.deepEqual(
       await ids(s.v2, "ID add 3000000000L gt 0"),
       [1, 2, 3, 4, 5],

@@ -143,7 +143,7 @@ describe("service paths that can't work stop the start", () => {
     mistake("/v2", "foo", /starts with \/, got foo/);
   });
 
-  it("the same for both", () => {
+  it("the same path for V2 and V4", () => {
     mistake("/a", "/a", /same/);
     mistake("/a", "/a/", /same/);
   });

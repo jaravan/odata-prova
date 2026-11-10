@@ -102,14 +102,14 @@ describe("a property's value", () => {
   });
 });
 
-describe("what a URL can't mean", () => {
+describe("malformed URLs", () => {
   let s: TestServer;
   before(async () => {
     s = await start(STAMPS);
   });
   after(() => s.close());
 
-  it("two values for one key say so, not that 50 is a property", async () => {
+  it("two unnamed key values -> 400 saying to write Name=value, not that 50 is a property", async () => {
     const { status, body } = await get(`${s.v4}/Rs(500,1)`);
     assert.equal(status, 400);
     assert.doesNotMatch(body.error.message, /is not a key property/);
@@ -123,7 +123,7 @@ describe("what a URL can't mean", () => {
     });
 });
 
-describe("facets no value fits", () => {
+describe("facets too large for any value (Scale=99999999999)", () => {
   const schema = (property: string) =>
     `<?xml version="1.0" encoding="utf-8"?><edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices><Schema Namespace="N" xmlns="http://docs.oasis-open.org/odata/ns/edm"><EntityType Name="A"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/>${property}</EntityType><EntityContainer Name="C"><EntitySet Name="As" EntityType="N.A"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>`;
 

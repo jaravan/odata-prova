@@ -62,7 +62,7 @@ describe("a function called with the wrong arguments", () => {
       });
     }
 
-  it("whether or not a row gets to it", async () => {
+  it("even when no row reaches the call", async () => {
     const { status } = await filter("TotalAmount lt 0 and tolower() eq 'a'");
     assert.equal(status, 400);
   });
@@ -96,7 +96,7 @@ describe("a function called with the wrong arguments", () => {
     });
   }
 
-  it("a date still is one, from a property or a literal", async () => {
+  it("a real date is accepted, from a property or a literal", async () => {
     assert.equal((await filter("year(OrderDate) gt 2000")).status, 200);
     assert.equal((await filter("year(2025-01-01) eq 2025")).status, 200);
     assert.equal((await filter("hour(10:30:00) eq 10")).status, 200);

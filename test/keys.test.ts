@@ -203,7 +203,7 @@ describe("keys that compare by value", () => {
     assert.equal(none.body.value.length, 0);
   });
 
-  it("a key built from a response finds the entity, its Precision cut the fraction", async () => {
+  it("a key copied from a response finds the entity, though Precision cut its fraction", async () => {
     const created = await send("POST", `${s.v4}/Stamps`, {
       ID: "2025-01-01T10:00:00.123Z",
     });
@@ -274,7 +274,7 @@ describe("a time key of a V2 document", () => {
     }
   });
 
-  it("the generated V4 metadata says so, the key's alone", async () => {
+  it("the generated V4 metadata gives the key Precision 3, and no other property", async () => {
     const { body } = await get(`${s.v4}/$metadata`);
     const stamp = body.slice(body.indexOf('Name="Stamp"'));
     assert.match(stamp, /Name="ID"[^>]*Precision="3"/);
@@ -284,7 +284,7 @@ describe("a time key of a V2 document", () => {
     );
   });
 
-  it("a Precision of its own stays", async () => {
+  it("a key that declares its own Precision keeps it", async () => {
     const { body } = await get(`${s.v4}/$metadata`);
     assert.match(
       body.slice(body.indexOf('Name="Exact"')),

@@ -40,7 +40,7 @@ describe("a time, however its fraction is written", () => {
       assert.deepEqual(await ids(s.v4, `$filter=Tod eq ${literal}`), [1, 2, 3]);
     });
 
-  it("V2: the others compare around it", async () => {
+  it("V2: gt, lt, ge and ne agree with eq", async () => {
     const at = "time'PT10H0M0.500S'";
     assert.deepEqual(await ids(s.v2, `$filter=Tod gt ${at}`), []);
     assert.deepEqual(await ids(s.v2, `$filter=Tod lt ${at}`), [4]);
@@ -48,7 +48,7 @@ describe("a time, however its fraction is written", () => {
     assert.deepEqual(await ids(s.v2, `$filter=Tod ne ${at}`), [4, 5]);
   });
 
-  it("no fraction is before any, and zeros in the time itself stay", async () => {
+  it("a time with no fraction is before one with a fraction, and zeros in the time itself stay", async () => {
     const whole = "time'PT10H0M0S'";
     assert.deepEqual(await ids(s.v2, `$filter=Tod gt ${whole}`), [1, 2, 3, 4]);
     assert.deepEqual(await ids(s.v2, `$filter=Tod eq ${whole}`), []);

@@ -43,7 +43,7 @@ describe("a parameter that can't be null", () => {
       assert.equal((await send("POST", `${s.v4}/Approve`, body)).status, 400);
     });
 
-  it("given, or nullable, it works", async () => {
+  it("with the parameter given, or a nullable one left out, the call works", async () => {
     assert.equal((await get(`${s.v4}/Lookup(ID=1)`)).status, 200);
     assert.equal((await get(`${s.v4}/Score(d=1.5)`)).status, 200);
     assert.equal((await get(`${s.v4}/Optional(d=null)`)).status, 200);
@@ -105,7 +105,7 @@ describe("overloads, in V2 and by type", () => {
     assert.equal(body.value, 0);
   });
 
-  it("the base type gets its own", async () => {
+  it("an entity of the base type gets the base type's overload", async () => {
     const { body } = await get(`${s.v4}/Rs(1)/N.Inh()`);
     assert.equal(body.value, "");
   });

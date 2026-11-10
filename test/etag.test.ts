@@ -528,7 +528,7 @@ describe("ETags of values a header can't hold", () => {
     }
   });
 
-  it("values stay apart: 10€ is not the text of its own escape", async () => {
+  it("10€ and the text of its escaped form (10%E2%82%AC) get different ETags", async () => {
     const tags = await Promise.all(
       [1, 6].map(async (id) => {
         const res = await get(`${s.v4}/Notes(${id})`);

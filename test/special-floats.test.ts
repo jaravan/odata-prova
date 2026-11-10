@@ -70,7 +70,7 @@ describe("INF, -INF and NaN", () => {
     assert.deepEqual(await values(), ["INF", "-INF", "NaN", 1.5]);
   });
 
-  it("only these three: a key every object inherits is a 400", async () => {
+  it("only INF, -INF and NaN: toString, constructor and __proto__ are a 400", async () => {
     for (const V of ["toString", "constructor", "__proto__"]) {
       const r = await send("PATCH", `${s.v4}/Ms(4)`, { V });
       assert.equal(r.status, 400, V);
@@ -79,7 +79,7 @@ describe("INF, -INF and NaN", () => {
   });
 });
 
-describe("NaN in what puts values in order", () => {
+describe("NaN in $orderby, min, max and ranks", () => {
   let s: TestServer;
   before(async () => {
     s = await start(
@@ -289,7 +289,7 @@ describe("V2's INF, -INF and NaN in a $filter", () => {
       );
     });
 
-  it("a name that only starts with one is still a name", async () => {
+  it("a name that only starts with INF (INFO) is still a name", async () => {
     const r = await get(
       `${s.v2}/Ms?$filter=${encodeURIComponent("INFO eq 1")}`,
     );

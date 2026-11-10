@@ -122,7 +122,7 @@ describe("live mock rules", () => {
     assert.deepEqual(items(), itemsBefore);
   });
 
-  it("not a write rolled back", async () => {
+  it("a write that was rolled back doesn't count as a write", async () => {
     // A changeset whose second request fails: its first, done, is undone
     const item = items()[0];
     const key = `PurchaseOrderId='${item.PurchaseOrderId}',ItemPosition='${item.ItemPosition}'`;

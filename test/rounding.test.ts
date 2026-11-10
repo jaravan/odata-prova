@@ -61,7 +61,7 @@ describe("round, floor and ceiling keep their argument's type", () => {
     );
   });
 
-  it("what comes of it is a decimal: div doesn't round towards zero", async () => {
+  it("its result is a decimal, so div doesn't round towards zero", async () => {
     assert.equal(await computed("floor(1.9) div 2"), "0.5");
     assert.equal(await computed("round(1.4) divby 4"), "0.25");
     assert.equal(await computed("ceiling(Price) div 4"), "0.5");
@@ -74,7 +74,7 @@ describe("round, floor and ceiling keep their argument's type", () => {
     assert.equal(await computed("ceiling(1.5e0) div 4"), "0.5");
   });
 
-  it("an integer is as it was, and div of it still rounds towards zero", async () => {
+  it("an integer is unchanged, and div of it still rounds towards zero", async () => {
     assert.equal(await computed("round(5)"), "5");
     assert.equal(await computed("floor(5) div 2"), "2");
     assert.equal(await computed("ceiling(Big)"), "9007199254740993");

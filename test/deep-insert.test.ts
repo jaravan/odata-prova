@@ -169,7 +169,7 @@ describe("a deep insert through a to-one navigation", () => {
     assert.equal((await get(`${s.v4}/Kids(102)`)).body.ParentID, id);
   });
 
-  it("a foreign key that says the same is fine, in either case", async () => {
+  it("a foreign key equal to the related entity's key is fine, in upper or lower case", async () => {
     const id = uuid(2);
     const r = await kid(103, {
       ParentID: id,
@@ -178,14 +178,14 @@ describe("a deep insert through a to-one navigation", () => {
     assert.equal(r.status, 201);
   });
 
-  it("a foreign key alone names the related entity", async () => {
+  it("a foreign key alone gives the related entity its key", async () => {
     const id = uuid(3);
     const r = await kid(104, { ParentID: id, Parent: { Name: "named" } });
     assert.equal(r.status, 201);
     assert.equal((await get(`${s.v4}/Parents(${id})`)).body.Name, "named");
   });
 
-  it("a foreign key that says otherwise is a 400, and nothing is created", async () => {
+  it("a foreign key that differs from the related entity's key is a 400, and nothing is created", async () => {
     const r = await kid(105, { ParentID: Q, Parent: { ID: uuid(4) } });
     assert.equal(r.status, 400);
     assert.match(r.body.error.message, /ParentID/);
@@ -194,13 +194,13 @@ describe("a deep insert through a to-one navigation", () => {
     assert.equal(await exists(`Parents(${Q})`), 404);
   });
 
-  it("a related entity that fails creates nothing", async () => {
+  it("an invalid related entity -> 400, and nothing is created", async () => {
     const r = await kid(106, { Parent: { ID: uuid(5), Nope: 1 } });
     assert.equal(r.status, 400);
     assert.equal(await exists("Kids(106)"), 404);
   });
 
-  it("an entity that fails after it undoes the related entity", async () => {
+  it("when the entity itself fails, the related entity it created is undone", async () => {
     await kid(107, {});
     const r = await kid(107, { Parent: { ID: uuid(6) } });
     assert.equal(r.status, 409);

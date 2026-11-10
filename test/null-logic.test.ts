@@ -83,7 +83,7 @@ describe("null in $filter, as the spec has it", () => {
   for (const f of functions)
     it(`${f} -> null`, () => assert.equal(isNull(f), true));
 
-  it("the values a null used to read as match nothing", () => {
+  it("a function of a null doesn't match what null used to convert to (0, an empty string, 1970)", () => {
     assert.equal(matches("year(NoDay) eq 1970"), false);
     assert.equal(matches("length(NoText) eq 0"), false);
     assert.equal(matches("tolower(NoText) eq ''"), false);
@@ -95,7 +95,7 @@ describe("null in $filter, as the spec has it", () => {
     assert.equal(matches("(substringof('a',NoText)) eq null", v2), true);
   });
 
-  it("a function without arguments isn't one of a null", () => {
+  it("a function without arguments (now) isn't null", () => {
     assert.equal(isNull("now()"), false);
   });
 
