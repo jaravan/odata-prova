@@ -11,8 +11,8 @@
         <Property Name="CompanyCode" Type="Edm.String" Nullable="false" MaxLength="4"/>
         <Property Name="OrderDate" Type="Edm.DateTime" Nullable="false" sap:display-format="Date"/>
         <Property Name="Status" Type="Edm.String" Nullable="false" MaxLength="20"/>
-        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3"/>
-        <Property Name="TotalAmount" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2"/>
+        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3" sap:semantics="currency-code"/>
+        <Property Name="TotalAmount" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2" sap:unit="Currency"/>
         <NavigationProperty Name="Items" Relationship="com.example.po.PurchaseOrder_Items" FromRole="PurchaseOrder" ToRole="Items"/>
       </EntityType>
       <EntityType Name="PurchaseOrderItem">
@@ -24,10 +24,10 @@
         <Property Name="ItemPosition" Type="Edm.String" Nullable="false" MaxLength="5"/>
         <Property Name="Material" Type="Edm.String" Nullable="false" MaxLength="40"/>
         <Property Name="Description" Type="Edm.String" Nullable="false" MaxLength="100"/>
-        <Property Name="Quantity" Type="Edm.Decimal" Nullable="false" Precision="13" Scale="3"/>
-        <Property Name="Unit" Type="Edm.String" Nullable="false" MaxLength="3"/>
-        <Property Name="NetPrice" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2"/>
-        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Nullable="false" Precision="13" Scale="3" sap:unit="Unit"/>
+        <Property Name="Unit" Type="Edm.String" Nullable="false" MaxLength="3" sap:semantics="unit-of-measure"/>
+        <Property Name="NetPrice" Type="Edm.Decimal" Nullable="false" Precision="15" Scale="2" sap:unit="Currency"/>
+        <Property Name="Currency" Type="Edm.String" Nullable="false" MaxLength="3" sap:semantics="currency-code"/>
         <NavigationProperty Name="PurchaseOrder" Relationship="com.example.po.PurchaseOrder_Items" FromRole="Items" ToRole="PurchaseOrder"/>
       </EntityType>
       <Association Name="PurchaseOrder_Items">
