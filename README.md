@@ -154,6 +154,7 @@ For quick UI work inside a single app, the fe-mockserver is still simpler.
 - [Recipes](docs/recipes.md): curl, Docker, Docker Compose and CI commands
 - [Actions and functions](docs/operations.md): how operations answer, the V2/V4 mapping, and `config.json` rules
 - [Architecture](docs/architecture.md): how it's built, using it in code, planned improvements, and the specs it follows
+- [Releases](https://github.com/jaravan/odata-prova/releases): what changed in each version, and what to check when upgrading
 
 ## Contributing
 
