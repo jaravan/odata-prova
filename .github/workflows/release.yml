@@ -1,8 +1,8 @@
 name: release
 
 # Runs on a version tag: git tag v0.1.0 && git push origin v0.1.0
-# Checks that the tag matches package.json and that the tests pass, then pushes the image
-# to GHCR for amd64 and arm64, and publishes the package to npm. npm needs the repository
+# Checks that the tag is on main, that it matches package.json and that the tests pass, then
+# pushes the image to GHCR for amd64 and arm64, and publishes the package to npm. npm needs the repository
 # secret NPM_TOKEN: a granular access token that can publish odata-prova.
 on:
   push:
@@ -17,7 +17,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # The whole history and the branches, for the check below
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Only a commit already on main is released: a tag pushed from another branch publishes nothing
+      - name: Check the tag is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_REF_NAME is not on main: push main first, then the tag"; exit 1; }
 
       - name: Check the tag matches package.json
         run: |
