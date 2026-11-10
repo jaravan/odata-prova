@@ -10,6 +10,7 @@ The generated rows:
 - **Agree within a row:**
   - A row's city, postal code, region, country, currency, language and company code belong together: Walldorf, 69190, Germany, EUR, 1010.
   - Its material and unit come from one product, and a counted unit has a whole quantity: `5.000 PC`, but `41.650 L`. A price suits the product.
+  - An amount has its currency's decimals, as SAP's table `TCURX` has them: `25487.00 JPY`, `25.487 KWD` (in a property whose `Scale` holds three), and two for the rest. Its currency is the property the metadata gives it, or the row's only currency when the amount is named like one (`NetPrice`, `TotalAmount`).
   - Its dates are in order: created or ordered first, then changed, shipped or due. An open validity ends on `9999-12-31`. Later rows have later dates, as document numbers do.
 - **Agree with their header:** an order's items have its currency, company code and plant, and its total is the sum of theirs, when it's clear which properties those are. Every order has 1 to 5 items, numbered as SAP numbers them: `00010`, `00020`.
 - **Link up:** foreign keys point at real rows, so navigation and `$expand` work.

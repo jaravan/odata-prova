@@ -179,11 +179,92 @@ describe("mock data", () => {
         (s, i) => s + Number(i.NetPrice) * Number(i.Quantity),
         0,
       );
+      // A total in yen has no decimals (see the currency tests below)
       assert.equal(
         order.TotalAmount,
-        sum.toFixed(2),
+        order.Currency === "JPY" ? Math.round(sum).toFixed(2) : sum.toFixed(2),
         String(order.PurchaseOrderId),
       );
+    }
+  });
+
+  it("gives an amount its currency's decimals: a price and a total in JPY are whole numbers", () => {
+    const { store } = load(modelCopy(PO_MODEL), 40);
+    const orders = store.rows("PurchaseOrderSet");
+    const items = store.rows("PurchaseOrderItemSet");
+    const yen = (rows: readonly Row[]) =>
+      rows.filter((r) => r.Currency === "JPY");
+    assert.ok(yen(orders).length > 0 && yen(items).length > 0);
+    for (const o of yen(orders))
+      assert.match(o.TotalAmount as string, /^[1-9]\d*\.00$/);
+    // A hundred times the number, as 250 EUR is about 25,000 JPY: no price of 0 or 1 yen
+    for (const i of yen(items))
+      assert.match(i.NetPrice as string, /^[1-9]\d+\.00$/);
+    // The other currencies keep their cents
+    assert.ok(
+      items.some(
+        (i) => i.Currency !== "JPY" && !/\.00$/.test(i.NetPrice as string),
+      ),
+    );
+  });
+
+  it("an amount's decimals: three in KWD, two in EUR, whatever its Scale; a rule's value is kept", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-"));
+    fs.writeFileSync(
+      path.join(dir, "metadata.xml"),
+      `<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Z" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="Doc">
+        <Key><PropertyRef Name="ID"/></Key>
+        <Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Waers" Type="Edm.String" MaxLength="5"/>
+        <Property Name="Amount" Type="Edm.Decimal" Precision="15" Scale="3"/>
+        <Property Name="SmallAmount" Type="Edm.Decimal" Precision="5" Scale="2"/>
+        <Property Name="Cost" Type="Edm.Double"/>
+        <Property Name="FixedAmount" Type="Edm.Decimal" Precision="15" Scale="3"/>
+        <Property Name="Weight" Type="Edm.Decimal" Precision="15" Scale="3"/>
+      </EntityType>
+      <EntityContainer Name="C">
+        <EntitySet Name="Docs" EntityType="Z.Doc"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`,
+    );
+    fs.writeFileSync(
+      path.join(dir, "config.json"),
+      JSON.stringify({
+        mock: {
+          "Docs.Waers": ["KWD", "EUR", "JPY"],
+          "Docs.FixedAmount": "1.001..1.999",
+        },
+      }),
+    );
+    try {
+      const rows = load(dir, 60).store.rows("Docs");
+      const of = (code: string, prop: string) =>
+        rows.filter((r) => r.Waers === code).map((r) => String(r[prop]));
+      for (const code of ["KWD", "EUR", "JPY"])
+        assert.ok(of(code, "Amount").length > 5, code);
+      // Scale 3 holds a dinar's fils, and only the cents of a euro
+      assert.ok(of("KWD", "Amount").some((a) => /\.\d\d[1-9]$/.test(a)));
+      for (const a of of("EUR", "Amount")) assert.match(a, /^\d+\.\d\d0$/);
+      for (const a of of("JPY", "Amount")) assert.match(a, /^\d+\.000$/);
+      // Scale 2 has no room for the third decimal
+      for (const a of of("KWD", "SmallAmount")) assert.match(a, /^\d+\.\d\d$/);
+      // A hundred times the number doesn't fit Precision 5: the number, without decimals
+      for (const a of of("JPY", "SmallAmount"))
+        assert.match(a, /^\d{1,3}\.00$/);
+      // A double too
+      for (const r of rows.filter((r) => r.Waers === "JPY"))
+        assert.ok(Number.isInteger(r.Cost), String(r.Cost));
+      // Not what a rule sets, nor what isn't an amount
+      assert.ok(of("JPY", "FixedAmount").every((a) => /^1\.\d{3}$/.test(a)));
+      assert.ok(of("JPY", "Weight").some((a) => !/\.000$/.test(a)));
+    } finally {
+      fs.rmSync(dir, { recursive: true });
     }
   });
 

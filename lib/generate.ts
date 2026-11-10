@@ -13,7 +13,8 @@
 //     counts by 10, as SAP's do; see isItemNumber).
 //   - items agree with their header: they take its currency, company code and plant, and
 //     its total is the sum of theirs, when it's clear which properties those are (see
-//     itemsAgree)
+//     itemsInherit, headerTotals)
+//   - an amount has its currency's decimals: none in JPY, three in KWD (see inCurrency)
 //
 // Values are produced in the store's internal representation (see types.ts).
 
@@ -742,6 +743,79 @@ function decimalValue(c: Ctx): string {
   return (min + c.rng() * (max - min)).toFixed(scale);
 }
 
+// The currencies whose amounts don't have two decimals
+// A currency that isn't here has two.
+const CURRENCY_DECIMALS: Record<string, number> = Object.fromEntries(
+  (
+    [
+      [
+        0,
+        "BIF CLP DJF GNF JPY KMF KRW LAK LUF MGF MZM PTE PYG ROL RWF TJR TMM TPE TRL UGX VND VUV XAF XOF XPF",
+      ],
+      [3, "BHD DEM3 IQD JOD KWD LYD OMR TND"],
+      [5, "AU5 USDN"],
+    ] as const
+  ).flatMap(([decimals, codes]) =>
+    codes.split(" ").map((code) => [code, decimals]),
+  ),
+);
+const currencyDecimals = (code: PropertyValue | undefined): number =>
+  own(CURRENCY_DECIMALS, String(code).toUpperCase()) ?? 2;
+
+// Whether a decimal's text has no more digits than the property's Precision
+function fitsPrecision(prop: Property, text: string): boolean {
+  return (
+    !/^\d+$/.test(prop.precision ?? "") ||
+    text.replace(/\D/g, "").replace(/^0+(?=\d)/, "").length <=
+      Number(prop.precision)
+  );
+}
+
+// The amounts of a type, each with the property that holds its currency: the one the metadata
+// gives it (see measure in model.ts), or, for a number named like an amount, the type's only
+// currency. Not a key, nor a quantity, which has a unit.
+function amountsOf(type: EntityType): { amount: Property; currency: string }[] {
+  const props = Object.values(type.properties);
+  const measures = measuresOf(type.properties);
+  const sole = only(
+    props,
+    (p) =>
+      measures.currencies.has(p.name) ||
+      (p.type === "Edm.String" && /currency|waers/i.test(p.name)),
+  );
+  return props.flatMap((p) => {
+    if (!isNumber(p) || p.isCollection || type.keys.includes(p.name)) return [];
+    const named =
+      !p.measure?.unit &&
+      /price|amount|cost|value|salary|revenue|freight/i.test(p.name);
+    const currency = p.measure?.currency ?? (named ? sole?.name : undefined);
+    return currency && Object.hasOwn(type.properties, currency)
+      ? [{ amount: p, currency }]
+      : [];
+  });
+}
+
+// A generated amount as its currency has it: with the currency's decimals, and the number that
+// SAP shows for them, which keeps its digits and moves the point (254.87 is 25487 JPY and
+// 25.487 KWD). So a price in yen is a price in yen, not a euro's cut short. A Scale too short
+// for the decimals cuts them, and a number too long for the Precision keeps its point.
+function inCurrency(
+  prop: Property,
+  value: PropertyValue,
+  code: PropertyValue | undefined,
+): PropertyValue {
+  const n = Number(value);
+  if (value === null || !Number.isFinite(n)) return value;
+  const decimals = currencyDecimals(code);
+  const moved = n * 10 ** (2 - decimals);
+  if (prop.type !== "Edm.Decimal")
+    return Math.round(moved * 10 ** decimals) / 10 ** decimals;
+  const scale = decimalScale(prop);
+  const write = (x: number) =>
+    Number(x.toFixed(Math.min(decimals, scale))).toFixed(scale);
+  return fitsPrecision(prop, write(moved)) ? write(moved) : write(n);
+}
+
 // A date's role, from its name, in order: the first that matches. A document is created,
 // ordered or posted on the row's date; it's changed, shipped or due after it; an open
 // validity ends on 9999-12-31, as SAP writes "no end".
@@ -1095,21 +1169,23 @@ function generateData(
       copyForeignKey(row, fk, pick(rngs[fk.set], all[fk.principal]));
   }
 
-  // Last, items agree with their header: generated items take from it, and a generated header
-  // totals its items, generated or not (regenerated alone, see Store.regenerate)
-  for (const fk of fks)
-    if (
-      isKeyPart(model, fk) &&
-      (sets.includes(fk.set) || sets.includes(fk.principal))
-    )
-      itemsAgree(
-        model,
-        all,
-        fk,
-        sets.includes(fk.principal),
-        sets.includes(fk.set),
-        rules,
-      );
+  // Last, items agree with their header. Generated items take its currency, company code and
+  // plant. Then every generated amount gets its currency's decimals, now that each row has the
+  // currency it keeps; an amount a mock rule sets keeps the rule's value. Then a generated
+  // header totals its items, generated or not (regenerated alone, see Store.regenerate).
+  const headed = fks.filter((fk) => isKeyPart(model, fk));
+  for (const fk of headed)
+    if (sets.includes(fk.set)) itemsInherit(model, all, fk, rules);
+  for (const set of sets) {
+    const amounts = amountsOf(typeOf(set)).filter(
+      ({ amount }) => !ruleFor(rules, set, amount.name),
+    );
+    for (const row of all[set])
+      for (const { amount, currency } of amounts)
+        row[amount.name] = inCurrency(amount, row[amount.name], row[currency]);
+  }
+  for (const fk of headed)
+    if (sets.includes(fk.principal)) headerTotals(model, all, fk, rules);
 
   return Object.fromEntries(sets.map((set) => [set, all[set]]));
 }
@@ -1180,60 +1256,82 @@ function fromHeader(
   );
 }
 
-// A sum, in the store's form of the property's type; undefined when it doesn't fit the
-// property's Precision
-function totalValue(prop: Property, sum: number): PrimitiveValue | undefined {
-  if (prop.type !== "Edm.Decimal") return Math.round(sum * 100) / 100;
+// A sum, in the store's form of the property's type, with the decimals of its currency;
+// undefined when it doesn't fit the property's Precision
+function totalValue(
+  prop: Property,
+  sum: number,
+  decimals: number,
+): PrimitiveValue | undefined {
+  if (prop.type !== "Edm.Decimal")
+    return Math.round(sum * 10 ** decimals) / 10 ** decimals;
   const scale = decimalScale(prop);
-  const text = sum.toFixed(scale);
-  if (
-    /^\d+$/.test(prop.precision ?? "") &&
-    text.replace(/\D/g, "").replace(/^0+(?=\d)/, "").length >
-      Number(prop.precision)
-  )
-    return undefined;
-  return text;
+  const text = Number(sum.toFixed(Math.min(decimals, scale))).toFixed(scale);
+  return fitsPrecision(prop, text) ? text : undefined;
 }
 
-// The items of a header (fk: their foreign key, part of their key) agree with it: generated
-// items take its currency, company code and plant (see fromHeader), and, when the header was
-// generated (generated, its total can be changed), its total is the sum of theirs. Only when it's
-// clear which properties those are (see lineValue, headerTotal); a header with no items
-// keeps its total. A property a mock rule sets keeps the rule's value.
-function itemsAgree(
-  model: Model,
+// The items of a header (fk: their foreign key, part of their key), each with its header
+function* itemsWithHeader(
   all: Record<string, Row[]>,
   fk: ForeignKey,
-  headerGenerated: boolean,
-  itemsGenerated: boolean,
-  rules: MockRules,
-): void {
-  const typeOf = (set: string) =>
-    model.entityTypes[model.entitySets[set].entityType];
-  const header = typeOf(fk.principal);
-  const item = typeOf(fk.set);
-  const inherited = itemsGenerated ? fromHeader(header, item, fk, rules) : [];
-  const line = lineValue(item);
-  let total = headerGenerated ? headerTotal(header) : undefined;
-  // A property a mock rule sets keeps the rule's value
-  if (total && ruleFor(rules, fk.principal, total.name)) total = undefined;
+): Generator<[item: Row, header: Row]> {
   const keyOf = (row: Row, props: string[]) =>
     JSON.stringify(props.map((p) => row[p]));
   const headers = new Map(
     (all[fk.principal] ?? []).map((h) => [keyOf(h, fk.principalProps), h]),
   );
-  const sums = new Map<Row, number>();
   for (const row of all[fk.set]) {
     const h = headers.get(keyOf(row, fk.props));
-    if (!h) continue;
-    for (const p of inherited) row[p.name] = h[p.name];
-    if (line && total) sums.set(h, (sums.get(h) ?? 0) + line(row));
+    if (h) yield [row, h];
   }
-  if (total)
-    for (const [h, sum] of sums) {
-      const value = totalValue(total, sum);
-      if (value !== undefined) h[total.name] = value;
-    }
+}
+
+const typeOfSet = (model: Model, set: string) =>
+  model.entityTypes[model.entitySets[set].entityType];
+
+// Generated items agree with their header: they take its currency, company code and plant
+// (see fromHeader). A property a mock rule sets keeps the rule's value.
+function itemsInherit(
+  model: Model,
+  all: Record<string, Row[]>,
+  fk: ForeignKey,
+  rules: MockRules,
+): void {
+  const inherited = fromHeader(
+    typeOfSet(model, fk.principal),
+    typeOfSet(model, fk.set),
+    fk,
+    rules,
+  );
+  if (!inherited.length) return;
+  for (const [row, h] of itemsWithHeader(all, fk))
+    for (const p of inherited) row[p.name] = h[p.name];
+}
+
+// A generated header's total is the sum of its items', in its currency's decimals. Only when
+// it's clear which properties those are (see lineValue, headerTotal); a header with no items
+// keeps its total, and so does one whose total a mock rule sets.
+function headerTotals(
+  model: Model,
+  all: Record<string, Row[]>,
+  fk: ForeignKey,
+  rules: MockRules,
+): void {
+  const header = typeOfSet(model, fk.principal);
+  const line = lineValue(typeOfSet(model, fk.set));
+  const total = headerTotal(header);
+  if (!line || !total || ruleFor(rules, fk.principal, total.name)) return;
+  const currency = amountsOf(header).find(
+    ({ amount }) => amount === total,
+  )?.currency;
+  const sums = new Map<Row, number>();
+  for (const [row, h] of itemsWithHeader(all, fk))
+    sums.set(h, (sums.get(h) ?? 0) + line(row));
+  for (const [h, sum] of sums) {
+    const decimals = currency ? currencyDecimals(h[currency]) : 2;
+    const value = totalValue(total, sum, decimals);
+    if (value !== undefined) h[total.name] = value;
+  }
 }
 
 // --- Where a value comes from -------------------------------------------------------------
