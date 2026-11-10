@@ -139,6 +139,8 @@ The store in memory still answers every request. The file or database only keeps
 
 `postgres.ts` keeps the same layout in PostgreSQL, through `pg`, imported only when `--persist` is a `postgres://` URL. Several servers can share it: replicas of one service. Each still answers from the store in memory, so queries don't change.
 
+Replicas are there for availability, not load: a shared test or demo environment that stays up while pods are replaced (see [Keeping the data](persistence.md#in-postgresql-with-replicas)).
+
 - **The log.** `odata_prova_log` holds every commit of a service, numbered, as the net changes it saved. A server knows the latest it has.
 - **Catching up.** Before every request, `sharedTurn()` in `persistence.ts` asks for the commits after that one. It applies them to the store through `store.insert`, `update` and `removeRow`, in a transaction of their own, settled at once. Each commit has an id too, and a server checks that its latest is still there, as it applied it. When it isn't, the saved state is no longer the one the server has. It may be further behind than the log goes back (it keeps the latest 1000), replaced (a reset, an adapted `metadata.xml`), emptied and seeded anew, or restored from a backup, even one that's as many commits ahead. The server then loads the whole state again.
 - **A commit is saved only if it's caught up.** Under the service's advisory lock, it checks that the log's latest is the server's own. Otherwise it's refused with `StaleError`, and the store's changes are undone as for any failed save.

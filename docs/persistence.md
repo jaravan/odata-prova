@@ -31,6 +31,8 @@ A folder of your own works too, if the image's `node` user (uid 1000) can write 
 
 ## In PostgreSQL, with replicas
 
+Replicas are for a shared test or demo environment that has to stay up: it keeps answering through a node drain, an evicted pod or a rolling update. They aren't for load, and a CI run is still better off with a fresh server of its own. [fiori-devstack](https://github.com/jaravan/fiori-devstack) runs two replicas this way.
+
 > [!IMPORTANT]
 > Run one server per service, unless the data is in PostgreSQL. Each server keeps its own copy of the data in memory, so with several replicas, a write lands on one and a read may come from another. With PostgreSQL, replicas catch up with each other.
 
