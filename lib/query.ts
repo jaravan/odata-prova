@@ -287,6 +287,7 @@ export {
   addExpandPath,
   addSelectPath,
   checkSelect,
+  checkSelectPath,
   splitTopLevel,
   parseInt10,
   checkFormat,

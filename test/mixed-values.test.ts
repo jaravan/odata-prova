@@ -1428,6 +1428,44 @@ describe("a path into a complex value", () => {
       assert.match(body.error.message, message);
     });
 
+  it("$select of a path with an $apply that keeps the entities", async () => {
+    const all = await selected("$apply=identity&$select=ID,Addr/City");
+    assert.match(all["@odata.context"], /#Items\(ID,Addr\/City\)$/);
+    assert.deepEqual(
+      all.value.map(({ "@odata.etag": _, ...r }: Record<string, unknown>) => r),
+      [
+        { ID: 1, Addr: { City: "Athens" } },
+        { ID: 2, Addr: { City: "Berlin" } },
+        { ID: 3, Addr: { City: null } },
+        { ID: 4, Addr: null },
+      ],
+    );
+    const some = await selected(
+      "$apply=filter(ID le 2)&$select=Place/Addr/City",
+    );
+    assert.deepEqual(
+      some.value.map((r: { Place: unknown }) => r.Place),
+      [{ Addr: { City: "Zurich" } }, { Addr: { City: "Oslo" } }],
+    );
+  });
+
+  it("$select of a path beside aggregated rows, which don't have it", async () => {
+    const { value } = await selected(
+      "$apply=concat(aggregate($count as C),filter(ID eq 1))&$select=C,Addr/City",
+    );
+    assert.equal(Number(value[0].C), 4);
+    assert.equal(value[0].Addr, undefined);
+    assert.deepEqual(value[1].Addr, { City: "Athens" });
+  });
+
+  it("$select of a path that isn't one, with an $apply, is a 400 that says why", async () => {
+    const { status, body } = await get(
+      `${s.v4}/Items?$apply=identity&$select=Addr/Nope`,
+    );
+    assert.equal(status, 400);
+    assert.match(body.error.message, /Nope is not a property of Addr/);
+  });
+
   it("$select with a type cast in its path is a 501", async () => {
     const { status } = await get(`${s.v4}/Items?$select=Place/F.Place/Col`);
     assert.equal(status, 501);

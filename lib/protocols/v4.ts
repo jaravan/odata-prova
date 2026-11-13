@@ -26,6 +26,7 @@ import {
   addExpandPath,
   addSelectPath,
   checkSelect,
+  checkSelectPath,
   splitTopLevel,
   parseInt10,
   parseBoolean,
@@ -614,12 +615,17 @@ const v4: Protocol = {
   ) {
     node = expandAll(svc, entities.type, node);
     const select = node.select;
+    const paths = [...(select ?? [])];
     const names = Object.keys(type.properties);
-    // A $select of a navigation (Supplier) picks the paths through it
-    const selected = (name: string) =>
+    // A $select of a navigation (Supplier) picks the paths through it; one of a path into a
+    // complex value (Addr/City), that field of it
+    const whole = (name: string) =>
       !select || select.has("*") || select.has(name.split("/")[0]);
-    for (const name of select || [])
-      if (
+    const fields = (name: string) =>
+      whole(name) ? [] : pathsInto(name, paths);
+    for (const name of paths)
+      if (name.includes("/")) checkSelectPath(svc, type, name);
+      else if (
         name !== "*" &&
         !names.some((n) => n.split("/")[0] === name) &&
         !svc.navigation(entities.type, name)
@@ -628,11 +634,16 @@ const v4: Protocol = {
           400,
           `${name} is not a property of the $apply result`,
         );
-    const props = Object.values(type.properties).filter((p) =>
-      selected(p.name),
+    const props = Object.values(type.properties).filter(
+      (p) => whole(p.name) || fields(p.name).length,
     );
+    // Supplier(Name) for the paths through a navigation, Addr/City as it is
+    const listed = [
+      contextList(props.filter((p) => whole(p.name)).map((p) => p.name)),
+      ...props.flatMap((p) => fields(p.name).map((f) => `${p.name}/${f}`)),
+    ].filter(Boolean);
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}(${contextList(props.map((p) => p.name))})`,
+      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}(${listed.join(",")})`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => {
@@ -640,13 +651,16 @@ const v4: Protocol = {
         return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
-        if (Object.hasOwn(r, p.name))
+        if (Object.hasOwn(r, p.name)) {
+          const value = toWire(r[p.name], p, opts);
+          const into = fields(p.name);
           setPath(
             out,
             p.name,
-            toWire(r[p.name], p, opts),
+            into.length ? pickPaths(value, into) : value,
             p.collectionSegments,
           );
+        }
       return out;
     });
     if (nextLink) body["@odata.nextLink"] = nextLink;
