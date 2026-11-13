@@ -10,6 +10,7 @@ import {
   ORDER,
   PO_MODEL,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 
 // Delta links, on the PurchaseOrderSrv fixture's 5 orders (1 and 4 are Open, 3 is Completed)
@@ -91,7 +92,7 @@ describe("delta links", () => {
     await send("DELETE", `${s.v4}/${order(5)}`); // not Open: not the client's
 
     const r = await get(link);
-    assert.deepEqual(r.body.value, [
+    assert.deepEqual(withoutIds(r.body.value), [
       { Status: "Open" }, // order 3, with the $select of the link
       {
         "@odata.context":

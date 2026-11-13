@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, type TestServer, withoutIds } from "./helpers.ts";
 import { compileFilter } from "../lib/filter.ts";
 import v2 from "../lib/protocols/v2.ts";
 import v4 from "../lib/protocols/v4.ts";
@@ -169,7 +169,7 @@ describe("null over HTTP", () => {
       `${s.v4}/Values?$compute=${q("year(Day) add 1 as Next")}&$select=Next`,
     );
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.value, [{ Next: null }]);
+    assert.deepEqual(withoutIds(r.body.value), [{ Next: null }]);
   });
 
   it("$filter leaves out a row a function of a null can't say anything about", async () => {

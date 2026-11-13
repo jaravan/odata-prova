@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, type TestServer, withoutIds } from "./helpers.ts";
 
 // Server-driven paging, on the 5 orders and 8 items of the PurchaseOrderSrv fixture
 
@@ -199,7 +199,7 @@ describe("server-driven paging of an expanded collection", () => {
     const r = await get(
       `${s.v4}/${ORDER}?$select=PurchaseOrderId&$expand=Items($select=ItemPosition;$orderby=ItemPosition desc;$count=true)`,
     );
-    assert.deepEqual(r.body.Items, [{ ItemPosition: "0002" }]);
+    assert.deepEqual(withoutIds(r.body.Items), [{ ItemPosition: "0002" }]);
     assert.equal(r.body["Items@odata.count"], 2);
     const next = r.body["Items@odata.nextLink"];
     assert.equal(
@@ -207,7 +207,7 @@ describe("server-driven paging of an expanded collection", () => {
       `/odata/v4/T/${ORDER}/Items?$orderby=ItemPosition%20desc&$count=true&$select=ItemPosition&$skiptoken=1`,
     );
     const rest = await get(s.base + next);
-    assert.deepEqual(rest.body.value, [{ ItemPosition: "0001" }]);
+    assert.deepEqual(withoutIds(rest.body.value), [{ ItemPosition: "0001" }]);
     assert.equal(rest.body["@odata.count"], 2);
     assert.equal(rest.body["@odata.nextLink"], undefined);
   });

@@ -351,9 +351,12 @@ function serialize(
   opts?: ResponseOptions,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const selectAll = !node.select || node.select.has("*");
+  // Without its whole key, an entity says which it is (OData 4.01 JSON Format, 4.5.8)
+  if (!selectAll && type.keys.some((k) => !node.select?.has(k)))
+    out["@odata.id"] = svc.entityUri(setName, type, row);
   const etag = svc.etag(setName, row);
   if (etag) out["@odata.etag"] = etag;
-  const selectAll = !node.select || node.select.has("*");
   for (const p of Object.values(type.properties)) {
     if (selectAll || node.select?.has(p.name))
       out[p.name] = toWire(row[p.name], p, opts);

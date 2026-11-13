@@ -10,6 +10,7 @@ import {
   batch,
   batchResponses,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 import { parseMetadata } from "../lib/metadata.ts";
 
@@ -595,7 +596,7 @@ describe("draft: creating a new entity (V4)", () => {
       `${s.v4}/${draft}?$expand=SiblingEntity,chapters($select=IsActiveEntity)`,
     );
     assert.equal(r.body.SiblingEntity, null);
-    assert.deepEqual(r.body.chapters, [{ IsActiveEntity: false }]);
+    assert.deepEqual(withoutIds(r.body.chapters), [{ IsActiveEntity: false }]);
     const list = await get(`${s.v4}/Books?${LIST_FILTER}&$select=title`);
     assert.equal(list.body.value.length, 3);
   });

@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { start, get, send, type TestServer } from "./helpers.ts";
+import { start, get, send, type TestServer, withoutIds } from "./helpers.ts";
 
 // Decimals as strings, as UI5's V4 model asks for them
 const IEEE754 = { Accept: "application/json;IEEE754Compatible=true" };
@@ -96,7 +96,7 @@ describe("$apply", () => {
         "&$expand=Items($select=Material)&$select=PurchaseOrderId,TotalAmount,UI5__count",
     );
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.value, [
+    assert.deepEqual(withoutIds(r.body.value), [
       { UI5__count: "2" },
       {
         PurchaseOrderId: "4500000001",
@@ -115,7 +115,7 @@ describe("$apply", () => {
       "$apply=groupby((Currency),filter($these/aggregate(TotalAmount with sum) gt 50000))" +
         "&$expand=Items($top=1;$select=ItemPosition)&$select=PurchaseOrderId&$top=1",
     );
-    assert.deepEqual(filtered.body.value, [
+    assert.deepEqual(withoutIds(filtered.body.value), [
       { PurchaseOrderId: "4500000001", Items: [{ ItemPosition: "0001" }] },
     ]);
 

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseMetadata } from "../lib/metadata.ts";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, type TestServer, withoutIds } from "./helpers.ts";
 
 // Genres, as CAP's bookshop has them:
 //
@@ -144,7 +144,7 @@ describe("TopLevels", () => {
       `orderby(name desc)/${topLevels(",Levels=2")}`,
       "&$select=ID&$expand=parent($select=name)",
     );
-    assert.deepEqual(r.body.value, [
+    assert.deepEqual(withoutIds(r.body.value), [
       { ID: 6, parent: null },
       { ID: 7, parent: { name: "Non-Fiction" } },
       { ID: 1, parent: null },
