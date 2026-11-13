@@ -172,6 +172,19 @@ describe("mock data", () => {
     }
   });
 
+  it("names a plain Name after its type: a City's is the row's city", () => {
+    const tripPin = load(modelCopy(path.join(FIXTURES, "real", "TripPin")), 20);
+    const cities = tripPin.store
+      .rows("Airports")
+      .map((row) => (row.Location as Row).City as Row);
+    for (const city of cities) assert.doesNotMatch(city.Name as string, /\d/);
+    assert.ok(together(cities, "Name", "Region") > 3);
+    together(cities, "Name", "CountryRegion");
+    // An Airline's Name says nothing more than its type: still filler
+    for (const airline of tripPin.store.rows("Airlines"))
+      assert.match(airline.Name as string, /^Airline \d+$/);
+  });
+
   it("gives a row's product and unit from one product", () => {
     const items = load(modelCopy(PO_MODEL), 40).store.rows(
       "PurchaseOrderItemSet",
@@ -694,6 +707,17 @@ describe("mock data: where a value comes from", () => {
     assert.deepEqual(how("real/TripPin", "People", "Emails"), {
       how: "two values, each follows the row's person",
       filler: undefined,
+    });
+  });
+
+  it("says a plain Name its type names follows the row, and the rest are filler", () => {
+    assert.deepEqual(how("SapAnnotationsV2", "Products", "Name"), {
+      how: "follows the row's product",
+      filler: undefined,
+    });
+    assert.deepEqual(how("real/TripPin", "Airlines", "Name"), {
+      how: "its name and a number",
+      filler: true,
     });
   });
 });

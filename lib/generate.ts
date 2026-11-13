@@ -696,8 +696,52 @@ function fullName(c: Ctx): string {
   return `${first} ${last}`;
 }
 
-// "CategoryName" -> "Category 3"; a plain "Name" is named after its entity type
+// What a plain "Name" is, by its type's name: a City's is the row's city
+const NAMED_BY_TYPE: [RegExp, (c: Ctx) => string, How][] = [
+  [
+    /(city|town)$/,
+    (c) => c.anchors.location().city,
+    { how: "follows the row's place" },
+  ],
+  [
+    /country$/,
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.country, l.countryName);
+    },
+    { how: "follows the row's place" },
+  ],
+  [
+    /region$/,
+    (c) => {
+      const l = c.anchors.location();
+      return codeOrName(c, l.region, l.regionName);
+    },
+    { how: "follows the row's place" },
+  ],
+  [
+    /(company|supplier|vendor|customer|partner|manufacturer|shipper)$/,
+    (c) => pick(c.rng, COMPANIES),
+    { how: "a company's name" },
+  ],
+  [/(person|employee|contact)$/, fullName, { how: "follows the row's person" }],
+  [
+    /(product|material|article)$/,
+    (c) => c.anchors.product().name,
+    { how: "follows the row's product" },
+  ],
+];
+
+const namedByType = (propName: string, typeName: string) =>
+  /^name$/i.test(propName)
+    ? NAMED_BY_TYPE.find(([re]) => re.test(typeName.toLowerCase()))
+    : undefined;
+
+// "CategoryName" -> "Category 3"; a plain "Name" is named after its entity type, or is what
+// its type says it is (see NAMED_BY_TYPE)
 function nameRule(c: Ctx): string {
+  const byType = namedByType(c.prop.name, c.typeName);
+  if (byType) return byType[1](c);
   const base = c.prop.name.replace(/(Name|Title)$/i, "");
   return labelOr(c, base || c.typeName);
 }
@@ -1476,6 +1520,8 @@ function elementSource(
     case "Edm.String": {
       const match = STRING_RULES.find(([re]) => re.test(lower));
       if (match && match[1] !== nameRule) return match[2];
+      const byType = match && namedByType(prop.name, typeName);
+      if (byType) return byType[2];
       // A label, or digits when it doesn't fit (see labelOr)
       const base = match
         ? prop.name.replace(/(Name|Title)$/i, "") || typeName
