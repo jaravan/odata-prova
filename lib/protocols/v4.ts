@@ -351,9 +351,12 @@ function serialize(
   opts?: ResponseOptions,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const selectAll = !node.select || node.select.has("*");
+  // Without its whole key, an entity says which it is (OData 4.01 JSON Format, 4.5.8)
+  if (!selectAll && type.keys.some((k) => !node.select?.has(k)))
+    out["@odata.id"] = svc.entityUri(setName, type, row);
   const etag = svc.etag(setName, row);
   if (etag) out["@odata.etag"] = etag;
-  const selectAll = !node.select || node.select.has("*");
   for (const p of Object.values(type.properties)) {
     if (selectAll || node.select?.has(p.name))
       out[p.name] = toWire(row[p.name], p, opts);
@@ -469,14 +472,15 @@ function contextSet(
     : uri.slice(0, at + contained.navigation.length + 1);
 }
 
-// The select-list of a context URL, as $select and $expand shape the response (OData 4.0
-// Part 1, 10.9): "(Name,Total,Category(Name))" for $select=Name,Total&$expand=Category(
-// $select=Name), with $compute's aliases among the names when they're selected. An expanded
-// navigation is listed, with its own list or "()", where the level has a $select; a level
-// without one has every property, and no list.
+// The select-list of a context URL, as $select and $expand shape the response (OData 4.01
+// Part 1, 10.9 and 10.10): "(Name,Total,Category(Name))" for $select=Name,Total&$expand=
+// Category($select=Name), with $compute's aliases among the names when they're selected. An
+// expanded navigation is always listed, with what it selects or expands, or "()" when it
+// does neither: $expand=Items($expand=Order) is "(Items(Order()))". A level with only
+// expanded navigations has every property besides; one with neither has no list.
 function selectList(node: QueryNode): string {
-  if (!node.select) return "";
-  const names = [...node.select].filter(
+  if (!node.select && !Object.keys(node.expand).length) return "";
+  const names = [...(node.select ?? [])].filter(
     (name) => !Object.hasOwn(node.expand, name),
   );
   for (const [name, child] of Object.entries(node.expand))

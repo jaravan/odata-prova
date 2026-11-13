@@ -8,6 +8,7 @@ import {
   ORDER,
   ITEM,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 import type { Property } from "../lib/model.ts";
 import { toWire } from "../lib/protocols/v4.ts";
@@ -87,7 +88,7 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.equal(r.status, 200);
     assert.equal(r.body["Items@odata.count"], 2);
     assert.equal(r.body.Items.length, 1);
-    assert.deepEqual(r.body.Items[0], {
+    assert.deepEqual(withoutIds(r.body.Items[0]), {
       Material: "MAT-1002",
       NetPrice: 22.5,
       PurchaseOrder: { Supplier: "Acme Components Ltd" },
@@ -101,7 +102,9 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     const r = await get(
       `${v4}/PurchaseOrderSet?$search=nordic&$select=Supplier`,
     );
-    assert.deepEqual(r.body.value, [{ Supplier: "Nordic Steel AB" }]);
+    assert.deepEqual(withoutIds(r.body.value), [
+      { Supplier: "Nordic Steel AB" },
+    ]);
   });
 
   it("navigation, property, $value, $count and null single-valued navigation", async () => {
@@ -111,6 +114,8 @@ describe("OData V4 protocol (model loaded from a V2 document)", () => {
     assert.deepEqual(parent.body, {
       "@odata.context":
         "/odata/v4/T/$metadata#PurchaseOrderSet(Supplier)/$entity",
+      // Without its key, which $select leaves out
+      "@odata.id": "/odata/v4/T/PurchaseOrderSet('4500000001')",
       Supplier: "Acme Components Ltd",
     });
     const prop = await get(`${v4}/PurchaseOrderSet('4500000001')/Supplier`);
@@ -270,11 +275,11 @@ describe("OData V4 protocol (model loaded from a V4 document with Guid/Date/Time
     const f = await get(
       `${v4}/Orders?$filter=OrderDate eq 2025-03-15 and DeliveryTime ge 12:00:00&$select=OrderNo`,
     );
-    assert.deepEqual(f.body.value, [{ OrderNo: "SO-2" }]);
+    assert.deepEqual(withoutIds(f.body.value), [{ OrderNo: "SO-2" }]);
     const byGuid = await get(
       `${v4}/Items?$filter=Order_ID eq 22222222-2222-2222-2222-222222222222&$select=Product`,
     );
-    assert.deepEqual(byGuid.body.value, [{ Product: "Gizmo" }]);
+    assert.deepEqual(withoutIds(byGuid.body.value), [{ Product: "Gizmo" }]);
   });
 
   it("the same entity on the V2 wire: guid'' keys, /Date()/ and PT..S", async () => {

@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, type TestServer, withoutIds } from "./helpers.ts";
 
 // $compute on the PurchaseOrderSrv fixture's orders and items
 const IEEE754 = { accept: "application/json;IEEE754Compatible=true" };
@@ -32,7 +32,7 @@ describe("$compute", () => {
       IEEE754,
     );
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.value, [
+    assert.deepEqual(withoutIds(r.body.value), [
       { Material: "MAT-2001", LineTotal: "42000" },
       { Material: "MAT-3001", LineTotal: "8500" },
       { Material: "MAT-1001", LineTotal: "7500" },
@@ -43,7 +43,7 @@ describe("$compute", () => {
     const r = await get(
       `${s.v4}/PurchaseOrderItemSet?$compute=PurchaseOrder/Status as OrderStatus&$filter=OrderStatus eq 'Cancelled'&$select=Material`,
     );
-    assert.deepEqual(r.body.value, [{ Material: "MAT-5001" }]);
+    assert.deepEqual(withoutIds(r.body.value), [{ Material: "MAT-5001" }]);
   });
 
   it("a context URL lists the selected properties, computed ones and expanded navigations", async () => {
@@ -54,7 +54,8 @@ describe("$compute", () => {
       r.body["@odata.context"],
       "/odata/v4/T/$metadata#PurchaseOrderSet(PurchaseOrderId,Doubled,Items(Material))",
     );
-    // An expanded navigation without its own $select: (); a level without $select: no list
+    // An expanded navigation without its own $select: (); a level without $select lists its
+    // expanded navigations only (OData 4.01 Part 1, 10.9)
     const nested = await get(
       `${s.v4}/PurchaseOrderSet('4500000001')?$select=Supplier&$expand=Items`,
     );
@@ -67,7 +68,7 @@ describe("$compute", () => {
     );
     assert.equal(
       all.body["@odata.context"],
-      "/odata/v4/T/$metadata#PurchaseOrderSet",
+      "/odata/v4/T/$metadata#PurchaseOrderSet(Items(Material))",
     );
   });
 

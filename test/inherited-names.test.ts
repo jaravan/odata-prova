@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { start, get, PO_MODEL, type TestServer } from "./helpers.ts";
+import {
+  start,
+  get,
+  PO_MODEL,
+  type TestServer,
+  withoutIds,
+} from "./helpers.ts";
 
 // Names every JavaScript object has (constructor, toString, __proto__) are no entity set,
 // property or navigation of the service, unless its metadata declares them
@@ -77,7 +83,9 @@ describe("a property the metadata names constructor", () => {
       `${s.v4}/PurchaseOrderSet?$select=constructor&$filter=constructor eq 'Nordic Steel AB'`,
     );
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.value, [{ constructor: "Nordic Steel AB" }]);
+    assert.deepEqual(withoutIds(r.body.value), [
+      { constructor: "Nordic Steel AB" },
+    ]);
     const one = await get(`${s.v4}/PurchaseOrderSet('4500000002')/constructor`);
     assert.equal(one.body.value, "Nordic Steel AB");
   });

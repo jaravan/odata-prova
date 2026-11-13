@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { start, get, type TestServer } from "./helpers.ts";
+import { start, get, send, type TestServer } from "./helpers.ts";
 
 describe("$select is checked against the type", () => {
   let s: TestServer;
@@ -121,5 +121,103 @@ describe("$select through a navigation", () => {
     const [row] = r.body.d.results;
     assert.ok(fields(row).includes("Material"));
     assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
+  });
+});
+
+// OData 4.01 Part 1, 10.9 and 10.10: an expanded navigation is in the select-list, with what
+// it selects or expands in parentheses, empty when it does neither; a level with only
+// expanded navigations selects every property
+describe("the context URL's select-list", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const context = async (query: string) => {
+    const { status, body } = await get(`${s.v4}/PurchaseOrderSet${query}`);
+    assert.equal(status, 200, JSON.stringify(body));
+    return body["@odata.context"].replace(/^.*\$metadata#/, "");
+  };
+
+  for (const [query, expected] of [
+    [
+      "?$select=PurchaseOrderId&$expand=Items($expand=PurchaseOrder($select=Status))",
+      "PurchaseOrderSet(PurchaseOrderId,Items(PurchaseOrder(Status)))",
+    ],
+    ["?$expand=Items($select=Material)", "PurchaseOrderSet(Items(Material))"],
+    ["?$expand=Items", "PurchaseOrderSet(Items())"],
+    [
+      "?$expand=Items($expand=PurchaseOrder)",
+      "PurchaseOrderSet(Items(PurchaseOrder()))",
+    ],
+    [
+      "('4500000001')?$expand=Items($expand=PurchaseOrder($select=Status))",
+      "PurchaseOrderSet(Items(PurchaseOrder(Status)))/$entity",
+    ],
+    ["?$select=Supplier", "PurchaseOrderSet(Supplier)"],
+    ["", "PurchaseOrderSet"],
+  ])
+    it(`${query || "no $select or $expand"} -> ${expected}`, async () => {
+      assert.equal(await context(query), expected);
+    });
+});
+
+// OData 4.01 JSON Format, 4.5.8: with minimal metadata, an entity whose key fields are not all
+// in the response carries its id, so a client can tell which entity it is
+describe("an entity whose $select leaves out its key", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const ORDER = "/odata/v4/T/PurchaseOrderSet('4500000001')";
+
+  it("has its @odata.id, in a collection and on its own", async () => {
+    const all = await get(`${s.v4}/PurchaseOrderSet?$select=Supplier&$top=1`);
+    assert.equal(all.body.value[0]["@odata.id"], ORDER);
+    const one = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$select=Supplier`,
+    );
+    assert.equal(one.body["@odata.id"], ORDER);
+  });
+
+  it("in an $expand too", async () => {
+    const { body } = await get(
+      `${s.v4}/PurchaseOrderSet('4500000001')?$expand=Items($select=Material)`,
+    );
+    for (const item of body.Items)
+      assert.match(
+        item["@odata.id"],
+        /^\/odata\/v4\/T\/PurchaseOrderItemSet\(/,
+      );
+  });
+
+  it("and in a delta, where a changed entity has only what changed", async () => {
+    const first = await get(`${s.v4}/PurchaseOrderSet?$select=Status`, {
+      prefer: "odata.track-changes",
+    });
+    await send("PATCH", `${s.v4}/PurchaseOrderSet('4500000001')`, {
+      Status: "Completed",
+    });
+    const delta = await get(
+      first.body["@odata.deltaLink"].replace("/odata/v4/T", s.v4),
+    );
+    const changed = delta.body.value.find(
+      (e: Record<string, unknown>) => e["@odata.id"] === ORDER,
+    );
+    assert.equal(changed?.Status, "Completed", JSON.stringify(delta.body));
+  });
+
+  it("but not when the key is selected, or nothing is", async () => {
+    for (const query of [
+      "$select=PurchaseOrderId,Supplier&",
+      "",
+      "$select=*&",
+    ]) {
+      const { body } = await get(`${s.v4}/PurchaseOrderSet?${query}$top=1`);
+      assert.equal(body.value[0]["@odata.id"], undefined, query);
+    }
   });
 });

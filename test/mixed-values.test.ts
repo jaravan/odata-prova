@@ -13,6 +13,7 @@ import {
   send,
   start,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 
 const MODEL = path.join(import.meta.dirname, "fixtures", "Mixed");
@@ -1388,19 +1389,19 @@ describe("a path into a complex value", () => {
     const { value } = await selected(
       "$select=Place/Addr/City,Place/Col,Place/Stops/Addr/City",
     );
-    assert.deepEqual(value[0], {
+    assert.deepEqual(withoutIds(value[0]), {
       Place: {
         Addr: { City: "Zurich" },
         Col: "Red",
         Stops: [{ Addr: { City: "Rome" } }],
       },
     });
-    assert.deepEqual(value[3], { Place: null });
+    assert.deepEqual(withoutIds(value[3]), { Place: null });
   });
 
   it("$select of a complex value whole, and a path into it, gives it whole", async () => {
     const { value } = await selected("$select=Addr/City,Addr");
-    assert.deepEqual(value[2], { Addr: { City: null, Zip: "1" } });
+    assert.deepEqual(withoutIds(value[2]), { Addr: { City: null, Zip: "1" } });
   });
 
   it("$select of a path, on an entity and in an $expand", async () => {
@@ -1410,7 +1411,9 @@ describe("a path into a complex value", () => {
     const kids = await get(`${s.v4}/Kids?$expand=Item($select=Place/Addr)`);
     assert.equal(kids.status, 200, JSON.stringify(kids.body));
     const { "@odata.etag": _, ...item } = kids.body.value[0].Item;
-    assert.deepEqual(item, { Place: { Addr: { City: "Zurich", Zip: null } } });
+    assert.deepEqual(withoutIds(item), {
+      Place: { Addr: { City: "Zurich", Zip: null } },
+    });
   });
 
   for (const [path, message] of [
@@ -1464,6 +1467,22 @@ describe("a path into a complex value", () => {
     );
     assert.equal(status, 400);
     assert.match(body.error.message, /Nope is not a property of Addr/);
+  });
+
+  for (const apply of [
+    "groupby((Addr/City))",
+    "groupby((Place/Addr/City),aggregate($count as C))",
+    "aggregate(Place/Addr/City with countdistinct as N)",
+  ])
+    it(`$apply=${apply} is a 501 that says a complex value is in the way`, async () => {
+      const { status, body } = await get(`${s.v4}/Items?$apply=${apply}`);
+      assert.equal(status, 501, JSON.stringify(body));
+      assert.match(body.error.message, /complex property (Addr|Place)/);
+    });
+
+  it("$apply=groupby((Nope/City)) is still a 400", async () => {
+    const { status } = await get(`${s.v4}/Items?$apply=groupby((Nope/City))`);
+    assert.equal(status, 400);
   });
 
   it("$select with a type cast in its path is a 501", async () => {

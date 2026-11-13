@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseMetadata } from "../lib/metadata.ts";
 import { writeMockData } from "../lib/mock-data.ts";
-import { start, get, send, type TestServer } from "./helpers.ts";
+import { start, get, send, type TestServer, withoutIds } from "./helpers.ts";
 
 // Person.Trips and Trip.PlanItems contain their targets, which no entity set holds: they get
 // the server's own, People-Trips and People-Trips-PlanItems, filled by data files with their
@@ -53,7 +53,7 @@ describe("containment", () => {
     const r = await get(
       `${s.v4}/People?$expand=Trips($select=Name;$expand=PlanItems($select=Name))&$filter=Trips/any(t:t/Name eq 'Paris')`,
     );
-    assert.deepEqual(r.body.value, [
+    assert.deepEqual(withoutIds(r.body.value), [
       {
         UserName: "ben",
         Trips: [{ Name: "Paris", PlanItems: [{ Name: "Louvre" }] }],

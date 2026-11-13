@@ -175,6 +175,19 @@ function batchResponses(text: string) {
 // What start() resolves to, for a test's `let s: TestServer`
 type TestServer = Awaited<ReturnType<typeof start>>;
 
+// A response's value without the @odata.id an entity gets when $select leaves out its key
+// (see serialize in protocols/v4.ts), for a test about something else
+function withoutIds<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withoutIds) as T;
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([k]) => k !== "@odata.id")
+        .map(([k, v]) => [k, withoutIds(v)]),
+    ) as T;
+  return value;
+}
+
 export type { Reply, BatchPart, TestServer };
 export {
   PO_MODEL,
@@ -187,4 +200,5 @@ export {
   send,
   batch,
   batchResponses,
+  withoutIds,
 };

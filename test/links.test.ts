@@ -12,6 +12,7 @@ import {
   batch,
   batchResponses,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 
 // A many-to-many link with no ReferentialConstraint: Student.Courses and Course.Students
@@ -60,14 +61,14 @@ describe("a navigation through a link set", () => {
     const expanded = await get(
       `${s.v4}/Courses?$expand=Students($select=Name)&$select=Title`,
     );
-    assert.deepEqual(expanded.body.value, [
+    assert.deepEqual(withoutIds(expanded.body.value), [
       { Title: "Compilers", Students: [{ Name: "Ada" }, { Name: "Linus" }] },
       { Title: "Kernels", Students: [{ Name: "Ada" }] },
     ]);
     const any = await get(
       `${s.v4}/Students?$filter=Courses/any(c:c/Title eq 'Kernels')&$select=Name`,
     );
-    assert.deepEqual(any.body.value, [{ Name: "Ada" }]);
+    assert.deepEqual(withoutIds(any.body.value), [{ Name: "Ada" }]);
     const v2 = await get(
       `${s.v2}/Students?$expand=Courses&$select=Name,Courses/Title`,
     );

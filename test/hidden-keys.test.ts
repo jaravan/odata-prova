@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseMetadata } from "../lib/metadata.ts";
 import { writeMockData } from "../lib/mock-data.ts";
-import { start, get, send, type TestServer } from "./helpers.ts";
+import { start, get, send, type TestServer, withoutIds } from "./helpers.ts";
 
 // Navigations without a ReferentialConstraint or a property to join on get a key of their
 // own: Person.Photo on Photo_Id, Line.Order (and Order.Lines back) on Order_Number. The data
@@ -32,7 +32,7 @@ describe("a navigation joined on a hidden key of its own", () => {
     const expanded = await get(
       `${s.v4}/People?$expand=Photo($select=Name)&$select=UserName`,
     );
-    assert.deepEqual(expanded.body.value, [
+    assert.deepEqual(withoutIds(expanded.body.value), [
       { UserName: "ann", Photo: { Name: "Mountain" } },
       { UserName: "ben", Photo: null },
     ]);

@@ -11,6 +11,7 @@ import {
   ITEM,
   PO_MODEL,
   type TestServer,
+  withoutIds,
 } from "./helpers.ts";
 
 describe("$batch", () => {
@@ -122,7 +123,7 @@ describe("$batch", () => {
     assert.equal(parts[0].headers["odata-version"], "4.0");
     assert.equal(parts[1].body.PurchaseOrderId, "B003");
     assert.equal(parts[2].headers["preference-applied"], "return=minimal");
-    assert.deepEqual(parts[3].body.Items, [
+    assert.deepEqual(withoutIds(parts[3].body.Items), [
       { PurchaseOrderId: "B003", Material: "M" },
     ]);
     assert.equal(parts[3].body.Status, "Open");
