@@ -1365,4 +1365,80 @@ describe("a path into a complex value", () => {
     assert.equal(status, 200, JSON.stringify(body));
     assert.equal(Number(body.value[0].C), 1);
   });
+
+  // The rows, as $select writes them, without their ETags
+  const selected = async (query: string) => {
+    const { status, body } = await get(`${s.v4}/Items?$orderby=ID&${query}`);
+    assert.equal(status, 200, JSON.stringify(body));
+    return body;
+  };
+
+  it("$select picks its fields, and the context lists the path", async () => {
+    const body = await selected("$select=ID,Addr/City");
+    assert.match(body["@odata.context"], /#Items\(ID,Addr\/City\)$/);
+    assert.deepEqual(body.value, [
+      { ID: 1, Addr: { City: "Athens" } },
+      { ID: 2, Addr: { City: "Berlin" } },
+      { ID: 3, Addr: { City: null } },
+      { ID: 4, Addr: null },
+    ]);
+  });
+
+  it("$select goes into a nested complex value, and each item of a collection", async () => {
+    const { value } = await selected(
+      "$select=Place/Addr/City,Place/Col,Place/Stops/Addr/City",
+    );
+    assert.deepEqual(value[0], {
+      Place: {
+        Addr: { City: "Zurich" },
+        Col: "Red",
+        Stops: [{ Addr: { City: "Rome" } }],
+      },
+    });
+    assert.deepEqual(value[3], { Place: null });
+  });
+
+  it("$select of a complex value whole, and a path into it, gives it whole", async () => {
+    const { value } = await selected("$select=Addr/City,Addr");
+    assert.deepEqual(value[2], { Addr: { City: null, Zip: "1" } });
+  });
+
+  it("$select of a path, on an entity and in an $expand", async () => {
+    const one = await get(`${s.v4}/Items(1)?$select=Addr/City`);
+    assert.match(one.body["@odata.context"], /#Items\(Addr\/City\)\/\$entity$/);
+    assert.deepEqual(one.body.Addr, { City: "Athens" });
+    const kids = await get(`${s.v4}/Kids?$expand=Item($select=Place/Addr)`);
+    assert.equal(kids.status, 200, JSON.stringify(kids.body));
+    const { "@odata.etag": _, ...item } = kids.body.value[0].Item;
+    assert.deepEqual(item, { Place: { Addr: { City: "Zurich", Zip: null } } });
+  });
+
+  for (const [path, message] of [
+    ["Addr/Nope", /Nope is not a property of Addr/],
+    ["Addr/City/Nope", /City isn't a complex property/],
+    ["Place/Cols/Red", /Cols isn't a complex property/],
+    ["Name/City", /Name isn't a complex property/],
+    ["Nope/City", /Nope is not a property or navigation of Item/],
+    ["Addr/", /is not a property of Addr/],
+    ["Kids/ID", /write \$expand=Kids\(\$select=ID\)/],
+  ] as const)
+    it(`$select=${path} is a 400 that says why`, async () => {
+      const { status, body } = await get(`${s.v4}/Items?$select=${path}`);
+      assert.equal(status, 400, JSON.stringify(body));
+      assert.match(body.error.message, message);
+    });
+
+  it("$select with a type cast in its path is a 501", async () => {
+    const { status } = await get(`${s.v4}/Items?$select=Place/F.Place/Col`);
+    assert.equal(status, 501);
+  });
+
+  it("$select of a path is a 400 in V2, which selects a complex value whole", async () => {
+    const { status } = await get(`${s.v2}/Items?$select=Addr/City`);
+    assert.equal(status, 400);
+    const whole = await get(`${s.v2}/Items(1)?$select=Addr`, {
+      accept: "application/json",
+    });
+    assert.equal(whole.body.d.Addr.City, "Athens");
+  });
 });
