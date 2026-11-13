@@ -54,7 +54,8 @@ describe("$compute", () => {
       r.body["@odata.context"],
       "/odata/v4/T/$metadata#PurchaseOrderSet(PurchaseOrderId,Doubled,Items(Material))",
     );
-    // An expanded navigation without its own $select: (); a level without $select: no list
+    // An expanded navigation without its own $select: (); a level without $select lists its
+    // expanded navigations only (OData 4.01 Part 1, 10.9)
     const nested = await get(
       `${s.v4}/PurchaseOrderSet('4500000001')?$select=Supplier&$expand=Items`,
     );
@@ -67,7 +68,7 @@ describe("$compute", () => {
     );
     assert.equal(
       all.body["@odata.context"],
-      "/odata/v4/T/$metadata#PurchaseOrderSet",
+      "/odata/v4/T/$metadata#PurchaseOrderSet(Items(Material))",
     );
   });
 

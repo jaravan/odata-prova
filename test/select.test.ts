@@ -123,3 +123,42 @@ describe("$select through a navigation", () => {
     assert.deepEqual(fields(row.PurchaseOrder), ["Status"]);
   });
 });
+
+// OData 4.01 Part 1, 10.9 and 10.10: an expanded navigation is in the select-list, with what
+// it selects or expands in parentheses, empty when it does neither; a level with only
+// expanded navigations selects every property
+describe("the context URL's select-list", () => {
+  let s: TestServer;
+  before(async () => {
+    s = await start();
+  });
+  after(() => s.close());
+
+  const context = async (query: string) => {
+    const { status, body } = await get(`${s.v4}/PurchaseOrderSet${query}`);
+    assert.equal(status, 200, JSON.stringify(body));
+    return body["@odata.context"].replace(/^.*\$metadata#/, "");
+  };
+
+  for (const [query, expected] of [
+    [
+      "?$select=PurchaseOrderId&$expand=Items($expand=PurchaseOrder($select=Status))",
+      "PurchaseOrderSet(PurchaseOrderId,Items(PurchaseOrder(Status)))",
+    ],
+    ["?$expand=Items($select=Material)", "PurchaseOrderSet(Items(Material))"],
+    ["?$expand=Items", "PurchaseOrderSet(Items())"],
+    [
+      "?$expand=Items($expand=PurchaseOrder)",
+      "PurchaseOrderSet(Items(PurchaseOrder()))",
+    ],
+    [
+      "('4500000001')?$expand=Items($expand=PurchaseOrder($select=Status))",
+      "PurchaseOrderSet(Items(PurchaseOrder(Status)))/$entity",
+    ],
+    ["?$select=Supplier", "PurchaseOrderSet(Supplier)"],
+    ["", "PurchaseOrderSet"],
+  ])
+    it(`${query || "no $select or $expand"} -> ${expected}`, async () => {
+      assert.equal(await context(query), expected);
+    });
+});
