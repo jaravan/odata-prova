@@ -155,6 +155,23 @@ describe("mock data", () => {
     together(partners, "City", "Country");
   });
 
+  it("gives a row's names and email addresses from one person", () => {
+    const people = load(
+      modelCopy(path.join(FIXTURES, "real", "TripPin")),
+      20,
+    ).store.rows("People");
+    for (const row of people) {
+      const local = `${row.FirstName}.${row.LastName}`.toLowerCase();
+      const emails = row.Emails as string[];
+      assert.deepEqual(
+        emails.map((e) => e.split("@")[0]),
+        [local, local],
+        String(row.UserName),
+      );
+      assert.equal(new Set(emails).size, 2, "two addresses, not one twice");
+    }
+  });
+
   it("gives a row's product and unit from one product", () => {
     const items = load(modelCopy(PO_MODEL), 40).store.rows(
       "PurchaseOrderItemSet",
@@ -663,5 +680,20 @@ describe("mock data: where a value comes from", () => {
         }
       }
     }
+  });
+
+  const how = (dir: string, set: string, p: string) => {
+    const { how, filler } = explain(path.join(FIXTURES, dir), set, p);
+    return { how, filler };
+  };
+
+  it("says a person's names and email addresses follow the row's person", () => {
+    const person = { how: "follows the row's person", filler: undefined };
+    assert.deepEqual(how("real/TripPin", "People", "FirstName"), person);
+    assert.deepEqual(how("real/TripPin", "People", "LastName"), person);
+    assert.deepEqual(how("real/TripPin", "People", "Emails"), {
+      how: "two values, each follows the row's person",
+      filler: undefined,
+    });
   });
 });

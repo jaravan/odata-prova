@@ -6,7 +6,7 @@
 //   - property names pick plausible values: *Currency -> EUR, *Email -> an address, ...
 //   - the values that go together agree: a row's city, postal code, region, country,
 //     currency, language and company code come from one location, its product and unit
-//     from one product (see Anchors)
+//     from one product, its names and email addresses from one person (see Anchors)
 //   - foreign keys hold the keys of real rows, so navigation and $expand return something.
 //     When the foreign key is part of the key (an order's items), the rest of the key counts
 //     up per parent: items 00010, 00020 of one order, 00010 of the next (an item number
@@ -83,12 +83,21 @@ interface Product {
   integral: boolean;
 }
 
-// A row's location, product and date, each picked when a property first asks for it, so
-// every location-like and product-like property of the row (complex members included)
-// agrees, and its dates are in order (see DATE_ROLES). The date is in ms.
+// A person: a row's first and last name, contact name and email addresses
+interface Person {
+  first: string;
+  last: string;
+}
+
+// A row's location, product, person and date, each picked when a property first asks for
+// it, so every location-like, product-like and person-like property of the row (complex
+// members included) agrees, and its dates are in order (see DATE_ROLES). The date is in ms.
+// email gives the person's next address: one per domain, so a collection's are different.
 interface Anchors {
   location(): Location;
   product(): Product;
+  person(): Person;
+  email(): string;
   date(): number;
 }
 
@@ -319,6 +328,8 @@ const LAST_NAMES = [
   "Tanaka",
   "Silva",
 ];
+// Reserved for examples (RFC 2606)
+const EMAIL_DOMAINS = ["example.com", "example.org", "example.net"];
 const STREETS = [
   "Main Street",
   "Market Square",
@@ -402,10 +413,20 @@ function measuresOf(properties: Record<string, Property>): Measures {
 function anchors(rng: Rng, index: number, count: number): Anchors {
   let location: Location | undefined;
   let product: Product | undefined;
+  let person: Person | undefined;
+  let emails = 0;
   let date: number | undefined;
+  const personOf = () =>
+    (person ??= { first: pick(rng, FIRST_NAMES), last: pick(rng, LAST_NAMES) });
   return {
     location: () => (location ??= pick(rng, LOCATIONS)),
     product: () => (product ??= pick(rng, PRODUCTS)),
+    person: personOf,
+    email: () => {
+      const { first, last } = personOf();
+      const domain = EMAIL_DOMAINS[emails++ % EMAIL_DOMAINS.length];
+      return `${first}.${last}@${domain}`.toLowerCase();
+    },
     date: () =>
       (date ??=
         DATE_FROM +
@@ -546,12 +567,7 @@ interface How {
 // names come before the generic ones (CurrencyCode is a currency, not a code; CompanyCode is a
 // code).
 const STRING_RULES: [RegExp, (c: Ctx) => string, How][] = [
-  [
-    /e-?mail/,
-    (c) =>
-      `${pick(c.rng, FIRST_NAMES)}.${pick(c.rng, LAST_NAMES)}@example.com`.toLowerCase(),
-    { how: "an email address" },
-  ],
+  [/e-?mail/, (c) => c.anchors.email(), { how: "follows the row's person" }],
   [
     /phone|mobile|fax|telephone|^tel/,
     (c) => `+1 555 01${pad(int(c.rng, 100), 2)}`,
@@ -622,13 +638,13 @@ const STRING_RULES: [RegExp, (c: Ctx) => string, How][] = [
   ],
   [
     /first ?name|given ?name/,
-    (c) => pick(c.rng, FIRST_NAMES),
-    { how: "a first name" },
+    (c) => c.anchors.person().first,
+    { how: "follows the row's person" },
   ],
   [
     /last ?name|surname|family ?name/,
-    (c) => pick(c.rng, LAST_NAMES),
-    { how: "a last name" },
+    (c) => c.anchors.person().last,
+    { how: "follows the row's person" },
   ],
   [
     /(code|id|number|no|nr)$/,
@@ -643,8 +659,10 @@ const STRING_RULES: [RegExp, (c: Ctx) => string, How][] = [
     (c) => pick(c.rng, JOB_TITLES),
     { how: "a job title" },
   ],
+  [/contact|person/, fullName, { how: "follows the row's person" }],
+  // Someone else than the row's person: CreatedBy and ChangedBy are not its contact
   [
-    /contact|person|employee|user|owner|manager|by$/,
+    /employee|user|owner|manager|by$/,
     (c) => `${pick(c.rng, FIRST_NAMES)} ${pick(c.rng, LAST_NAMES)}`,
     { how: "a person's name" },
   ],
@@ -672,6 +690,11 @@ const STRING_RULES: [RegExp, (c: Ctx) => string, How][] = [
   ],
   [/name$|title$/, nameRule, { how: "its name and a number", filler: true }],
 ];
+
+function fullName(c: Ctx): string {
+  const { first, last } = c.anchors.person();
+  return `${first} ${last}`;
+}
 
 // "CategoryName" -> "Category 3"; a plain "Name" is named after its entity type
 function nameRule(c: Ctx): string {
