@@ -13,7 +13,7 @@ All primitive Edm types, plus the ones below. Geography and geometry values aren
 
 Singletons aren't served: the startup log lists each one (`not served: Singleton Me`), and a navigation bound to one is disabled, a `501` saying why. A name can be any identifier but `__proto__`, which stops the service from starting, saying so.
 
-In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
+In a CSV data file, a complex or collection value goes in its cell as JSON.
 
 Writes and data files are checked against the metadata. Each of these is a `400` (`InvalidValue`), and a data file with one stops the start, naming it:
 
@@ -464,7 +464,7 @@ Rejected with `400 Bad Request`, though OData has them:
 
 - an expression in `$orderby` (`length(Name)`): a property or a path only, or a `$compute` alias
 - parameter aliases (`@p1`) in `$filter`
-- a path into a complex value in a query option, as `$select=Address/City` or `$filter=Address/City eq 'x'`. In the URL it's served: `Rows(1)/Address/City`
+- a path into a complex value in `$select`, as `$select=Address/City`: select `Address` whole. `$filter`, `$orderby` and the URL follow one: `Address/City eq 'x'`, `Rows(1)/Address/City`
 - spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body. A required one isn't required: the server holds none, and answers null
 
 `odata.metadata` in `Accept` is ignored: the answer is always `minimal`. `If-None-Match` is served: a read of what it names is a `304`, and a write a `412`.
