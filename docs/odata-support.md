@@ -458,7 +458,6 @@ Rejected with `501 Not Implemented`:
 - the `/$value` of an entity (a media resource's content): only a property's `/$value` is served
 - the `$filter` functions listed under [Query options](#query-options)
 - a type cast in a `$select` path (`$select=Place/NS.Place2/Addr`)
-
 - a delta in a body (`Kids@delta`, `Kids@odata.delta`)
 
 Rejected with `400 Bad Request`, though OData has them:
