@@ -128,6 +128,10 @@ interface Lookup {
 
 function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
   for (const name of node.select || []) {
+    if (name.includes("/")) {
+      checkSelectPath(svc, type, name);
+      continue;
+    }
     if (name === "*" || name.includes(".")) continue;
     if (node.compute?.some((c) => c.alias === name)) continue;
     if (!own(type.properties, name) && !svc.navigation(type, name))
@@ -145,6 +149,43 @@ function checkSelect(svc: Lookup, type: EntityType, node: QueryNode): void {
       );
     const target = svc.model.entityTypes[nav.targetType];
     if (target) checkSelect(svc, target, child);
+  }
+}
+
+// A V4 $select path into a complex value: "Addr/City", "Place/Stops/Addr", each step a field
+// of the one before, and every one but the last a complex property (or a collection of
+// them). A path through a navigation is what $expand's $select is for.
+function checkSelectPath(svc: Lookup, type: EntityType, path: string): void {
+  const [first, ...rest] = path.split("/");
+  if (svc.navigation(type, first))
+    throw new HttpError(
+      400,
+      `$select can't go through ${first}: for a navigation, write $expand=${first}($select=${rest.join("/")})`,
+    );
+  let props = type.properties;
+  let owner = type.name;
+  for (const [i, seg] of path.split("/").entries()) {
+    if (seg.includes("."))
+      throw new HttpError(
+        501,
+        `$select=${path}: a type cast in a $select path is not supported`,
+      );
+    const prop = own(props, seg);
+    if (!prop)
+      throw new HttpError(
+        400,
+        i === 0
+          ? `${seg} is not a property or navigation of ${owner}`
+          : `${seg} is not a property of ${owner}`,
+      );
+    if (i === rest.length) return;
+    if (!prop.complexType)
+      throw new HttpError(
+        400,
+        `$select=${path}: ${seg} isn't a complex property, so a path can't go into it`,
+      );
+    props = prop.complexType.properties;
+    owner = prop.complexType.name;
   }
 }
 
@@ -246,6 +287,7 @@ export {
   addExpandPath,
   addSelectPath,
   checkSelect,
+  checkSelectPath,
   splitTopLevel,
   parseInt10,
   checkFormat,

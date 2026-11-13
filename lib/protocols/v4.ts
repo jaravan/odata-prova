@@ -26,6 +26,7 @@ import {
   addExpandPath,
   addSelectPath,
   checkSelect,
+  checkSelectPath,
   splitTopLevel,
   parseInt10,
   parseBoolean,
@@ -187,17 +188,13 @@ function elementToWire(
   return value;
 }
 
-// "$expand=Items($select=Material;$top=2;$expand=PurchaseOrder),Other" -> node tree.
-// One item of a $select. V4 has no path through a navigation, which $expand's own $select does
-// instead (V2 does, see addSelectPath). Only a complex property may go on, which isn't served.
+// One item of a $select. A path ("Addr/City") goes into a complex value, kept whole in the
+// level's select, and checked with its type (see checkSelectPath). V4 has no path through a
+// navigation, which $expand's own $select does instead (V2 does, see addSelectPath).
 function addSelect(node: QueryNode, item: string): void {
-  const [first, ...rest] = item.trim().split("/");
-  if (rest.length)
-    throw new HttpError(
-      400,
-      `$select can't go through ${first}: for a navigation, write $expand=${first}($select=${rest.join("/")})`,
-    );
-  addSelectPath(node, first);
+  const path = item.trim();
+  if (path.includes("/")) (node.select ||= new Set()).add(path);
+  else addSelectPath(node, path);
 }
 
 function parseExpand(text: string | undefined, node: QueryNode): void {
@@ -360,6 +357,11 @@ function serialize(
   for (const p of Object.values(type.properties)) {
     if (selectAll || node.select?.has(p.name))
       out[p.name] = toWire(row[p.name], p, opts);
+    else {
+      const into = pathsInto(p.name, [...(node.select ?? [])]);
+      if (into.length)
+        out[p.name] = pickPaths(toWire(row[p.name], p, opts), into);
+    }
   }
   for (const [navName, child] of Object.entries(node.expand)) {
     const nav = svc.navigation(type, navName);
@@ -394,6 +396,29 @@ function serialize(
     } else {
       out[navName] = rows[0] ? nested(rows[0]) : null;
     }
+  }
+  return out;
+}
+
+// The rest of the paths that go into name: "Addr", ["Addr/City", "Name"] -> ["City"]. A
+// path that is name itself is "".
+const pathsInto = (name: string, paths: string[]) =>
+  paths
+    .filter((p) => p === name || p.startsWith(`${name}/`))
+    .map((p) => p.slice(name.length + 1));
+
+// A complex value as $select's paths into it leave it: the fields they name, at any depth,
+// in each item of a collection. A field a path ends at is whole.
+function pickPaths(value: unknown, paths: string[]): unknown {
+  if (value === null) return null;
+  if (Array.isArray(value)) return value.map((v) => pickPaths(v, paths));
+  const out: Record<string, unknown> = {};
+  for (const [name, field] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    const into = pathsInto(name, paths);
+    if (into.length)
+      out[name] = into.includes("") ? field : pickPaths(field, into);
   }
   return out;
 }
@@ -590,12 +615,17 @@ const v4: Protocol = {
   ) {
     node = expandAll(svc, entities.type, node);
     const select = node.select;
+    const paths = [...(select ?? [])];
     const names = Object.keys(type.properties);
-    // A $select of a navigation (Supplier) picks the paths through it
-    const selected = (name: string) =>
+    // A $select of a navigation (Supplier) picks the paths through it; one of a path into a
+    // complex value (Addr/City), that field of it
+    const whole = (name: string) =>
       !select || select.has("*") || select.has(name.split("/")[0]);
-    for (const name of select || [])
-      if (
+    const fields = (name: string) =>
+      whole(name) ? [] : pathsInto(name, paths);
+    for (const name of paths)
+      if (name.includes("/")) checkSelectPath(svc, type, name);
+      else if (
         name !== "*" &&
         !names.some((n) => n.split("/")[0] === name) &&
         !svc.navigation(entities.type, name)
@@ -604,11 +634,16 @@ const v4: Protocol = {
           400,
           `${name} is not a property of the $apply result`,
         );
-    const props = Object.values(type.properties).filter((p) =>
-      selected(p.name),
+    const props = Object.values(type.properties).filter(
+      (p) => whole(p.name) || fields(p.name).length,
     );
+    // Supplier(Name) for the paths through a navigation, Addr/City as it is
+    const listed = [
+      contextList(props.filter((p) => whole(p.name)).map((p) => p.name)),
+      ...props.flatMap((p) => fields(p.name).map((f) => `${p.name}/${f}`)),
+    ].filter(Boolean);
     const body: Record<string, unknown> = {
-      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}(${contextList(props.map((p) => p.name))})`,
+      "@odata.context": `${svc.servicePath}/$metadata#${contextSet(svc, setName, opts)}(${listed.join(",")})`,
     };
     if (count !== undefined) body["@odata.count"] = count;
     body.value = rows.map((r) => {
@@ -616,13 +651,16 @@ const v4: Protocol = {
         return serialize(svc, r, setName, entities.type, node, opts);
       const out: Record<string, unknown> = {};
       for (const p of props)
-        if (Object.hasOwn(r, p.name))
+        if (Object.hasOwn(r, p.name)) {
+          const value = toWire(r[p.name], p, opts);
+          const into = fields(p.name);
           setPath(
             out,
             p.name,
-            toWire(r[p.name], p, opts),
+            into.length ? pickPaths(value, into) : value,
             p.collectionSegments,
           );
+        }
       return out;
     });
     if (nextLink) body["@odata.nextLink"] = nextLink;

@@ -13,7 +13,7 @@ All primitive Edm types, plus the ones below. Geography and geometry values aren
 
 Singletons aren't served: the startup log lists each one (`not served: Singleton Me`), and a navigation bound to one is disabled, a `501` saying why. A name can be any identifier but `__proto__`, which stops the service from starting, saying so.
 
-In a CSV data file, a complex or collection value goes in its cell as JSON. Filtering or sorting on a field inside a complex value is not supported.
+In a CSV data file, a complex or collection value goes in its cell as JSON.
 
 Writes and data files are checked against the metadata. Each of these is a `400` (`InvalidValue`), and a data file with one stops the start, naming it:
 
@@ -91,7 +91,7 @@ A system query option the protocol doesn't have is a `400`: a misspelt `$fliter`
 
 `$format` says what a resource is answered in, and one the server doesn't have is a `501`: the service document and the data are JSON, and `$metadata` is XML. A `$` may be written `%24`, as in `%24metadata`. Any method but `POST` on `$batch` is a `405`.
 
-A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. So is an unknown name in `$filter` or `$orderby`, from the request alone: whether a row gets to it doesn't matter. V4 has no `$select` through a navigation, so `$select=Nav/Prop` is a `400` too: write `$expand=Nav($select=Prop)`. V2 does: `$expand=Nav&$select=Nav/Prop` gives only that, at each level. With a `$select`, the V4 context URL lists what it selected, computed properties and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`.
+A `$select` of something that is neither a property nor a navigation of the type is a `400`, like an unknown `$expand`. So is an unknown name in `$filter` or `$orderby`, from the request alone: whether a row gets to it doesn't matter. V4 has no `$select` through a navigation, so `$select=Nav/Prop` is a `400` too: write `$expand=Nav($select=Prop)`. V2 does: `$expand=Nav&$select=Nav/Prop` gives only that, at each level. In V4, `$select` also goes into a complex value: `$select=Addr/City` gives `"Addr": {"City": "Athens"}`, at any depth (`Place/Addr/City`), in each item of a collection, and with an `$apply` whose rows are still entities. A complex value selected whole as well is whole. V2 has no such path, so there `$select=Addr/City` is a `400`: select `Addr`. With a `$select`, the V4 context URL lists what it selected, computed properties, paths into complex values and expanded navigations included: `$metadata#Products(Name,Total,Category(Name))`, `$metadata#Items(ID,Addr/City)`.
 
 `$filter` includes the V4 lambda operators, which Fiori Elements V4 sends for filter fields on a to-many navigation: `Items/any(i:i/Material eq 'MAT-1001')`, `Items/all(i:i/Unit eq 'TO')` and `Items/any()`. They work over navigations and collection-valued properties (`Emails/any(e:endswith(e,'contoso.com'))`), nest, and take `$it` for the entity outside the lambda.
 
@@ -457,6 +457,7 @@ Rejected with `501 Not Implemented`:
 - a `$batch` in OData 4.01's JSON format: send it as `multipart/mixed`, as UI5 does
 - the `/$value` of an entity (a media resource's content): only a property's `/$value` is served
 - the `$filter` functions listed under [Query options](#query-options)
+- a type cast in a `$select` path (`$select=Place/NS.Place2/Addr`)
 
 - a delta in a body (`Kids@delta`, `Kids@odata.delta`)
 
@@ -464,7 +465,6 @@ Rejected with `400 Bad Request`, though OData has them:
 
 - an expression in `$orderby` (`length(Name)`): a property or a path only, or a `$compute` alias
 - parameter aliases (`@p1`) in `$filter`
-- a path into a complex value in a query option, as `$select=Address/City` or `$filter=Address/City eq 'x'`. In the URL it's served: `Rows(1)/Address/City`
 - spatial values (`Edm.Geography...`, `Edm.Geometry...`) in a body. A required one isn't required: the server holds none, and answers null
 
 `odata.metadata` in `Accept` is ignored: the answer is always `minimal`. `If-None-Match` is served: a read of what it names is a `304`, and a write a `412`.
