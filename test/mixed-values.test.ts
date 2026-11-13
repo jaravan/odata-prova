@@ -1466,6 +1466,22 @@ describe("a path into a complex value", () => {
     assert.match(body.error.message, /Nope is not a property of Addr/);
   });
 
+  for (const apply of [
+    "groupby((Addr/City))",
+    "groupby((Place/Addr/City),aggregate($count as C))",
+    "aggregate(Place/Addr/City with countdistinct as N)",
+  ])
+    it(`$apply=${apply} is a 501 that says a complex value is in the way`, async () => {
+      const { status, body } = await get(`${s.v4}/Items?$apply=${apply}`);
+      assert.equal(status, 501, JSON.stringify(body));
+      assert.match(body.error.message, /complex property (Addr|Place)/);
+    });
+
+  it("$apply=groupby((Nope/City)) is still a 400", async () => {
+    const { status } = await get(`${s.v4}/Items?$apply=groupby((Nope/City))`);
+    assert.equal(status, 400);
+  });
+
   it("$select with a type cast in its path is a 501", async () => {
     const { status } = await get(`${s.v4}/Items?$select=Place/F.Place/Col`);
     assert.equal(status, 501);

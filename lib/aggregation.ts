@@ -323,6 +323,12 @@ function pathProperty(
   const collectionSegments: number[] = [];
   for (const [i, part] of parts.slice(0, -1).entries()) {
     const nav = svc.navigation(current, part);
+    // $filter and $orderby go into a complex value (see filter.ts); $apply's paths don't
+    if (!nav && own(current.properties, part)?.complexType)
+      throw new HttpError(
+        501,
+        `$apply: ${path} goes into the complex property ${part}, which is not supported`,
+      );
     if (!nav)
       throw new HttpError(
         400,

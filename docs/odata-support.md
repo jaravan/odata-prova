@@ -254,6 +254,7 @@ These are a `501`, never ignored:
 - a custom aggregation method (`Amount with Custom.median`)
 - a custom aggregate with no property of its name, which the metadata doesn't say how to compute
 - a path through more than one collection navigation
+- a path into a complex value (`groupby((Address/City))`), which `$filter` and `$orderby` follow
 - `$apply` in V2, which has none
 
 ### Hierarchies
